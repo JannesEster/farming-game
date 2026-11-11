@@ -1,15 +1,23 @@
 import { CONFIG } from "../sim/config";
 
+/** Kalahari dry-season colours for camps, sand and fences. */
 export const palette = {
-  sand: 0xc56a32,
-  sandLight: 0xd4894a,
-  track: 0xa85a2c,
-  grassGreen: 0x7c8a38,
-  grassGold: 0xe0a63a,
-  grassBrown: 0x8a4c28,
-  fence: 0xf3e6c8,
-  fenceStrong: 0xfff6e4,
-  fenceSelected: 0xffd56a,
+  sand: 0xb84e28,
+  sandLight: 0xcc6a3a,
+  sandDark: 0x9a3a1e,
+  track: 0x8f4a24,
+  trackRut: 0x6e3518,
+  grassGreen: 0x6a7a2e,
+  grassGold: 0xd4a02e,
+  grassBrown: 0x7a4a20,
+  fence: 0xc4a880,
+  fenceWire: 0x8a6a48,
+  fenceStrong: 0xe8d4b0,
+  fenceSelected: 0xf0c050,
+  fencePost: 0x5c3a1e,
+  water: 0x2a6a6a,
+  waterHighlight: 0x6ab8b0,
+  shadow: 0x2a1408,
 };
 
 export function toCss(colour: number): string {

@@ -22,6 +22,14 @@ export type Feature = {
   scale: number;
 };
 
+export type HerdTransit = {
+  toCampId: number;
+  progress: number;
+  distanceKm: number;
+  /** Whole path as tile points, including anchors. */
+  path: TilePoint[];
+};
+
 export type CampState = {
   id: number;
   name: string;
@@ -41,6 +49,7 @@ export type HerdState = {
   condition: number;
   campId: number;
   daysInCamp: number;
+  transit: HerdTransit | null;
 };
 
 export type GameState = {
@@ -60,4 +69,4 @@ export type GameState = {
 
 export type MoveResult =
   | { ok: true; campName: string }
-  | { ok: false; reason: "same" | "missing" };
+  | { ok: false; reason: "same" | "missing" | "moving" };
