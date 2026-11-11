@@ -83,36 +83,26 @@ export function bakeTerrainChunk(
   const h = Math.ceil(maxY - minY + pad * 2);
   const rt = scene.add.renderTexture(minX - pad, minY - pad, w, h).setOrigin(0, 0).setDepth(0);
 
-  const scratch: Phaser.GameObjects.Image[] = [];
   for (const stamp of stamps) {
     const localX = stamp.x - minX + pad;
     const localY = stamp.y - minY + pad;
     const { target } = stamp;
-  if (!scene.textures.exists(target.key)) continue;
-
-    const img = scene.add.image(localX, localY, target.key);
+    if (!scene.textures.exists(target.key)) continue;
     if (target.mode === "painted") {
       const scale = (tileW + 10) / PAINTED_TILE_NATIVE_W;
-      img.setOrigin(0.5, 0);
-      img.setScale(scale);
-      img.setRotation(target.rotation);
-      img.setAlpha(target.alpha);
-      if (target.tint !== 0xffffff) {
-        img.setTint(target.tint);
-        img.setTintMode(Phaser.TintModes.MULTIPLY);
-      }
+      rt.stamp(target.key, undefined, localX, localY, {
+        originX: 0.5,
+        originY: 0,
+        scale,
+        angle: (target.rotation * 180) / Math.PI,
+        alpha: target.alpha,
+        tint: target.tint,
+      });
     } else {
-      img.setOrigin(0.5, 0);
-      img.setDisplaySize(tileW + 6, tileH + 4);
-      if (target.tint !== 0xffffff) {
-        img.setTint(target.tint);
-        img.setTintMode(Phaser.TintModes.FILL);
-      }
+      rt.draw(target.key, localX, localY);
     }
-    rt.draw(img, localX, localY);
-    scratch.push(img);
   }
-  scratch.forEach((img) => img.destroy());
+  rt.render();
 
   return { rt, x: minX - pad, y: minY - pad, w, h };
 }
