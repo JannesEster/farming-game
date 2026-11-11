@@ -1,18 +1,30 @@
 import { CONFIG } from "./config";
 import { createGame } from "./simulation";
 import type { GameState } from "./types";
+import {
+  anySlotOccupied,
+  getActiveSlotId,
+  readSlot,
+  writeSlot,
+} from "../integration/saveSlots";
+import { defaultFlowMeta } from "../integration/metaDefaults";
+import { migrateState, parseLegacySaved } from "./stateMigrate";
 
-export const SAVE_KEY = "farming-game-v1";
+export { LEGACY_SAVE_KEY, LEGACY_SINGLE_V2_KEY } from "./saveKeys";
+import { LEGACY_SAVE_KEY, LEGACY_SINGLE_V2_KEY } from "./saveKeys";
+
+/** @deprecated Single-key v2 slot writer removed — use slot saves. */
+export const SAVE_KEY = LEGACY_SINGLE_V2_KEY;
 
 export type SavedGame = {
-  version: 1;
+  version: 1 | 2;
   savedAt: string;
   state: GameState;
 };
 
 export function serializeState(state: GameState): string {
   const payload: SavedGame = {
-    version: 1,
+    version: 2,
     savedAt: new Date().toISOString(),
     state,
   };
@@ -20,42 +32,36 @@ export function serializeState(state: GameState): string {
 }
 
 export function parseSaved(raw: string): GameState | null {
-  try {
-    const data = JSON.parse(raw) as Partial<SavedGame>;
-    if (data.version !== 1 || !data.state) return null;
-    const state = data.state;
-    if (!Array.isArray(state.camps) || !state.herd || !state.date) return null;
-    if (state.herd.transit === undefined) state.herd.transit = null;
-    if (state.date.hour === undefined) state.date.hour = CONFIG.calendar.startHour;
-    if (state.herd.transit) {
-      if (state.herd.transit.walkGameHours === undefined) {
-        state.herd.transit.walkGameHours = 0;
-      }
-      if (state.herd.transit.hoursApplied === undefined) {
-        state.herd.transit.hoursApplied = 0;
-      }
-    }
-    return state;
-  } catch {
-    return null;
-  }
+  return parseLegacySaved(raw);
+}
+
+export function hasSavedGame(): boolean {
+  return anySlotOccupied();
 }
 
 export function loadSavedGame(): GameState | null {
-  if (typeof localStorage === "undefined") return null;
-  const raw = localStorage.getItem(SAVE_KEY);
-  if (!raw) return null;
-  return parseSaved(raw);
+  const slot = readSlot(getActiveSlotId());
+  return slot?.state ?? null;
 }
 
+/** @deprecated Use GameFlowService.persist() — kept for picker tests. */
 export function saveGame(state: GameState): void {
   if (typeof localStorage === "undefined") return;
-  localStorage.setItem(SAVE_KEY, serializeState(state));
+  const slotId = getActiveSlotId();
+  const existing = readSlot(slotId);
+  writeSlot(slotId, {
+    version: 2,
+    savedAt: new Date().toISOString(),
+    slotId,
+    meta: existing?.meta ?? defaultFlowMeta(),
+    state: migrateState(state),
+  });
 }
 
 export function clearSavedGame(): void {
   if (typeof localStorage === "undefined") return;
-  localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem(LEGACY_SINGLE_V2_KEY);
+  localStorage.removeItem(LEGACY_SAVE_KEY);
 }
 
 export function initialGameState(): GameState {

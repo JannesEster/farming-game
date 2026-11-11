@@ -104,7 +104,7 @@ export function collectFenceSegments(
 }
 
 /** World px between the two fence wires so they read as separate strands at ~0.53 zoom. */
-export const FENCE_WIRE_STRAND_OFFSET_PX = 8;
+export const FENCE_WIRE_STRAND_OFFSET_PX = 5;
 
 export function wireStrandOffset(
   x1: number,
@@ -152,9 +152,9 @@ export function drawFences(graphics: Phaser.GameObjects.Graphics, segments: Fenc
     }
   };
 
-  drawBucket(buckets.inner, CONFIG.view.fencePx, palette.fenceWire, 0.9);
-  drawBucket(buckets.boundary, CONFIG.view.fenceBoundaryPx, palette.fenceStrong, 1);
-  drawBucket(buckets.selected, CONFIG.view.fenceSelectedPx, palette.fenceSelected, 1);
+  drawBucket(buckets.inner, Math.max(1.2, CONFIG.view.fencePx * 0.65), palette.fenceWire, 0.72);
+  drawBucket(buckets.boundary, Math.max(1.6, CONFIG.view.fenceBoundaryPx * 0.7), palette.fenceStrong, 0.82);
+  drawBucket(buckets.selected, CONFIG.view.fenceSelectedPx * 0.85, palette.fenceSelected, 0.95);
 
   const spacing = CONFIG.view.fencePostSpacingPx;
   for (const segment of segments) {
@@ -175,6 +175,16 @@ export function drawFences(graphics: Phaser.GameObjects.Graphics, segments: Fenc
         graphics.moveTo(px, py - 5);
         graphics.lineTo(px, py + 4);
         graphics.strokePath();
+        if (i > 0 && i < count) {
+          const dropT = i / count;
+          const dpx = segment.x1 + dx * (dropT - 0.5 / count);
+          const dpy = segment.y1 + dy * (dropT - 0.5 / count);
+          graphics.lineStyle(1, palette.fenceWire, 0.75);
+          graphics.beginPath();
+          graphics.moveTo(dpx, dpy - 4);
+          graphics.lineTo(dpx, dpy + 3);
+          graphics.strokePath();
+        }
       } else if (i === 0 || i === count) {
         graphics.lineStyle(2.2, palette.fencePost, 1);
         graphics.beginPath();

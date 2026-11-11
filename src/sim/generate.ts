@@ -1,6 +1,7 @@
 import { CONFIG, type GameConfig } from "./config";
 import { clamp, lerp } from "./math";
 import { grazeableFraction } from "./pasture";
+import { createStoryState } from "./story";
 import { campGateToward } from "./path";
 import { createRng, type Rng } from "./rng";
 import {
@@ -76,6 +77,34 @@ function collect(grid: number[], width: number, height: number, id: number): Til
     }
   }
   return tiles;
+}
+
+function campAdjacentToHomestead(
+  camps: CampState[],
+  grid: number[],
+  width: number,
+  height: number,
+): CampState | null {
+  const homestead = new Set<string>();
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (grid[idx(x, y, width)] === TILE_HOMESTEAD) homestead.add(`${x},${y}`);
+    }
+  }
+  for (const camp of camps) {
+    for (const tile of camp.tiles) {
+      const neighbors = [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ] as const;
+      for (const [dx, dy] of neighbors) {
+        if (homestead.has(`${tile.x + dx},${tile.y + dy}`)) return camp;
+      }
+    }
+  }
+  return null;
 }
 
 function isEdge(grid: number[], width: number, height: number, x: number, y: number): boolean {
@@ -276,7 +305,11 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
   });
   const pool = central.length > 0 ? central : camps;
   const byGrass = [...pool].sort((a, b) => grazeableFraction(a, config) - grazeableFraction(b, config));
-  const start = byGrass[Math.floor(byGrass.length / 2)];
+  let start = byGrass[Math.floor(byGrass.length / 2)];
+  if (config.map.herdStartNearYard) {
+    const besideYard = campAdjacentToHomestead(camps, finalGrid, width, height);
+    if (besideYard) start = besideYard;
+  }
   for (const camp of camps) {
     camp.restDays =
       camp.id === start.id ? 0 : Math.floor(rng.next() * (config.pasture.initialRestDaysMax + 1));
@@ -308,6 +341,7 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
       transit: null,
     },
     features,
+    story: createStoryState(config.herd.headCount, config),
   };
   return { state, score };
 }

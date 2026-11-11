@@ -13,6 +13,8 @@ export type GameConfig = {
     homesteadHectares: number;
     hectaresPerLsu: number;
     landValueNadPerHa: number;
+    extraWater?: { boreholes: number; windmills: number; solar: number };
+    fenceCondition?: "good" | "fair" | "poor";
   };
   pasture: {
     lsuLiveweightKg: number;
@@ -49,14 +51,63 @@ export type GameConfig = {
   };
   economy: {
     startingCashNad: number;
+    farmhandMonthlyCashNad: number;
+    payrollIntervalDays: number;
+    defaultWeanerLiveKg: number;
+    monthlyLickNad: number;
+    monthlyVetNad: number;
+    monthlyDieselNad: number;
+    llpbnLevyRate: number;
+    auctionCommissionRate: number;
+    liveExportLevyRate: number;
+    feedlotPriceFactor: number;
+    droughtQuickSaleNadPerKg: number;
   };
   calendar: {
     seasonStartMonth: number;
     rainyMonths: number[];
+    calvingMonths: number[];
+    weaningMonths: number[];
+    weanerSaleMonths: number[];
     startYear: number;
     startMonth: number;
     startDay: number;
     startHour: number;
+  };
+  story: {
+    poorFeedIntakeRatio: number;
+    poorFeedGrazeable: number;
+    warnPoorFeedDays1: number;
+    warnPoorFeedDays2: number;
+    warnPoorFeedDays3: number;
+    weightLossStartsDay: number;
+    dailyWeightLossKg: number;
+    minAverageLiveweightKg: number;
+    breedingMinCondition: number;
+    breedingResumeCondition: number;
+    deathStartsDay: number;
+    deathMaxCondition: number;
+    dailyDeathRateAtZeroCondition: number;
+    monthlyCalvingFraction: number;
+    weaningFraction: number;
+    bullFraction: number;
+    oxFraction: number;
+    weanerFraction: number;
+    calfFraction: number;
+    droughtWatchStartMonth: number;
+    droughtDeficitWarnMm: number;
+    droughtWatchThreshold: number;
+    droughtForageCutMax: number;
+    droughtWarnMonth: number;
+    droughtChoiceScore: number;
+    droughtChoiceMonth: number;
+    droughtSellWeaners: number;
+    droughtSupplementCostNad: number;
+    droughtSupplementDays: number;
+    supplementConditionPerDay: number;
+    farmhandWaterCheckInterval: number;
+    farmhandWaterConditionBonus: number;
+    farmhandMoveCondition: number;
   };
   rain: {
     monthlyMeanMm: number[];
@@ -103,6 +154,8 @@ export type GameConfig = {
       kraal: { x: number; y: number };
       shed: { x: number; y: number };
     };
+    /** Place the opening herd in the grazing camp beside the homestead yard. */
+    herdStartNearYard?: boolean;
   };
   view: {
     tileWidth: number;
@@ -222,8 +275,30 @@ export const CONFIG: GameConfig = {
   },
 
   economy: {
-    // A. Operating cash on hand. Sales, wages and building are out of scope, so this number does not move.
+    // A. Operating cash on hand at game start.
     startingCashNad: 250000,
+    // S: N$14/hr × 45h × 52/12 ≈ N$2,730 cash wage Jan 2026 (farm-life-lesson §1.4).
+    farmhandMonthlyCashNad: 2730,
+    // A. One payroll tick per month on month close.
+    payrollIntervalDays: 30,
+    // A: ~220 kg weaner for price math (farm-life-lesson §8.5).
+    defaultWeanerLiveKg: 220,
+    // TODO: tune monthly lick spend; no single sourced farm total in lessons.
+    monthlyLickNad: 4500,
+    // TODO: tune routine vet/dosing cash per month.
+    monthlyVetNad: 1200,
+    // TODO: tune diesel for water rounds and camp checks.
+    monthlyDieselNad: 2800,
+    // S: LLPBN levy 0.6% on auctions/out of hand (levy schedule 2025/26).
+    llpbnLevyRate: 0.006,
+    // A: SA public auction ~8% commission (Farmer's Weekly Dec 2021); Namibia rate unpublished.
+    auctionCommissionRate: 0.08,
+    // S: live export levy 1.0% (LLPBN levy schedule).
+    liveExportLevyRate: 0.01,
+    // A: feedlot/speculator spread vs auction.
+    feedlotPriceFactor: 1.03,
+    // A: distressed drought sale price per kg live.
+    droughtQuickSaleNadPerKg: 27,
   },
 
   calendar: {
@@ -231,11 +306,61 @@ export const CONFIG: GameConfig = {
     seasonStartMonth: 7,
     // A for the label. These are the months that hold most of the rain in the table below, November to April.
     rainyMonths: [11, 12, 1, 2, 3, 4],
+    // S: calving ~Oct after Jan/Feb mating in south (namibian-livestock §2.2, seasonal calendar Sep–Oct).
+    calvingMonths: [9, 10],
+    // S: wean early calves in May (namibian-livestock §4.5).
+    weaningMonths: [5],
+    // S: weaner sales Apr–Jun (namibian-livestock §4.5; Agra weaner championship H2).
+    weanerSaleMonths: [4, 5, 6],
     // A. Opening morning, early in the dry season, so grass holds or falls until the rains.
     startYear: 2026,
     startMonth: 8,
     startDay: 1,
     startHour: 6,
+  },
+
+  story: {
+    // A: intake below this counts as starvation stress.
+    poorFeedIntakeRatio: 0.18,
+    poorFeedGrazeable: 0.08,
+    // A: warned and recoverable ladder (fun-and-retention §4.2 telegraph negatives).
+    warnPoorFeedDays1: 5,
+    warnPoorFeedDays2: 12,
+    warnPoorFeedDays3: 21,
+    weightLossStartsDay: 8,
+    // A: kg liveweight lost per poor-feed day once weight loss starts.
+    dailyWeightLossKg: 1.2,
+    minAverageLiveweightKg: 320,
+    breedingMinCondition: 45,
+    breedingResumeCondition: 55,
+    deathStartsDay: 28,
+    deathMaxCondition: 12,
+    // A: share of herd lost per day at critical condition on bare veld.
+    dailyDeathRateAtZeroCondition: 0.012,
+    // A: monthly calving as fraction of cows in calving season.
+    monthlyCalvingFraction: 0.12,
+    weaningFraction: 0.85,
+    bullFraction: 0.03,
+    oxFraction: 0.05,
+    weanerFraction: 0.08,
+    calfFraction: 0.12,
+    droughtWatchStartMonth: 11,
+    // A: mm below expected when drought watch begins.
+    droughtDeficitWarnMm: 25,
+    droughtWatchThreshold: 0.2,
+    // A: max cut to regrowth when drought score is 1.
+    droughtForageCutMax: 0.55,
+    droughtWarnMonth: 1,
+    droughtChoiceScore: 0.45,
+    droughtChoiceMonth: 2,
+    droughtSellWeaners: 8,
+    // TODO: tune bought feed lump sum for drought choice.
+    droughtSupplementCostNad: 18000,
+    droughtSupplementDays: 30,
+    supplementConditionPerDay: 0.25,
+    farmhandWaterCheckInterval: 3,
+    farmhandWaterConditionBonus: 0.08,
+    farmhandMoveCondition: 50,
   },
 
   rain: {

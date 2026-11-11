@@ -1,3 +1,5 @@
+import type { StoryState } from "./storyTypes";
+
 export const TILE_HOMESTEAD = -1;
 export const TILE_OUTSIDE = -2;
 
@@ -57,9 +59,21 @@ export type HerdState = {
   transit: HerdTransit | null;
 };
 
+export type FarmMeta = {
+  offerId: string;
+  regionKey: string;
+  regionLabel: string;
+  hectares: number;
+  rainfallMm: number;
+  campCount: number;
+  fenceCondition: "good" | "fair" | "poor";
+  water: { boreholes: number; windmills: number; solar: number };
+};
+
 export type GameState = {
   seed: number;
   rngState: number;
+  farmMeta?: FarmMeta;
   date: CalendarDate;
   seasonRainMm: number;
   todayRainMm: number;
@@ -70,6 +84,7 @@ export type GameState = {
   camps: CampState[];
   herd: HerdState;
   features: Feature[];
+  story?: StoryState;
 };
 
 export type MoveResult =

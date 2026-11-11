@@ -1,11 +1,12 @@
 import Phaser from "phaser";
+import { BootScene } from "./integration/BootScene";
 import { FarmScene } from "./render/FarmScene";
 import "./style.css";
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: "game",
-  backgroundColor: "#c56a32",
+  backgroundColor: "#3b2a1e",
   banner: false,
   disableContextMenu: true,
   scale: {
@@ -26,7 +27,7 @@ const game = new Phaser.Game({
     roundPixels: false,
     pixelArt: false,
   },
-  scene: [FarmScene],
+  scene: [BootScene, FarmScene],
 });
 
 window.addEventListener("resize", () => {

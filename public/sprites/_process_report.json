@@ -1,0 +1,366 @@
+[
+  {
+    "name": "farmhouse",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/farmhouse.png",
+    "size": [
+      512,
+      335
+    ],
+    "bytes": 319263,
+    "pre_resize": [
+      637,
+      417
+    ]
+  },
+  {
+    "name": "windmill",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/windmill.png",
+    "size": [
+      512,
+      739
+    ],
+    "bytes": 396789,
+    "pre_resize": [
+      390,
+      563
+    ]
+  },
+  {
+    "name": "shed",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/shed.png",
+    "size": [
+      512,
+      421
+    ],
+    "bytes": 360795,
+    "pre_resize": [
+      588,
+      483
+    ]
+  },
+  {
+    "name": "kraal",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/kraal.png",
+    "size": [
+      512,
+      348
+    ],
+    "bytes": 197548,
+    "pre_resize": [
+      619,
+      421
+    ]
+  },
+  {
+    "name": "trough",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/trough.png",
+    "size": [
+      256,
+      156
+    ],
+    "bytes": 51595,
+    "pre_resize": [
+      629,
+      383
+    ]
+  },
+  {
+    "name": "bakkie",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/bakkie.png",
+    "size": [
+      320,
+      208
+    ],
+    "bytes": 97887,
+    "pre_resize": [
+      532,
+      346
+    ]
+  },
+  {
+    "name": "gate",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/gate.png",
+    "size": [
+      256,
+      248
+    ],
+    "bytes": 79128,
+    "pre_resize": [
+      545,
+      528
+    ]
+  },
+  {
+    "name": "fence",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/fence.png",
+    "size": [
+      256,
+      197
+    ],
+    "bytes": 32402,
+    "pre_resize": [
+      599,
+      462
+    ]
+  },
+  {
+    "name": "camelthorn-1",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/camelthorn-1.png",
+    "size": [
+      256,
+      186
+    ],
+    "bytes": 75059,
+    "pre_resize": [
+      706,
+      512
+    ]
+  },
+  {
+    "name": "camelthorn-2",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/camelthorn-2.png",
+    "size": [
+      256,
+      198
+    ],
+    "bytes": 86456,
+    "pre_resize": [
+      682,
+      528
+    ]
+  },
+  {
+    "name": "shepherds-tree",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/shepherds-tree.png",
+    "size": [
+      225,
+      256
+    ],
+    "bytes": 103901,
+    "pre_resize": [
+      473,
+      538
+    ]
+  },
+  {
+    "name": "thorn-bush-1",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/thorn-bush-1.png",
+    "size": [
+      160,
+      136
+    ],
+    "bytes": 42922,
+    "pre_resize": [
+      404,
+      343
+    ]
+  },
+  {
+    "name": "thorn-bush-2",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/thorn-bush-2.png",
+    "size": [
+      160,
+      152
+    ],
+    "bytes": 47435,
+    "pre_resize": [
+      492,
+      467
+    ]
+  },
+  {
+    "name": "termite-mound",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/termite-mound.png",
+    "size": [
+      171,
+      192
+    ],
+    "bytes": 54546,
+    "pre_resize": [
+      572,
+      641
+    ]
+  },
+  {
+    "name": "rock-cluster",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/rock-cluster.png",
+    "size": [
+      160,
+      140
+    ],
+    "bytes": 37776,
+    "pre_resize": [
+      454,
+      396
+    ]
+  },
+  {
+    "name": "cattle-brahman",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/cattle-brahman.png",
+    "size": [
+      141,
+      128
+    ],
+    "bytes": 29643,
+    "pre_resize": [
+      553,
+      501
+    ]
+  },
+  {
+    "name": "cattle-bonsmara",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/cattle-bonsmara.png",
+    "size": [
+      138,
+      128
+    ],
+    "bytes": 23278,
+    "pre_resize": [
+      508,
+      470
+    ]
+  },
+  {
+    "name": "cattle-simmentaler",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/cattle-simmentaler.png",
+    "size": [
+      138,
+      128
+    ],
+    "bytes": 28429,
+    "pre_resize": [
+      552,
+      511
+    ]
+  },
+  {
+    "name": "cattle-nguni",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/cattle-nguni.png",
+    "size": [
+      142,
+      128
+    ],
+    "bytes": 32746,
+    "pre_resize": [
+      529,
+      476
+    ]
+  },
+  {
+    "name": "cattle-angus",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/cattle-angus.png",
+    "size": [
+      136,
+      128
+    ],
+    "bytes": 23084,
+    "pre_resize": [
+      515,
+      485
+    ]
+  },
+  {
+    "name": "cattle-calf",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/cattle-calf.png",
+    "size": [
+      91,
+      96
+    ],
+    "bytes": 14758,
+    "pre_resize": [
+      409,
+      433
+    ]
+  },
+  {
+    "name": "tile-dry-grass",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/tile-dry-grass.png",
+    "size": [
+      256,
+      128
+    ],
+    "bytes": 42372,
+    "pre_resize": [
+      1024,
+      1024
+    ]
+  },
+  {
+    "name": "tile-green-grass",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/tile-green-grass.png",
+    "size": [
+      256,
+      128
+    ],
+    "bytes": 34965,
+    "pre_resize": [
+      1024,
+      1024
+    ]
+  },
+  {
+    "name": "tile-kalahari-sand",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/tile-kalahari-sand.png",
+    "size": [
+      256,
+      128
+    ],
+    "bytes": 45539,
+    "pre_resize": [
+      1024,
+      1024
+    ]
+  },
+  {
+    "name": "tile-dirt-track",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/tile-dirt-track.png",
+    "size": [
+      256,
+      128
+    ],
+    "bytes": 34729,
+    "pre_resize": [
+      1024,
+      1024
+    ]
+  },
+  {
+    "name": "tile-overgrazed",
+    "ok": true,
+    "path": "/workspace/farming-game/sprites/tile-overgrazed.png",
+    "size": [
+      256,
+      128
+    ],
+    "bytes": 39481,
+    "pre_resize": [
+      1024,
+      1024
+    ]
+  }
+]

@@ -14,6 +14,7 @@ import {
   minimapTileFromNormalized,
   pinchCenter,
   pinchZoom,
+  frameWorldRectInClearBand,
   preferredHomesteadZoom,
   scrollToLayoutTip,
   visibleWorldLeft,
@@ -295,5 +296,25 @@ describe("applyPanFriction", () => {
     expect(next).not.toBeNull();
     expect(next!.vx).toBeLessThan(400);
     expect(next!.vx).toBeGreaterThan(0);
+  });
+});
+
+describe("frameWorldRectInClearBand", () => {
+  it("fits the house and the herd inside the clear band", () => {
+    const framed = frameWorldRectInClearBand(
+      { minX: 2200, minY: 300, maxX: 2700, maxY: 700 },
+      390,
+      844,
+      { top: 56, bottom: 140, left: 6, right: 6 },
+      0.2,
+      1.15,
+      16,
+    );
+    expect(framed.zoom).toBeLessThanOrEqual(1.15);
+    expect(framed.zoom).toBeGreaterThan(0.4);
+    const viewW = (390 - 12 - 32) / framed.zoom;
+    const viewH = (844 - 56 - 140 - 32) / framed.zoom;
+    expect(viewW).toBeGreaterThanOrEqual(500 - 1);
+    expect(viewH).toBeGreaterThanOrEqual(400 - 1);
   });
 });

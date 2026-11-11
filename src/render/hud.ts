@@ -13,8 +13,8 @@ import {
   formatGrassPercent,
   formatHead,
   formatMoveWarning,
-  formatSeason,
 } from "../sim/format";
+import { seasonLabelForHud } from "../sim/story";
 import { moveAdvice } from "../sim/grazing";
 import { findCamp } from "../sim/simulation";
 import { grazeableFraction, grazingDaysLeft } from "../sim/pasture";
@@ -33,6 +33,14 @@ export type Hud = {
   campBadge(campId: number): string;
   setSpeed(mode: SpeedMode): void;
   setHint(text: string): void;
+  clearHint(): void;
+  showEventCard(title: string, body: string): void;
+  hideEventCard(): void;
+  /** Hide the hint toast while a tutorial or story card is on screen. */
+  holdToasts(): void;
+  /** Show the newest queued hint once every card is closed. */
+  releaseToasts(): void;
+  setHerdLocator(visible: boolean, label: string, edge: "left" | "right" | "top" | "bottom"): void;
   destroy(): void;
 };
 
@@ -54,6 +62,9 @@ export function mountHud(options: {
   onDeselect: () => void;
   onConfirmMove: () => void;
   onCancelMove: () => void;
+  onOpenMarket: () => void;
+  onSheetExpanded?: (expanded: boolean) => void;
+  onHerdLocator?: () => void;
 }): Hud {
   const root = document.getElementById("hud-root");
   if (!root) throw new Error("Missing the HUD root.");
@@ -76,10 +87,16 @@ export function mountHud(options: {
       </div>
       <div class="overflow-menu" id="overflow-menu" hidden>
         <button type="button" id="view-home">Home</button>
+        <button type="button" id="market-open">Sell / market</button>
         <button type="button" id="new-farm">${COPY.newFarmLabel}</button>
       </div>
     </header>
     <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
+    <article class="event-card" id="event-card" hidden>
+      <h3 id="event-title"></h3>
+      <p id="event-body"></p>
+      <button type="button" class="pill-btn ghost" id="event-dismiss">OK</button>
+    </article>
     <section class="sheet" id="herd-sheet" hidden data-expanded="false">
       <div class="sheet-summary" id="sheet-summary" role="button" tabindex="0" aria-expanded="false">
         <span class="sheet-line" id="sheet-line"></span>
@@ -105,6 +122,7 @@ export function mountHud(options: {
       </div>
     </section>
     <canvas class="minimap" id="minimap" width="232" height="232" aria-label="Camp minimap. Tap to look there. With the herd selected, tap a camp to move it."></canvas>
+    <button type="button" class="chip herd-locator" id="herd-locator" hidden>→ Herd</button>
   `;
 
   const dateEl = required(root, "stat-date");
@@ -134,12 +152,19 @@ export function mountHud(options: {
   const moveConfirmText = required(root, "move-confirm-text");
   const moveConfirmBtn = requiredButton(root, "move-confirm-btn");
   const moveCancelBtn = requiredButton(root, "move-cancel-btn");
+  const marketBtn = requiredButton(root, "market-open");
   const overflowBtn = requiredButton(root, "menu-overflow");
+  const eventCard = required(root, "event-card");
+  const eventTitle = required(root, "event-title");
+  const eventBody = required(root, "event-body");
+  const eventDismiss = requiredButton(root, "event-dismiss");
   const overflowMenu = required(root, "overflow-menu");
   const newFarmBtn = requiredButton(root, "new-farm");
   const homeBtn = requiredButton(root, "view-home");
   const minimap = root.querySelector<HTMLCanvasElement>("#minimap");
   if (!minimap) throw new Error("Missing the minimap.");
+  const herdLocator = requiredButton(root, "herd-locator");
+  herdLocator.addEventListener("click", () => options.onHerdLocator?.());
 
   const buttons: Record<SpeedMode, HTMLButtonElement> = {
     pause: requiredButton(root, "speed-pause"),
@@ -148,6 +173,72 @@ export function mountHud(options: {
   };
   (Object.keys(buttons) as SpeedMode[]).forEach((mode) => {
     buttons[mode].addEventListener("click", () => options.onSpeed(mode));
+  });
+  marketBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    overflowMenu.hidden = true;
+    overflowBtn.setAttribute("aria-expanded", "false");
+    options.onOpenMarket();
+  });
+  let toastTimer: ReturnType<typeof setTimeout> | null = null;
+  let toastHeld = false;
+  let queuedHint: string | null = null;
+  let blockedText: string[] = [];
+
+  const tutorialOpen = (): boolean => {
+    const tutorial = document.getElementById("flow-tutorial");
+    return Boolean(tutorial && !tutorial.hidden);
+  };
+  const cardBlocksToast = (): boolean => toastHeld || tutorialOpen() || !eventCard.hidden;
+  const rememberBlockedCopy = (): void => {
+    const bits: string[] = [];
+    const push = (value: string | null | undefined) => {
+      const text = value?.trim();
+      if (text) bits.push(text);
+    };
+    if (tutorialOpen() || toastHeld) {
+      push(document.getElementById("flow-tutorial-title")?.textContent);
+      push(document.getElementById("flow-tutorial-body")?.textContent);
+    }
+    if (!eventCard.hidden) {
+      push(eventTitle.textContent);
+      push(eventBody.textContent);
+    }
+    if (bits.length > 0) blockedText = bits;
+  };
+  const echoesCard = (text: string, bits: string[]): boolean =>
+    bits.some((bit) => bit.length > 8 && text.includes(bit));
+  const hideToast = (): void => {
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = null;
+    toastEl.classList.remove("is-visible");
+    toastEl.hidden = true;
+  };
+  const showToast = (text: string): void => {
+    toastEl.textContent = text;
+    toastEl.hidden = false;
+    toastEl.classList.add("is-visible");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      toastEl.classList.remove("is-visible");
+      toastTimer = setTimeout(() => {
+        toastEl.hidden = true;
+      }, 320);
+    }, 3000);
+  };
+  const flushQueuedToast = (): void => {
+    if (cardBlocksToast()) return;
+    const text = queuedHint;
+    const bits = blockedText;
+    queuedHint = null;
+    blockedText = [];
+    if (!text || echoesCard(text, bits)) return;
+    showToast(text);
+  };
+
+  eventDismiss.addEventListener("click", () => {
+    eventCard.hidden = true;
+    flushQueuedToast();
   });
   newFarmBtn.addEventListener("click", () => {
     overflowMenu.hidden = true;
@@ -198,7 +289,6 @@ export function mountHud(options: {
 
   let lastState: GameState | null = null;
   let expanded = false;
-  let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
   const syncChromeInsets = (): void => {
     const topbarH = root.querySelector<HTMLElement>(".topbar")?.getBoundingClientRect().height ?? 44;
@@ -220,6 +310,7 @@ export function mountHud(options: {
     sheet.dataset.expanded = expanded ? "true" : "false";
     summary.setAttribute("aria-expanded", expanded ? "true" : "false");
     sheetDetail.hidden = !expanded;
+    if (expanded) options.onSheetExpanded?.(true);
     syncChromeInsets();
   }
 
@@ -233,10 +324,11 @@ export function mountHud(options: {
     },
     update(state, ui) {
       lastState = state;
-      const dry = formatSeason(state.date) === "Dry season";
+      const seasonText = seasonLabelForHud(state);
+      const dry = !seasonText.toLowerCase().includes("rain");
       dateEl.textContent = formatHudDate(state.date);
       seasonEl.innerHTML = dry ? ICONS.dry : ICONS.rain;
-      seasonEl.title = formatSeason(state.date);
+      seasonEl.title = seasonText;
       cashEl.textContent = formatHudMoney(state.cashNad);
       rainEl.textContent = formatHudRain(state.seasonRainMm);
       rainEl.classList.toggle("is-raining", state.todayRainMm > 0);
@@ -309,18 +401,54 @@ export function mountHud(options: {
         buttons[key].setAttribute("aria-pressed", key === mode ? "true" : "false");
       });
     },
+    clearHint() {
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = null;
+      toastEl.classList.remove("is-visible");
+      toastEl.hidden = true;
+      toastEl.textContent = "";
+    },
     setHint(text) {
       if (!text) return;
-      toastEl.textContent = text;
-      toastEl.hidden = false;
-      toastEl.classList.add("is-visible");
-      if (toastTimer) clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => {
-        toastEl.classList.remove("is-visible");
-        toastTimer = setTimeout(() => {
-          toastEl.hidden = true;
-        }, 320);
-      }, 3000);
+      if (cardBlocksToast()) {
+        rememberBlockedCopy();
+        queuedHint = echoesCard(text, blockedText) ? queuedHint : text;
+        hideToast();
+        return;
+      }
+      queuedHint = null;
+      showToast(text);
+    },
+    showEventCard(title, body) {
+      eventTitle.textContent = title;
+      eventBody.textContent = body;
+      eventCard.hidden = false;
+      rememberBlockedCopy();
+      if (!toastEl.hidden && toastEl.textContent && !echoesCard(toastEl.textContent, blockedText)) {
+        queuedHint = toastEl.textContent;
+      }
+      hideToast();
+    },
+    holdToasts() {
+      toastHeld = true;
+      rememberBlockedCopy();
+      if (!toastEl.hidden && toastEl.textContent && !echoesCard(toastEl.textContent, blockedText)) {
+        queuedHint = toastEl.textContent;
+      }
+      hideToast();
+    },
+    releaseToasts() {
+      toastHeld = false;
+      flushQueuedToast();
+    },
+    hideEventCard() {
+      eventCard.hidden = true;
+    },
+    setHerdLocator(visible, label, edge) {
+      herdLocator.hidden = !visible;
+      if (!visible) return;
+      herdLocator.textContent = label;
+      herdLocator.dataset.edge = edge;
     },
     destroy() {
       if (toastTimer) clearTimeout(toastTimer);

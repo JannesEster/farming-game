@@ -233,8 +233,100 @@ export function boundsFromPoints(
   };
 }
 
+export function mergeViewBounds(a: WorldBounds, b: WorldBounds, padPx = 0): WorldBounds {
+  return {
+    minX: Math.min(a.minX, b.minX) - padPx,
+    minY: Math.min(a.minY, b.minY) - padPx,
+    maxX: Math.max(a.maxX, b.maxX) + padPx,
+    maxY: Math.max(a.maxY, b.maxY) + padPx,
+  };
+}
+
+export function openingFrameBounds(
+  homestead: WorldBounds,
+  herdX: number,
+  herdY: number,
+  padPx: number,
+): WorldBounds {
+  const herdPad = padPx * 2.2;
+  const herdBox: WorldBounds = {
+    minX: herdX - herdPad,
+    minY: herdY - herdPad,
+    maxX: herdX + herdPad,
+    maxY: herdY + herdPad,
+  };
+  return mergeViewBounds(homestead, herdBox, padPx);
+}
+
+/**
+ * Zoom and scroll that fit a world rectangle inside the clear band
+ * (below the top bar, above the sheet and minimap).
+ */
+export function frameWorldRectInClearBand(
+  bounds: WorldBounds,
+  screenW: number,
+  screenH: number,
+  insets: ViewInsets,
+  minZoom: number,
+  maxZoom: number,
+  margin = CAMERA_CLEAR_MARGIN_PX,
+): { zoom: number; scrollX: number; scrollY: number } {
+  const top = insets.top + margin;
+  const bottom = insets.bottom + margin;
+  const left = insets.left + margin;
+  const right = insets.right + margin;
+  const contentW = Math.max(1, screenW - left - right);
+  const contentH = Math.max(1, screenH - top - bottom);
+  const worldW = Math.max(1, bounds.maxX - bounds.minX);
+  const worldH = Math.max(1, bounds.maxY - bounds.minY);
+  const zoom = clamp(Math.min(contentW / worldW, contentH / worldH), minZoom, maxZoom);
+  const screenCx = left + contentW / 2;
+  const screenCy = top + contentH / 2;
+  return {
+    zoom,
+    scrollX: scrollXForWorldAtScreenX((bounds.minX + bounds.maxX) / 2, screenW, zoom, screenCx),
+    scrollY: scrollYForWorldAtScreenY((bounds.minY + bounds.maxY) / 2, screenH, zoom, screenCy),
+  };
+}
+
 export function boundsCenter(bounds: WorldBounds): { x: number; y: number } {
   return { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
+}
+
+/** World rectangle visible inside HUD insets (Phaser 4 scroll coordinates). */
+export function visibleContentBounds(
+  scrollX: number,
+  scrollY: number,
+  screenW: number,
+  screenH: number,
+  zoom: number,
+  insets: ViewInsets,
+  margin = CAMERA_CLEAR_MARGIN_PX,
+): WorldBounds {
+  const top = insets.top + margin;
+  const bottom = insets.bottom + margin;
+  const left = insets.left + margin;
+  const right = insets.right + margin;
+  return {
+    minX: worldXAtScreenX(scrollX, screenW, zoom, left),
+    minY: worldYAtScreenY(scrollY, screenH, zoom, top),
+    maxX: worldXAtScreenX(scrollX, screenW, zoom, screenW - right),
+    maxY: worldYAtScreenY(scrollY, screenH, zoom, screenH - bottom),
+  };
+}
+
+export function boundsContainsPoint(
+  bounds: WorldBounds,
+  x: number,
+  y: number,
+  marginPx = 0,
+): boolean {
+  return (
+    x >= bounds.minX - marginPx &&
+    x <= bounds.maxX + marginPx &&
+    y >= bounds.minY - marginPx &&
+    y <= bounds.maxY + marginPx
+  );
 }
 
 /** Zoom so a world rectangle fills the given fraction of the viewport (0 to 1). */

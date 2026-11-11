@@ -1,4 +1,5 @@
 import type { GroundTexture } from "./colour";
+import { diamondPath, highlightStroke, isoShade, scatterNoise, softShadow } from "./paint";
 
 export const ART_ORIGIN = {
   diamond: { x: 0.5, y: 0 },
@@ -22,9 +23,14 @@ const TOWER_AXLE_Y = 22;
 
 export const WINDMILL_AXLE_LIFT = ART_ORIGIN.tower.y * TOWER_HEIGHT - TOWER_AXLE_Y;
 
+export type CowBreedArt = {
+  walk: HTMLCanvasElement[];
+  graze: HTMLCanvasElement[];
+};
+
 export type ArtSheet = {
   grounds: Record<GroundTexture, HTMLCanvasElement[]>;
-  cows: HTMLCanvasElement[];
+  cows: CowBreedArt[];
   tree: HTMLCanvasElement;
   treeDead: HTMLCanvasElement;
   bush: HTMLCanvasElement;
@@ -56,12 +62,30 @@ function hash(x: number, y: number): number {
   return Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
 }
 
-function dropShadow(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number): void {
-  ctx.fillStyle = "rgba(42, 20, 8, 0.32)";
-  ctx.beginPath();
-  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
-  ctx.fill();
+export function cowTextureKey(coat: number, walking: boolean, frame: number): string {
+  const kind = walking ? "w" : "g";
+  const max = walking ? 3 : 2;
+  const f = ((frame % max) + max) % max;
+  return `cow-${coat % 6}-${kind}${f}`;
 }
+
+type BreedPalette = {
+  body: string;
+  shadow: string;
+  pale: boolean;
+  patches?: boolean;
+  hump?: boolean;
+  name: string;
+};
+
+const BREEDS: BreedPalette[] = [
+  { name: "bonsmara", body: "#a24a28", shadow: "#6e2e18", pale: false },
+  { name: "brahman", body: "#c8b090", shadow: "#9a7860", pale: true, hump: true },
+  { name: "simmentaler", body: "#d4a868", shadow: "#a87838", pale: true },
+  { name: "nguni", body: "#8a4828", shadow: "#5a2810", pale: false, patches: true },
+  { name: "dark-bonsmara", body: "#7a3a20", shadow: "#4a2210", pale: false },
+  { name: "red-brahman", body: "#b88868", shadow: "#886048", pale: true, hump: true },
+];
 
 export function buildArt(tileWidth: number, tileHeight: number): ArtSheet {
   return {
@@ -71,14 +95,10 @@ export function buildArt(tileWidth: number, tileHeight: number): ArtSheet {
       yard: [0, 1, 2].map((variant) => drawSandDiamond(tileWidth, tileHeight, variant, true)),
       track: [0, 1].map((variant) => drawTrackDiamond(tileWidth, tileHeight, variant)),
     },
-    cows: [
-      drawCow("#a0522d", false),
-      drawCow("#8b4513", false),
-      drawCow("#6e341c", false),
-      drawCow("#c4a882", true),
-      drawCow("#d8c8b4", true),
-      drawCow("#7a5a3a", false),
-    ],
+    cows: BREEDS.map((breed, coat) => ({
+      walk: [0, 1, 2].map((frame) => drawCow(breed, frame, "walk", coat)),
+      graze: [0, 1].map((frame) => drawCow(breed, frame, "graze", coat)),
+    })),
     tree: drawAcacia(),
     treeDead: drawAcacia(true),
     bush: drawThornBush(),
@@ -120,189 +140,248 @@ export function herdLayout(count: number, seed: number, radiusX: number, radiusY
   return offsets;
 }
 
-function diamondPath(ctx: CanvasRenderingContext2D, w: number, h: number, pad: number): void {
-  ctx.beginPath();
-  ctx.moveTo(w / 2, pad);
-  ctx.lineTo(w - pad, h / 2);
-  ctx.lineTo(w / 2, h - pad);
-  ctx.lineTo(pad, h / 2);
-  ctx.closePath();
-}
-
 function drawGrassDiamond(tileWidth: number, tileHeight: number, variant: number): HTMLCanvasElement {
-  const bleed = 6;
+  const bleed = 8;
   const w = tileWidth + bleed;
   const h = tileHeight + bleed;
   return canvas(w, h, (ctx) => {
-    ctx.fillStyle = "#e8e0d0";
-    diamondPath(ctx, w, h, 2);
-    ctx.fill();
-    ctx.save();
-    diamondPath(ctx, w, h, 2);
-    ctx.clip();
-    for (let i = 0; i < 18 + variant * 3; i += 1) {
-      const px = 8 + ((i * 37 + variant * 11) % (w - 16));
-      const py = 6 + ((i * 53 + variant * 7) % (h - 12));
-      const tall = 4 + (i % 5);
-      ctx.strokeStyle = `rgba(90, 70, 40, ${0.08 + (i % 3) * 0.04})`;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(px, py);
-      ctx.lineTo(px + (i % 2 === 0 ? 1 : -1), py - tall);
-      ctx.stroke();
-    }
-    const patch = variant % 2 === 0 ? "rgba(180, 140, 60, 0.07)" : "rgba(120, 90, 50, 0.06)";
-    ctx.fillStyle = patch;
-    ctx.beginPath();
-    ctx.ellipse(w * (0.3 + variant * 0.15), h * 0.55, w * 0.22, h * 0.35, 0, 0, Math.PI * 2);
-    ctx.fill();
-  });
-}
-
-function drawSandDiamond(tileWidth: number, tileHeight: number, variant: number, yard: boolean): HTMLCanvasElement {
-  const bleed = 6;
-  const w = tileWidth + bleed;
-  const h = tileHeight + bleed;
-  const base = yard ? "#c86e42" : "#b85a34";
-  const dark = yard ? "#a85630" : "#9a4a28";
-  return canvas(w, h, (ctx) => {
+    const base = ctx.createLinearGradient(0, 0, w, h);
+    base.addColorStop(0, "#e8d8b8");
+    base.addColorStop(0.5, "#d8c8a0");
+    base.addColorStop(1, "#c8a878");
     ctx.fillStyle = base;
     diamondPath(ctx, w, h, 2);
     ctx.fill();
     ctx.save();
     diamondPath(ctx, w, h, 2);
     ctx.clip();
-    for (let i = 0; i < 24; i += 1) {
-      const px = ((i * 41 + variant * 13) % w);
-      const py = ((i * 29 + variant * 9) % h);
-      ctx.fillStyle = i % 3 === 0 ? dark : "#cd7848";
-      ctx.globalAlpha = 0.15 + (i % 4) * 0.06;
-      ctx.fillRect(px, py, 2, 1);
-    }
-    ctx.globalAlpha = 1;
-    if (variant === 1) {
-      ctx.strokeStyle = "rgba(110, 70, 40, 0.2)";
-      ctx.lineWidth = 1;
+    scatterNoise(
+      ctx,
+      w,
+      h,
+      28 + variant * 4,
+      variant + 2.1,
+      0.55,
+      ["#8a7038", "#a88848", "#6a5828", "#c8a060"],
+    );
+    for (let i = 0; i < 22 + variant * 4; i += 1) {
+      const px = 6 + ((i * 37 + variant * 11) % (w - 12));
+      const py = 5 + ((i * 53 + variant * 7) % (h - 10));
+      const tall = 3 + (i % 6) + variant;
+      const lean = i % 2 === 0 ? 1.2 : -1.1;
+      const hue = i % 3 === 0 ? "rgba(110, 90, 48," : "rgba(70, 90, 38,";
+      ctx.strokeStyle = `${hue}${0.14 + (i % 4) * 0.05})`;
+      ctx.lineWidth = 1.1;
       ctx.beginPath();
-      ctx.moveTo(w * 0.2, h * 0.6);
-      ctx.lineTo(w * 0.75, h * 0.45);
+      ctx.moveTo(px, py);
+      ctx.quadraticCurveTo(px + lean, py - tall * 0.55, px + lean * 1.6, py - tall);
       ctx.stroke();
     }
+    ctx.fillStyle = variant % 2 === 0 ? "rgba(160, 120, 50, 0.08)" : "rgba(90, 120, 50, 0.06)";
+    ctx.beginPath();
+    ctx.ellipse(w * (0.28 + variant * 0.14), h * 0.52, w * 0.24, h * 0.34, 0.15, 0, Math.PI * 2);
+    ctx.fill();
+    isoShade(ctx, w, h, 0.16);
+    highlightStroke(ctx, w, h, 2);
+    ctx.restore();
   });
 }
 
-function drawTrackDiamond(tileWidth: number, tileHeight: number, variant: number): HTMLCanvasElement {
-  const bleed = 6;
+function drawSandDiamond(tileWidth: number, tileHeight: number, variant: number, yard: boolean): HTMLCanvasElement {
+  const bleed = 8;
   const w = tileWidth + bleed;
   const h = tileHeight + bleed;
   return canvas(w, h, (ctx) => {
-    ctx.fillStyle = "#a05830";
+    const grd = ctx.createLinearGradient(0, 0, w, h);
+    const top = yard ? "#e09868" : "#d07848";
+    const mid = yard ? "#c87040" : "#b86038";
+    const bot = yard ? "#a85030" : "#9a4828";
+    grd.addColorStop(0, top);
+    grd.addColorStop(0.48, mid);
+    grd.addColorStop(1, bot);
+    ctx.fillStyle = grd;
     diamondPath(ctx, w, h, 2);
     ctx.fill();
     ctx.save();
     diamondPath(ctx, w, h, 2);
     ctx.clip();
-    ctx.fillStyle = "#7a4018";
-    for (const lane of variant === 0 ? [0.38, 0.62] : [0.42, 0.58]) {
+    scatterNoise(ctx, w, h, 36, variant + (yard ? 0.9 : 0), 0.7, ["#c88858", "#a04828", "#e0a878", "#904830"]);
+    if (variant === 1) {
+      ctx.strokeStyle = "rgba(90, 55, 28, 0.22)";
+      ctx.lineWidth = 1.2;
       ctx.beginPath();
-      ctx.ellipse(w * lane, h * 0.5, w * 0.06, h * 0.42, 0, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.moveTo(w * 0.18, h * 0.62);
+      ctx.quadraticCurveTo(w * 0.45, h * 0.48, w * 0.78, h * 0.42);
+      ctx.stroke();
     }
-    ctx.strokeStyle = "rgba(60, 32, 16, 0.35)";
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.moveTo(w * 0.15, h * 0.35);
-    ctx.lineTo(w * 0.85, h * 0.65);
-    ctx.stroke();
+    isoShade(ctx, w, h, 0.2);
+    highlightStroke(ctx, w, h, 2);
+    ctx.restore();
   });
 }
 
-function drawCow(coat: string, pale: boolean): HTMLCanvasElement {
-  return canvas(44, 36, (ctx) => {
-    dropShadow(ctx, 22, 30, 14, 5);
-    ctx.fillStyle = "#3a2010";
-    for (const [x, y] of [
-      [12, 28],
-      [18, 31],
-      [26, 28],
-      [32, 31],
+function drawTrackDiamond(tileWidth: number, tileHeight: number, variant: number): HTMLCanvasElement {
+  const bleed = 8;
+  const w = tileWidth + bleed;
+  const h = tileHeight + bleed;
+  return canvas(w, h, (ctx) => {
+    const grd = ctx.createLinearGradient(0, 0, w, h);
+    grd.addColorStop(0, "#b06838");
+    grd.addColorStop(1, "#8a4820");
+    ctx.fillStyle = grd;
+    diamondPath(ctx, w, h, 2);
+    ctx.fill();
+    ctx.save();
+    diamondPath(ctx, w, h, 2);
+    ctx.clip();
+    ctx.fillStyle = "#6a3816";
+    for (const lane of variant === 0 ? [0.36, 0.64] : [0.4, 0.6]) {
+      ctx.beginPath();
+      ctx.ellipse(w * lane, h * 0.5, w * 0.07, h * 0.44, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    scatterNoise(ctx, w, h, 18, variant + 4.2, 0.45, ["#5a3010", "#9a5830"]);
+    ctx.strokeStyle = "rgba(50, 28, 12, 0.38)";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(w * 0.12, h * 0.34);
+    ctx.lineTo(w * 0.88, h * 0.66);
+    ctx.stroke();
+    isoShade(ctx, w, h, 0.18);
+    highlightStroke(ctx, w, h, 2);
+    ctx.restore();
+  });
+}
+
+function drawCow(
+  breed: BreedPalette,
+  frame: number,
+  pose: "walk" | "graze",
+  coatSeed: number,
+): HTMLCanvasElement {
+  const w = 52;
+  const h = 42;
+  const step = pose === "walk" ? Math.sin((frame / 3) * Math.PI * 2) * 2.2 : frame * 0.35;
+  return canvas(w, h, (ctx) => {
+    softShadow(ctx, 26, 34, 16, 5.5, 0.36);
+    const hoofLift = pose === "walk" ? step : 0;
+    ctx.fillStyle = "#2e1a10";
+    for (const [x, y, lift] of [
+      [14, 32, -hoofLift],
+      [20, 34, hoofLift],
+      [30, 32, hoofLift * 0.7],
+      [36, 34, -hoofLift * 0.6],
     ] as const) {
       ctx.beginPath();
-      ctx.ellipse(x, y, 1.8, 2.6, 0, 0, Math.PI * 2);
+      ctx.ellipse(x, y + lift, 2, 2.8, 0, 0, Math.PI * 2);
       ctx.fill();
     }
-    ctx.fillStyle = coat;
+
+    const bodyGrad = ctx.createLinearGradient(8, 10, 40, 26);
+    bodyGrad.addColorStop(0, breed.body);
+    bodyGrad.addColorStop(0.55, breed.shadow);
+    bodyGrad.addColorStop(1, breed.body);
+    ctx.fillStyle = bodyGrad;
     ctx.beginPath();
-    ctx.ellipse(20, 18, 12, 7.5, -0.3, 0, Math.PI * 2);
+    ctx.ellipse(24, 20, 14, 8 + step * 0.15, -0.28, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = coat;
+
+    ctx.fillStyle = breed.body;
     ctx.beginPath();
-    ctx.ellipse(15, 13, 5, 4, -0.2, 0, Math.PI * 2);
+    ctx.ellipse(17, 14, 6, 5, -0.15, 0, Math.PI * 2);
     ctx.fill();
-    if (pale) {
-      ctx.fillStyle = "#f0e6d4";
+    if (breed.hump) {
+      ctx.fillStyle = breed.shadow;
       ctx.beginPath();
-      ctx.ellipse(14, 17, 5, 4, 0, 0, Math.PI * 2);
+      ctx.ellipse(26, 11, 5, 4.5, -0.4, 0, Math.PI * 2);
       ctx.fill();
     }
-    ctx.fillStyle = coat;
-    ctx.beginPath();
-    ctx.ellipse(32, 15, 5.5, 4, 0.25, 0, Math.PI * 2);
-    ctx.fill();
-    if (!pale) {
-      ctx.fillStyle = "#6a3a22";
+    if (breed.pale && !breed.patches) {
+      ctx.fillStyle = "#f0e6d0";
       ctx.beginPath();
-      ctx.ellipse(21, 14, 4, 2.5, 0, 0, Math.PI * 2);
+      ctx.ellipse(17, 18, 6, 4.5, 0.1, 0, Math.PI * 2);
       ctx.fill();
     }
+    if (breed.patches) {
+      ctx.fillStyle = "#f4ece0";
+      ctx.beginPath();
+      ctx.ellipse(28, 18, 5, 4, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#1a1008";
+      ctx.beginPath();
+      ctx.ellipse(22 + (coatSeed % 3), 21, 3.5, 2.8, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = bodyGrad;
+    ctx.beginPath();
+    ctx.ellipse(36, 15, 6, 4.5, 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    if (!breed.pale && !breed.patches) {
+      ctx.fillStyle = breed.shadow;
+      ctx.beginPath();
+      ctx.ellipse(23, 14, 4.5, 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const headY = pose === "graze" ? 18 + frame * 1.2 : 14 - step * 0.2;
     ctx.strokeStyle = "#2a1810";
-    ctx.lineWidth = 1.2;
+    ctx.lineWidth = 1.3;
     ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(34, 13);
-    ctx.lineTo(37, 9);
-    ctx.moveTo(30, 12);
-    ctx.lineTo(28, 9);
+    ctx.moveTo(38, headY);
+    ctx.lineTo(41, headY - 4);
+    ctx.moveTo(34, headY - 1);
+    ctx.lineTo(32, headY - 4);
     ctx.stroke();
     ctx.fillStyle = "#1a1008";
     ctx.beginPath();
-    ctx.arc(36, 13, 1.2, 0, Math.PI * 2);
+    ctx.arc(40, headY, 1.3, 0, Math.PI * 2);
     ctx.fill();
+    if (pose === "graze") {
+      ctx.fillStyle = "rgba(90, 120, 50, 0.55)";
+      ctx.beginPath();
+      ctx.ellipse(42, headY + 3, 4, 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
   });
 }
 
 function drawAcacia(dead = false): HTMLCanvasElement {
-  return canvas(112, 96, (ctx) => {
-    dropShadow(ctx, 56, 86, 30, 9);
+  return canvas(124, 108, (ctx) => {
+    softShadow(ctx, 62, 94, 34, 10, 0.38);
     const trunk = dead ? "#5a4030" : "#6a4832";
-    const canopy = dead ? "#4a5038" : "#3a5e2c";
-    const highlight = dead ? "#5a6048" : "#5a8a3a";
-    ctx.fillStyle = trunk;
-    ctx.fillRect(50, 54, 12, 30);
-    ctx.fillRect(46, 68, 6, 14);
-    ctx.fillRect(60, 66, 5, 12);
+    const trunkHi = dead ? "#6a5040" : "#8a6848";
+    const canopy = dead ? "#4a5038" : "#3a5828";
+    const highlight = dead ? "#5a6048" : "#6a9838";
+    const trunkGrad = ctx.createLinearGradient(48, 50, 68, 90);
+    trunkGrad.addColorStop(0, trunkHi);
+    trunkGrad.addColorStop(1, trunk);
+    ctx.fillStyle = trunkGrad;
+    ctx.fillRect(54, 56, 14, 34);
+    ctx.fillRect(49, 70, 7, 16);
+    ctx.fillRect(64, 68, 6, 14);
     ctx.fillStyle = canopy;
     ctx.beginPath();
-    ctx.ellipse(56, 48, 46, 14, 0, 0, Math.PI * 2);
+    ctx.ellipse(62, 46, 50, 16, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = highlight;
     ctx.beginPath();
-    ctx.ellipse(52, 42, 38, 11, 0, 0, Math.PI * 2);
+    ctx.ellipse(58, 38, 42, 12, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = dead ? "#6a7048" : "#78a048";
+    ctx.fillStyle = dead ? "#6a7048" : "#88b050";
     ctx.beginPath();
-    ctx.ellipse(40, 40, 16, 8, 0, 0, Math.PI * 2);
+    ctx.ellipse(44, 36, 18, 9, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "rgba(42, 28, 16, 0.15)";
+    scatterNoise(ctx, 124, 70, 12, dead ? 1.2 : 3.4, 0.35, ["#98c058", "#4a6828"]);
+    ctx.fillStyle = "rgba(42, 28, 16, 0.14)";
     ctx.beginPath();
-    ctx.ellipse(56, 52, 44, 8, 0, 0, Math.PI * 2);
+    ctx.ellipse(62, 52, 48, 9, 0, 0, Math.PI * 2);
     ctx.fill();
   });
 }
 
 function drawThornBush(): HTMLCanvasElement {
-  return canvas(52, 40, (ctx) => {
-    dropShadow(ctx, 26, 32, 16, 5);
+  return canvas(56, 44, (ctx) => {
+    softShadow(ctx, 28, 36, 18, 5.5, 0.34);
     const greens = ["#4a5428", "#5a6830", "#6a7434"];
     for (let i = 0; i < 5; i += 1) {
       ctx.fillStyle = greens[i % greens.length];
@@ -326,8 +405,8 @@ function drawThornBush(): HTMLCanvasElement {
 }
 
 function drawTermite(): HTMLCanvasElement {
-  return canvas(36, 28, (ctx) => {
-    dropShadow(ctx, 18, 24, 10, 4);
+  return canvas(40, 32, (ctx) => {
+    softShadow(ctx, 20, 27, 11, 4.5, 0.32);
     ctx.fillStyle = "#8a6a48";
     ctx.beginPath();
     ctx.ellipse(18, 18, 14, 9, 0, 0, Math.PI * 2);
@@ -346,8 +425,8 @@ function drawTermite(): HTMLCanvasElement {
 }
 
 function drawFarmhouse(): HTMLCanvasElement {
-  return canvas(140, 118, (ctx) => {
-    dropShadow(ctx, 70, 106, 38, 10);
+  return canvas(152, 128, (ctx) => {
+    softShadow(ctx, 76, 114, 42, 11, 0.4);
     const cream = "#efe4cc";
     const creamDark = "#d8c8a8";
     const roof = "#8a9498";
@@ -425,8 +504,8 @@ function drawFarmhouse(): HTMLCanvasElement {
 }
 
 function drawShed(): HTMLCanvasElement {
-  return canvas(72, 56, (ctx) => {
-    dropShadow(ctx, 36, 50, 22, 6);
+  return canvas(78, 60, (ctx) => {
+    softShadow(ctx, 39, 54, 24, 6.5, 0.34);
     ctx.fillStyle = "#c8b8a0";
     ctx.beginPath();
     ctx.moveTo(10, 28);
@@ -455,8 +534,8 @@ function drawShed(): HTMLCanvasElement {
 }
 
 function drawTower(): HTMLCanvasElement {
-  return canvas(48, TOWER_HEIGHT, (ctx) => {
-    dropShadow(ctx, 24, 118, 14, 5);
+  return canvas(52, TOWER_HEIGHT, (ctx) => {
+    softShadow(ctx, 26, 118, 15, 5.5, 0.34);
     ctx.strokeStyle = "#5c4030";
     ctx.lineWidth = 2.4;
     ctx.beginPath();
@@ -516,8 +595,8 @@ function drawBlades(): HTMLCanvasElement {
 }
 
 function drawKraal(): HTMLCanvasElement {
-  return canvas(128, 80, (ctx) => {
-    dropShadow(ctx, 64, 68, 34, 8);
+  return canvas(136, 88, (ctx) => {
+    softShadow(ctx, 68, 74, 36, 9, 0.36);
     const posts = 20;
     for (let i = 0; i < posts; i += 1) {
       const angle = (Math.PI * 2 * i) / posts;
@@ -547,8 +626,8 @@ function drawKraal(): HTMLCanvasElement {
 }
 
 function drawReservoir(): HTMLCanvasElement {
-  return canvas(96, 62, (ctx) => {
-    dropShadow(ctx, 48, 54, 28, 7);
+  return canvas(104, 68, (ctx) => {
+    softShadow(ctx, 52, 58, 30, 7.5, 0.34);
     ctx.fillStyle = "#a8a098";
     ctx.beginPath();
     ctx.ellipse(48, 34, 40, 18, 0, 0, Math.PI * 2);
@@ -572,8 +651,8 @@ function drawReservoir(): HTMLCanvasElement {
 }
 
 function drawTrough(): HTMLCanvasElement {
-  return canvas(44, 28, (ctx) => {
-    dropShadow(ctx, 22, 24, 14, 4);
+  return canvas(48, 32, (ctx) => {
+    softShadow(ctx, 24, 28, 15, 4.5, 0.32);
     ctx.fillStyle = "#6a4a30";
     ctx.beginPath();
     ctx.moveTo(4, 10);
@@ -601,8 +680,8 @@ function drawTrough(): HTMLCanvasElement {
 }
 
 function drawBakkie(): HTMLCanvasElement {
-  return canvas(64, 40, (ctx) => {
-    dropShadow(ctx, 32, 34, 22, 6);
+  return canvas(72, 46, (ctx) => {
+    softShadow(ctx, 36, 40, 24, 6.5, 0.34);
     ctx.fillStyle = "#e8ece8";
     ctx.beginPath();
     ctx.moveTo(6, 20);
@@ -625,8 +704,8 @@ function drawBakkie(): HTMLCanvasElement {
 }
 
 function drawGarden(): HTMLCanvasElement {
-  return canvas(52, 36, (ctx) => {
-    dropShadow(ctx, 26, 30, 18, 5);
+  return canvas(56, 40, (ctx) => {
+    softShadow(ctx, 28, 34, 19, 5.5, 0.3);
     ctx.strokeStyle = "#8a6a48";
     ctx.strokeRect(8, 12, 36, 18);
     ctx.fillStyle = "#4a6a32";
@@ -639,7 +718,7 @@ function drawGarden(): HTMLCanvasElement {
 }
 
 export function maybeTermiteAt(x: number, y: number): boolean {
-  return hash(x, y) > 0.96;
+  return hash(x, y) > 0.992;
 }
 
 export function treeDeadAt(x: number, y: number): boolean {
