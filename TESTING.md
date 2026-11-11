@@ -16,7 +16,7 @@ Stay in portrait. Drag the land with one finger. When you let go, the map should
 
 Double tap an open part of the map (not on the cattle). The view should jump back to the homestead, same as **Home**.
 
-Pinch all the way out. You should see **at least four camps** and their fences at once (not the whole 76 by 76 ranch as a tiny map). Use the minimap to jump elsewhere. After a minimap tap the main view should centre on that spot at a readable camp zoom.
+Pinch all the way out. The ranch must stay centred on screen (no flat orange field). You should see **at least four camps** and their **two wire** fences with dark posts. Use the minimap to jump elsewhere. After a full pinch-out, a minimap tap should still land on the tapped camp at about zoom 0.53. Cattle should read as small cows at the opening homestead zoom (not grey dots).
 
 ## 3. Landscape (about 1 minute)
 
@@ -28,7 +28,7 @@ Tap the cattle once. A card appears with the head count (120), condition, grass 
 
 ## 5. Move them (about 2 minutes)
 
-Tap a nearby camp. The cattle should tighten into a column, leave through the gate on the shared fence, and walk there in about 6 to 10 seconds on Play. A camp across the farm should take at most about 15 seconds. On Fast, the walk should take at least about 1.5 seconds. Pause should freeze the walk. When they arrive they spread out again. Grazing only resumes after arrival. The card then switches camp and days in this camp goes back to 0.
+Tap a nearby camp. The cattle should tighten into a column, leave through the gate on the shared fence, and walk there in about 6 to 10 seconds on Play. A camp across the farm should take at most about 15 seconds. On Fast, the walk should be clearly quicker than Play (several seconds faster on a long move) but never under about 1.5 seconds. The clock on the top bar should gain a few hours during the walk. Pause should freeze the walk and the clock. When they arrive they spread out again. Grazing only resumes after arrival. The card then switches camp and days in this camp goes back to 0.
 
 Tap the homestead. They should stay put, and the hint should say it is not a grazing camp.
 
@@ -42,7 +42,7 @@ Scroll to zoom on the pointer, drag to pan (with a short coast on release), clic
 
 ## Automated checks (developers)
 
-`npm test` covers pinch centre, pinch zoom clamps, homestead framing, pan friction, chunked ranch zoom limits, near gate selection, walk duration bounds, single-point transit advance, and seed 3300 camp sizes.
+`npm test` covers pinch centre, zoom scroll clamping, homestead framing, pan friction, chunked ranch zoom limits, fence wire separation, walk duration and game-clock cost, near gate selection, and seed 3300 camp sizes.
 
 ## If something is wrong
 

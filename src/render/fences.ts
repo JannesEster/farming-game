@@ -103,6 +103,22 @@ export function collectFenceSegments(
   return segments;
 }
 
+/** World px between the two fence wires so they read as separate strands at ~0.53 zoom. */
+export const FENCE_WIRE_STRAND_OFFSET_PX = 8;
+
+export function wireStrandOffset(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  offset = FENCE_WIRE_STRAND_OFFSET_PX,
+): { ox: number; oy: number } {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy) || 1;
+  return { ox: (-dy / len) * offset, oy: (dx / len) * offset };
+}
+
 function strokeDoubleWire(
   graphics: Phaser.GameObjects.Graphics,
   segment: FenceSegment,
@@ -110,11 +126,7 @@ function strokeDoubleWire(
   alpha: number,
   width: number,
 ): void {
-  const dx = segment.x2 - segment.x1;
-  const dy = segment.y2 - segment.y1;
-  const len = Math.hypot(dx, dy) || 1;
-  const ox = (-dy / len) * 2.2;
-  const oy = (dx / len) * 2.2;
+  const { ox, oy } = wireStrandOffset(segment.x1, segment.y1, segment.x2, segment.y2);
   graphics.lineStyle(width, colour, alpha);
   for (const sign of [-1, 1]) {
     graphics.beginPath();

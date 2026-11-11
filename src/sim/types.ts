@@ -3,7 +3,7 @@ export const TILE_OUTSIDE = -2;
 
 export type TilePoint = { x: number; y: number };
 
-export type CalendarDate = { year: number; month: number; day: number };
+export type CalendarDate = { year: number; month: number; day: number; hour: number };
 
 export type FeatureKind =
   | "tree"
@@ -27,6 +27,10 @@ export type HerdTransit = {
   toCampId: number;
   progress: number;
   distanceKm: number;
+  /** Game hours this walk should cost on the ranch clock. */
+  walkGameHours: number;
+  /** Hours already applied to state.date during the walk. */
+  hoursApplied: number;
   /** Whole path as tile points, including anchors. */
   path: TilePoint[];
 };

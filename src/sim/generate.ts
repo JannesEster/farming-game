@@ -289,6 +289,7 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
       year: config.calendar.startYear,
       month: config.calendar.startMonth,
       day: config.calendar.startDay,
+      hour: config.calendar.startHour,
     },
     seasonRainMm: 0,
     todayRainMm: 0,

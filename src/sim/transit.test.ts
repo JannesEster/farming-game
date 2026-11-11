@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { CONFIG } from "./config";
 import { createGame, moveHerd, stepDayWithRain } from "./simulation";
-import { herdInTransit, moveDurationMs, tickTransitRealtime } from "./transit";
+import {
+  herdInTransit,
+  moveDurationMs,
+  tickTransitRealtime,
+  walkGameHours,
+} from "./transit";
 
 function finishTransitPlay(state: ReturnType<typeof createGame>): void {
   let guard = 0;
@@ -57,7 +62,27 @@ describe("herd transit", () => {
     expect(shortestMs).toBeGreaterThanOrEqual(CONFIG.transit.playMsMin);
     expect(shortestMs).toBeLessThanOrEqual(CONFIG.transit.playMsMax);
     expect(longestMs).toBeLessThanOrEqual(CONFIG.transit.playMsMax);
-    expect(moveDurationMs(maxKm, "fast", CONFIG)).toBeGreaterThanOrEqual(CONFIG.transit.fastMsMin);
+    const fastMax = moveDurationMs(maxKm, "fast", CONFIG);
+    const playMax = moveDurationMs(maxKm, "play", CONFIG);
+    expect(fastMax).toBeGreaterThanOrEqual(CONFIG.transit.fastMsMin);
+    expect(playMax - fastMax).toBeGreaterThanOrEqual(4000);
+  });
+
+  it("advances the game clock during a walk", () => {
+    const state = createGame(9);
+    const dest = state.camps.find((c) => c.id !== state.herd.campId);
+    if (!dest) throw new Error("expected destination");
+    moveHerd(state, dest.id);
+    const km = state.herd.transit!.distanceKm;
+    const expectedHours = walkGameHours(km, CONFIG);
+    expect(expectedHours).toBeGreaterThan(0.2);
+    const startTicks = state.date.day * 24 + state.date.hour;
+    tickTransitRealtime(state, 2000, "play", CONFIG);
+    expect(state.date.day * 24 + state.date.hour).toBeGreaterThanOrEqual(startTicks);
+    finishTransitPlay(state);
+    expect(state.date.day * 24 + state.date.hour).toBeGreaterThanOrEqual(
+      startTicks + Math.floor(expectedHours * 0.9),
+    );
   });
 
   it("blocks a second move while walking", () => {

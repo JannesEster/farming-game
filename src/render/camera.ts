@@ -1,6 +1,24 @@
 import { clamp } from "../sim/math";
 
 /** Scroll correction so zoom stays anchored on a screen point. */
+/** Scene scroll limits without Phaser camera bounds (allows negative scroll to centre the map). */
+export function clampCameraScroll(
+  scrollX: number,
+  scrollY: number,
+  layoutW: number,
+  layoutH: number,
+  viewW: number,
+  viewH: number,
+): { scrollX: number; scrollY: number } {
+  let sx = scrollX;
+  let sy = scrollY;
+  if (viewW >= layoutW) sx = (layoutW - viewW) / 2;
+  else sx = clamp(scrollX, 0, layoutW - viewW);
+  if (viewH >= layoutH) sy = (layoutH - viewH) / 2;
+  else sy = clamp(scrollY, 0, layoutH - viewH);
+  return { scrollX: sx, scrollY: sy };
+}
+
 export function zoomScrollDelta(
   beforeX: number,
   beforeY: number,

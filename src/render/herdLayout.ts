@@ -34,7 +34,7 @@ export function spreadInCamp(
       y: pt.y - center.y + jitterY,
       flip: next() > 0.5,
       coat: Math.floor(next() * 6),
-      scale: 0.26 + next() * 0.12,
+      scale: 0.62 + next() * 0.14,
     });
   }
   return offsets;
@@ -57,7 +57,7 @@ export function marchColumn(count: number, seed: number, dirX: number, dirY: num
       y: uy * along + py * across,
       flip: ux > 0,
       coat: Math.floor(next() * 6),
-      scale: 0.28 + next() * 0.1,
+      scale: 0.64 + next() * 0.12,
     });
   }
   return offsets;

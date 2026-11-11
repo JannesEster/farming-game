@@ -3,6 +3,7 @@ import {
   applyPanFriction,
   boundsCenter,
   boundsFromPoints,
+  clampCameraScroll,
   clampZoom,
   computeZoomLimits,
   fullMapZoom,
@@ -20,6 +21,22 @@ import { isoLayout } from "./iso";
 const TILE_W = 64;
 const TILE_H = 32;
 const PAD = 24;
+
+describe("clampCameraScroll", () => {
+  it("uses negative scroll to centre the map when the view is wider than the layout", () => {
+    const layoutW = 2400;
+    const viewW = 5200;
+    const result = clampCameraScroll(0, 0, layoutW, 1200, viewW, 800);
+    expect(result.scrollX).toBe((layoutW - viewW) / 2);
+    expect(result.scrollX).toBeLessThan(0);
+  });
+
+  it("clamps scroll when the view is smaller than the layout", () => {
+    const result = clampCameraScroll(9999, 9999, 2400, 1200, 400, 300);
+    expect(result.scrollX).toBe(2000);
+    expect(result.scrollY).toBe(900);
+  });
+});
 
 describe("zoom scroll correction", () => {
   it("keeps the world point under the pointer when zoom changes", () => {

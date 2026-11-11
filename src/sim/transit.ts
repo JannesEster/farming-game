@@ -1,3 +1,4 @@
+import { addHours } from "./calendar";
 import { clamp } from "./math";
 import { CONFIG, type GameConfig } from "./config";
 import { pointOnPath, planHerdPath, pathLengthKm } from "./path";
@@ -9,6 +10,11 @@ export function herdInTransit(herd: HerdState): boolean {
   return herd.transit !== null && herd.transit.progress < 1;
 }
 
+export function walkGameHours(distanceKm: number, config: GameConfig = CONFIG): number {
+  const speed = config.transit.walkSpeedKmH;
+  return Math.max(0.25, distanceKm / speed);
+}
+
 export function moveDurationMs(
   distanceKm: number,
   mode: TransitSpeed,
@@ -16,10 +22,20 @@ export function moveDurationMs(
 ): number {
   const span = config.transit.maxSpanKm;
   const t = clamp(distanceKm / span, 0, 1);
+  const play = config.transit.playMsMin + t * (config.transit.playMsMax - config.transit.playMsMin);
   if (mode === "fast") {
-    return config.transit.fastMsMin + t * (config.transit.fastMsMax - config.transit.fastMsMin);
+    const fast = play * config.transit.fastPlayFraction;
+    return Math.max(config.transit.fastMsMin, fast);
   }
-  return config.transit.playMsMin + t * (config.transit.playMsMax - config.transit.playMsMin);
+  return play;
+}
+
+function applyWalkHours(state: GameState, transit: NonNullable<HerdState["transit"]>): void {
+  const target = transit.progress * transit.walkGameHours;
+  const delta = target - transit.hoursApplied;
+  if (delta <= 0.001) return;
+  state.date = addHours(state.date, delta);
+  transit.hoursApplied = target;
 }
 
 /**
@@ -35,12 +51,18 @@ export function tickTransitRealtime(
   if (!transit || mode === "pause") return;
   const duration = moveDurationMs(transit.distanceKm, mode, config);
   transit.progress = Math.min(1, transit.progress + deltaMs / duration);
+  applyWalkHours(state, transit);
   if (transit.progress >= 1) finishTransit(state);
 }
 
 function finishTransit(state: GameState): void {
   const transit = state.herd.transit;
   if (!transit) return;
+  const remainder = transit.walkGameHours - transit.hoursApplied;
+  if (remainder > 0.001) {
+    state.date = addHours(state.date, remainder);
+    transit.hoursApplied = transit.walkGameHours;
+  }
   const dest = state.camps.find((c) => c.id === transit.toCampId);
   state.herd.campId = transit.toCampId;
   state.herd.daysInCamp = 0;
@@ -55,6 +77,8 @@ export function startHerdMove(state: GameState, toCampId: number, config: GameCo
     toCampId,
     progress: 0,
     distanceKm,
+    walkGameHours: walkGameHours(distanceKm, config),
+    hoursApplied: 0,
     path,
   };
 }

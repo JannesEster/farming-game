@@ -11,6 +11,7 @@ import {
   applyPanFriction,
   boundsCenter,
   boundsFromPoints,
+  clampCameraScroll,
   clampZoom,
   computeZoomLimits,
   homesteadBoundsPad,
@@ -125,7 +126,6 @@ export class FarmScene extends Phaser.Scene {
       .setDepth(20001)
       .setResolution(2);
     this.refreshHerdLabel();
-    this.cameras.main.setBounds(0, 0, this.layout.width, this.layout.height);
     this.layoutCamera(true);
     this.bindInput();
     this.hud = mountHud({
@@ -311,8 +311,8 @@ export class FarmScene extends Phaser.Scene {
     if (house) {
       const bakkieCenter = tileCenter(house.x + 2, house.y + 1, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
       const gardenCenter = tileCenter(house.x, house.y + 2, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
-      this.propSprites.push(this.footImage("bakkie", bakkieCenter.x, bakkieCenter.y, 12 + house.x + house.y, 0.95));
-      this.propSprites.push(this.footImage("garden", gardenCenter.x, gardenCenter.y, 11 + house.x + house.y, 1));
+      this.propSprites.push(this.footImage("bakkie", bakkieCenter.x, bakkieCenter.y, 12 + house.x + house.y, 1.22));
+      this.propSprites.push(this.footImage("garden", gardenCenter.x, gardenCenter.y, 11 + house.x + house.y, 1.28));
     }
   }
 
@@ -851,9 +851,15 @@ export class FarmScene extends Phaser.Scene {
     const camera = this.cameras.main;
     const viewW = camera.width / camera.zoom;
     const viewH = camera.height / camera.zoom;
-    if (viewW >= this.layout.width) camera.scrollX = (this.layout.width - viewW) / 2;
-    else camera.scrollX = clamp(camera.scrollX, 0, this.layout.width - viewW);
-    if (viewH >= this.layout.height) camera.scrollY = (this.layout.height - viewH) / 2;
-    else camera.scrollY = clamp(camera.scrollY, 0, this.layout.height - viewH);
+    const next = clampCameraScroll(
+      camera.scrollX,
+      camera.scrollY,
+      this.layout.width,
+      this.layout.height,
+      viewW,
+      viewH,
+    );
+    camera.scrollX = next.scrollX;
+    camera.scrollY = next.scrollY;
   }
 }

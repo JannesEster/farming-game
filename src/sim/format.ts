@@ -24,7 +24,9 @@ export const COPY = {
 
 export function formatDate(date: CalendarDate): string {
   const month = MONTHS[date.month - 1] ?? "";
-  return `${date.day} ${month} ${date.year}`;
+  const hour = date.hour ?? 0;
+  const hh = String(hour).padStart(2, "0");
+  return `${date.day} ${month} ${date.year}, ${hh}:00`;
 }
 
 export function formatSeason(date: CalendarDate, config: GameConfig = CONFIG): string {

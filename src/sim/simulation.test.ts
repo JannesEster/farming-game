@@ -218,33 +218,53 @@ describe("calendar and rain", () => {
   it("rolls months and leap days", () => {
     expect(daysInMonth(2027, 2)).toBe(28);
     expect(daysInMonth(2028, 2)).toBe(29);
-    expect(addDays({ year: 2027, month: 2, day: 28 }, 1)).toEqual({ year: 2027, month: 3, day: 1 });
-    expect(addDays({ year: 2028, month: 2, day: 28 }, 1)).toEqual({ year: 2028, month: 2, day: 29 });
-    expect(addDays({ year: 2026, month: 12, day: 31 }, 1)).toEqual({ year: 2027, month: 1, day: 1 });
-    expect(addDays({ year: 2026, month: 8, day: 1 }, 1)).toEqual({ year: 2026, month: 8, day: 2 });
+    expect(addDays({ year: 2027, month: 2, day: 28, hour: 0 }, 1)).toEqual({
+      year: 2027,
+      month: 3,
+      day: 1,
+      hour: 0,
+    });
+    expect(addDays({ year: 2028, month: 2, day: 28, hour: 0 }, 1)).toEqual({
+      year: 2028,
+      month: 2,
+      day: 29,
+      hour: 0,
+    });
+    expect(addDays({ year: 2026, month: 12, day: 31, hour: 0 }, 1)).toEqual({
+      year: 2027,
+      month: 1,
+      day: 1,
+      hour: 0,
+    });
+    expect(addDays({ year: 2026, month: 8, day: 1, hour: 0 }, 1)).toEqual({
+      year: 2026,
+      month: 8,
+      day: 2,
+      hour: 0,
+    });
   });
 
   it("labels the dry season and the November to April rains", () => {
-    expect(formatSeason({ year: 2026, month: 8, day: 1 })).toBe("Dry season");
-    expect(formatSeason({ year: 2026, month: 11, day: 1 })).toBe("Rainy season");
-    expect(formatSeason({ year: 2027, month: 4, day: 30 })).toBe("Rainy season");
-    expect(formatSeason({ year: 2027, month: 5, day: 1 })).toBe("Dry season");
+    expect(formatSeason({ year: 2026, month: 8, day: 1, hour: 0 })).toBe("Dry season");
+    expect(formatSeason({ year: 2026, month: 11, day: 1, hour: 0 })).toBe("Rainy season");
+    expect(formatSeason({ year: 2027, month: 4, day: 30, hour: 0 })).toBe("Rainy season");
+    expect(formatSeason({ year: 2027, month: 5, day: 1, hour: 0 })).toBe("Dry season");
     expect(isRainyMonth(1)).toBe(true);
     expect(isRainyMonth(7)).toBe(false);
-    expect(formatDate({ year: 2026, month: 8, day: 1 })).toBe("1 Aug 2026");
+    expect(formatDate({ year: 2026, month: 8, day: 1, hour: 6 })).toBe("1 Aug 2026, 06:00");
     expect(formatMoney(250000)).toBe("N$ 250,000");
   });
 
   it("resets season rain on 1 July and keeps June on the old total", () => {
     const state = createGame(4);
-    state.date = { year: 2027, month: 6, day: 30 };
+    state.date = { year: 2027, month: 6, day: 30, hour: 6 };
     state.seasonRainMm = 200;
     stepDayWithRain(state, 5);
     expect(state.seasonRainMm).toBeCloseTo(205);
-    expect(state.date).toEqual({ year: 2027, month: 7, day: 1 });
+    expect(state.date).toEqual({ year: 2027, month: 7, day: 1, hour: 6 });
     stepDayWithRain(state, 3);
     expect(state.seasonRainMm).toBeCloseTo(3);
-    expect(state.date).toEqual({ year: 2027, month: 7, day: 2 });
+    expect(state.date).toEqual({ year: 2027, month: 7, day: 2, hour: 6 });
   });
 
   it("puts most rain in November to April and none in July", () => {
@@ -254,7 +274,7 @@ describe("calendar and rain", () => {
       for (let month = 1; month <= 12; month += 1) {
         const days = daysInMonth(year, month);
         for (let day = 1; day <= days; day += 1) {
-          totals[month] += dailyRainMm({ year, month, day }, rng);
+          totals[month] += dailyRainMm({ year, month, day, hour: 12 }, rng);
         }
       }
     }

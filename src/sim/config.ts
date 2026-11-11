@@ -56,6 +56,7 @@ export type GameConfig = {
     startYear: number;
     startMonth: number;
     startDay: number;
+    startHour: number;
   };
   rain: {
     monthlyMeanMm: number[];
@@ -72,6 +73,8 @@ export type GameConfig = {
     fastMsMin: number;
     fastMsMax: number;
     minDistanceKm: number;
+    walkSpeedKmH: number;
+    fastPlayFraction: number;
   };
   map: {
     tilesX: number;
@@ -232,6 +235,7 @@ export const CONFIG: GameConfig = {
     startYear: 2026,
     startMonth: 8,
     startDay: 1,
+    startHour: 6,
   },
 
   rain: {
@@ -257,8 +261,12 @@ export const CONFIG: GameConfig = {
     playMsMin: 6000,
     playMsMax: 15000,
     fastMsMin: 1500,
-    fastMsMax: 12000,
+    fastMsMax: 4500,
     minDistanceKm: 0.15,
+    /** Herd walk speed on farm roads for the game clock. */
+    walkSpeedKmH: 3,
+    /** Realtime fast mode is this fraction of play duration (never below fastMsMin). */
+    fastPlayFraction: 0.22,
   },
 
   map: {
