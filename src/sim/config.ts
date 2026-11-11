@@ -154,6 +154,8 @@ export type GameConfig = {
       kraal: { x: number; y: number };
       shed: { x: number; y: number };
     };
+    /** Place the opening herd in the grazing camp beside the homestead yard. */
+    herdStartNearYard?: boolean;
   };
   view: {
     tileWidth: number;

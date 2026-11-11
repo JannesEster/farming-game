@@ -6,7 +6,7 @@ import "./style.css";
 const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: "game",
-  backgroundColor: "#c56a32",
+  backgroundColor: "#3b2a1e",
   banner: false,
   disableContextMenu: true,
   scale: {

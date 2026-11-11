@@ -2,19 +2,14 @@ import Phaser from "phaser";
 import { CONFIG } from "../sim/config";
 import type { GameState } from "../sim/types";
 import { tileTop, type IsoLayout } from "./iso";
-import {
-  groundTexture,
-  paintedTileAlpha,
-  paintedTileKey,
-  paintedTileRotation,
-  paintedTileTint,
-  terrainVariant,
-} from "./colour";
+import { groundTexture, paintedGroundStamps, terrainVariant } from "./colour";
 import { groundTextureKey } from "./art";
 import { PAINTED_TILE_NATIVE_W } from "./sprites";
 
+import type { PaintedGroundStamp } from "./colour";
+
 export type GroundBakeTarget =
-  | { mode: "painted"; key: string; alpha: number; rotation: number; tint: number }
+  | { mode: "painted"; stamps: PaintedGroundStamp[] }
   | { mode: "procedural"; key: string; tint: number };
 
 export function groundBakeTarget(
@@ -25,20 +20,14 @@ export function groundBakeTarget(
   painted: boolean,
 ): GroundBakeTarget {
   if (painted) {
-    return {
-      mode: "painted",
-      key: paintedTileKey(state, x, y, track),
-      alpha: paintedTileAlpha(state, x, y, track),
-      rotation: paintedTileRotation(x, y),
-      tint: paintedTileTint(state, x, y, track),
-    };
+    return { mode: "painted", stamps: paintedGroundStamps(state, x, y, track) };
   }
   const kind = groundTexture(state, x, y, track);
   const variant = terrainVariant(x, y, kind);
   return {
     mode: "procedural",
     key: groundTextureKey(kind, variant),
-    tint: kind === "grass" ? paintedTileTint(state, x, y, track) : 0xffffff,
+    tint: 0xffffff,
   };
 }
 
@@ -87,17 +76,19 @@ export function bakeTerrainChunk(
     const localX = stamp.x - minX + pad;
     const localY = stamp.y - minY + pad;
     const { target } = stamp;
-    if (!scene.textures.exists(target.key)) continue;
     if (target.mode === "painted") {
       const scale = (tileW + 10) / PAINTED_TILE_NATIVE_W;
-      rt.stamp(target.key, undefined, localX, localY, {
-        originX: 0.5,
-        originY: 0,
-        scale,
-        angle: (target.rotation * 180) / Math.PI,
-        alpha: target.alpha,
-        tint: target.tint,
-      });
+      for (const layer of target.stamps) {
+        if (!scene.textures.exists(layer.key)) continue;
+        rt.stamp(layer.key, undefined, localX, localY, {
+          originX: 0.5,
+          originY: 0,
+          scale,
+          angle: (layer.rotation * 180) / Math.PI,
+          alpha: layer.alpha,
+          tint: layer.tint,
+        });
+      }
     } else {
       rt.draw(target.key, localX, localY);
     }

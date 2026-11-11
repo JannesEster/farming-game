@@ -11,6 +11,7 @@ export type OfferGenParams = {
   herdHead: number;
   herdName: string;
   mapSeed: number;
+  herdStartNearYard?: boolean;
 };
 
 export function buildGameConfig(params: OfferGenParams): GameConfig {
@@ -50,6 +51,7 @@ export function buildGameConfig(params: OfferGenParams): GameConfig {
       treeChance: region.terrain.treeChance,
       bushChanceOpen: region.terrain.bushChanceOpen,
       bushChanceBushy: region.terrain.bushChanceBushy,
+      herdStartNearYard: params.herdStartNearYard ?? false,
     },
     economy: {
       ...CONFIG.economy,

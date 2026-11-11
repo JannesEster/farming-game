@@ -70,4 +70,26 @@ describe("farm picker offers", () => {
     expect(otjo.previewState.camps.length).not.toBe(oma.previewState.camps.length);
     expect(otjo.seed).toBe(3300);
   });
+
+  it("starts Otjozondjupa herd in the camp beside the yard", () => {
+    const otjo = offers.find((o) => o.id === "otjozondjupa-ranch")!;
+    const state = otjo.previewState;
+    const width = state.width;
+    const grid = state.campIds;
+    const herdCamp = state.camps.find((c) => c.id === state.herd.campId)!;
+    let touchesYard = false;
+    for (const tile of herdCamp.tiles) {
+      const neighbors = [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ] as const;
+      for (const [dx, dy] of neighbors) {
+        const id = grid[(tile.y + dy) * width + (tile.x + dx)];
+        if (id === -1) touchesYard = true;
+      }
+    }
+    expect(touchesYard).toBe(true);
+  });
 });

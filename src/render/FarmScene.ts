@@ -9,11 +9,7 @@ import { campIdAt, moveHerd, stepDay } from "../sim/simulation";
 import { herdInTransit, herdWorldTile, pathTangent, tickTransitRealtime } from "../sim/transit";
 import {
   PAN_INERTIA,
-  HOMESTEAD_KINDS,
   applyPanFriction,
-  boundsCenter,
-  boundsFromPoints,
-  openingFrameBounds,
   clampCameraScrollWithInsets,
   scrollToLayoutTip,
   worldXAtScreenX,
@@ -21,18 +17,14 @@ import {
   type LayoutTip,
   clampZoom,
   computeZoomLimits,
-  homesteadBoundsPad,
   maxOnScreenTileBudget,
   minimapTileFromNormalized,
   pinchCenter,
   pinchZoom,
   boundsContainsPoint,
-  preferredHomesteadZoom,
   readableCampZoom,
   visibleContentBounds,
   zoomScrollDelta,
-  zoomToFrameBounds,
-  type WorldBounds,
   type ZoomTargets,
 } from "./camera";
 import { grazeableFraction } from "../sim/pasture";
@@ -131,7 +123,6 @@ export class FarmScene extends Phaser.Scene {
   private lastTapAt = 0;
   private lastTapX = 0;
   private lastTapY = 0;
-  private homesteadBounds: WorldBounds | null = null;
   private herdLabel?: Phaser.GameObjects.Text;
   private herdVisual = { x: 0, y: 0 };
   private campLabels = new Map<number, Phaser.GameObjects.Text>();
@@ -171,7 +162,6 @@ export class FarmScene extends Phaser.Scene {
     this.rain = this.add.graphics().setScrollFactor(0).setDepth(30000);
     this.syncHerdFromSim();
     this.spawnCows();
-    this.homesteadBounds = this.buildHomesteadBounds();
     this.herdLabel = this.add
       .text(this.herdVisual.x, this.herdVisual.y - 52, "", {
         fontFamily: "Segoe UI, Helvetica Neue, sans-serif",
@@ -197,6 +187,7 @@ export class FarmScene extends Phaser.Scene {
       onCancelMove: () => this.cancelPendingMove(),
       onOpenMarket: () => this.market.open(),
       onSheetExpanded: () => getGameFlow().notifySim("grassChecked"),
+      onHerdLocator: () => this.jumpCameraTo(this.herdVisual.x, this.herdVisual.y, true),
     });
     this.market = mountMarketSheet({
       getState: () => this.state,
@@ -307,7 +298,7 @@ export class FarmScene extends Phaser.Scene {
         const dest = this.state.camps.find((camp) => camp.id >= 0 && camp.id !== from);
         return dest?.id ?? null;
       },
-      frameHomestead: (close = false) => {
+      frameHomestead: (_close = false) => {
         this.panVel = null;
         const camera = this.cameras.main;
         this.refreshZoomLimits();
@@ -318,35 +309,12 @@ export class FarmScene extends Phaser.Scene {
           ? tileCenter(house.x + 0.5, house.y + 0.5, this.layout, tileW, tileH)
           : { x: this.herdVisual.x, y: this.herdVisual.y };
 
-        const insets = viewportCameraInsets();
-        const contentW = Math.max(1, camera.width - insets.left - insets.right);
-        const contentH = Math.max(1, camera.height - insets.top - insets.bottom);
-
-        if (close) {
-          camera.setZoom(clampZoom(1.15, this.minZoom, this.maxZoom));
-          camera.centerOn(housePt.x, housePt.y);
-        } else {
-          const pad = homesteadBoundsPad(tileW, tileH) * 0.65;
-          const houseBox = boundsFromPoints([housePt], pad * 1.25);
-          const frame = houseBox
-            ? openingFrameBounds(houseBox, this.herdVisual.x, this.herdVisual.y, pad)
-            : boundsFromPoints([housePt, { x: this.herdVisual.x, y: this.herdVisual.y }], pad);
-          if (frame) {
-            const fitZoom = zoomToFrameBounds(frame, contentW, contentH, 0.78);
-            const readableFloor = (CONFIG.view.phoneTilePx * 0.9) / tileW;
-            const framedZoom =
-              fitZoom >= readableFloor * 0.92
-                ? clampZoom(Math.max(fitZoom, readableFloor), this.minZoom, this.maxZoom)
-                : clampZoom(fitZoom, this.minZoom, this.maxZoom);
-            const center = boundsCenter(frame);
-            camera.setZoom(framedZoom);
-            camera.centerOn(center.x, center.y);
-          } else {
-            this.layoutCamera(true);
-          }
-        }
+        const yardZoom = 1.15;
+        camera.setZoom(clampZoom(yardZoom, this.minZoom, this.maxZoom));
+        camera.centerOn(housePt.x, housePt.y);
         this.clampScroll();
         this.placeHerd(performance.now());
+        const insets = viewportCameraInsets();
         const view = visibleContentBounds(
           camera.scrollX,
           camera.scrollY,
@@ -488,9 +456,36 @@ export class FarmScene extends Phaser.Scene {
     if (this.blades && !this.reduceMotion && !this.paintedSprites) {
       this.blades.rotation += (delta / 1000) * CONFIG.view.windmillRadiansPerSecond;
     }
+    this.syncHerdLocator();
     this.applyPanInertia(delta);
     this.drawRain(time);
     this.drawRing();
+  }
+
+  private syncHerdLocator(): void {
+    const camera = this.cameras.main;
+    const insets = viewportCameraInsets();
+    const view = visibleContentBounds(
+      camera.scrollX,
+      camera.scrollY,
+      camera.width,
+      camera.height,
+      camera.zoom,
+      insets,
+    );
+    const tileW = CONFIG.view.tileWidth;
+    const herdSeen = boundsContainsPoint(view, this.herdVisual.x, this.herdVisual.y, tileW * 2.2);
+    if (herdSeen) {
+      this.hud.setHerdLocator(false, "", "right");
+      return;
+    }
+    let edge: "left" | "right" | "top" | "bottom" = "right";
+    if (this.herdVisual.x < view.minX) edge = "left";
+    else if (this.herdVisual.x > view.maxX) edge = "right";
+    else if (this.herdVisual.y < view.minY) edge = "top";
+    else if (this.herdVisual.y > view.maxY) edge = "bottom";
+    const arrow = edge === "left" ? "← Herd" : "→ Herd";
+    this.hud.setHerdLocator(true, arrow, edge);
   }
 
   private flushStoryCards(): void {
@@ -906,7 +901,7 @@ export class FarmScene extends Phaser.Scene {
         cow.setTexture(cattleSpriteForCoat(offset.coat));
         const base = cattleDisplayScale(offset.scale / 0.62);
         const refZoom = (CONFIG.view.phoneTilePx * 0.92) / CONFIG.view.tileWidth;
-        const zoomComp = clamp(refZoom / Math.max(zoom, 0.08), 1, 3.6);
+        const zoomComp = clamp(refZoom / Math.max(zoom, 0.35), 1, 1.85);
         const squash = walking && !this.reduceMotion ? 1 + Math.sin(time / 170 + index * 0.9) * 0.04 : 1;
         const s = base * zoomComp;
         cow.setScale(s, s * squash);
@@ -1043,24 +1038,6 @@ export class FarmScene extends Phaser.Scene {
     });
     this.minZoom = limits.minZoom;
     this.maxZoom = limits.maxZoom;
-  }
-
-  private buildHomesteadBounds(): WorldBounds | null {
-    const tileW = CONFIG.view.tileWidth;
-    const tileH = CONFIG.view.tileHeight;
-    const points: { x: number; y: number }[] = [];
-    for (let y = 0; y < this.state.height; y += 1) {
-      for (let x = 0; x < this.state.width; x += 1) {
-        if (this.state.campIds[y * this.state.width + x] === TILE_HOMESTEAD) {
-          points.push(tileCenter(x, y, this.layout, tileW, tileH));
-        }
-      }
-    }
-    for (const feature of this.state.features) {
-      if (!HOMESTEAD_KINDS.has(feature.kind)) continue;
-      points.push(tileCenter(feature.x, feature.y, this.layout, tileW, tileH));
-    }
-    return boundsFromPoints(points, homesteadBoundsPad(tileW, tileH));
   }
 
   private jumpCameraTo(worldX: number, worldY: number, ensureReadable: boolean): void {
@@ -1339,26 +1316,15 @@ export class FarmScene extends Phaser.Scene {
   private layoutCamera(resetView: boolean): void {
     const camera = this.cameras.main;
     this.refreshZoomLimits();
-    if (resetView && this.homesteadBounds) {
-      const frame = openingFrameBounds(
-        this.homesteadBounds,
-        this.herdVisual.x,
-        this.herdVisual.y,
-        homesteadBoundsPad(CONFIG.view.tileWidth, CONFIG.view.tileHeight) * 0.5,
-      );
-      const center = boundsCenter(frame);
-      const preferred = preferredHomesteadZoom(
-        frame,
-        camera.width,
-        camera.height,
-        CONFIG.view.tileWidth,
-        this.zoomTargets(),
-      );
-      camera.setZoom(clampZoom(preferred, this.minZoom, this.maxZoom));
-      camera.centerOn(center.x, center.y);
-    } else if (resetView) {
-      camera.centerOn(this.herdVisual.x, this.herdVisual.y);
-      camera.setZoom(clampZoom(camera.zoom, this.minZoom, this.maxZoom));
+    if (resetView) {
+      const tileW = CONFIG.view.tileWidth;
+      const tileH = CONFIG.view.tileHeight;
+      const house = this.state.features.find((f) => f.kind === "house");
+      const housePt = house
+        ? tileCenter(house.x + 0.5, house.y + 0.5, this.layout, tileW, tileH)
+        : { x: this.herdVisual.x, y: this.herdVisual.y };
+      camera.setZoom(clampZoom(1.15, this.minZoom, this.maxZoom));
+      camera.centerOn(housePt.x, housePt.y);
     } else {
       camera.setZoom(clampZoom(camera.zoom, this.minZoom, this.maxZoom));
     }

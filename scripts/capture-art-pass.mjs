@@ -121,6 +121,10 @@ async function main() {
     report.frames.homestead = homesteadFrame;
     await portrait.waitForTimeout(300);
     await shot(portrait, "art-portrait-homestead-zoom-390x844.png");
+    const farZoom = await portrait.evaluate(() => window.__farmCapture.zoomFar());
+    report.frames.far = { zoom: farZoom };
+    await portrait.waitForTimeout(250);
+    await shot(portrait, "art-portrait-far-zoom-390x844.png");
     report.fps = await portrait.evaluate(() => window.__farmCapture.sampleFps(120));
     await portrait.close();
 
@@ -135,6 +139,7 @@ async function main() {
     await ready(gate);
     const dest = await gate.evaluate(() => window.__farmCapture.findMoveCampId());
     await gate.evaluate((campId) => window.__farmCapture.moveHerdTo(campId), dest);
+    await gate.evaluate(() => window.__farmCapture.frameHomestead(true));
     await gate.waitForTimeout(300);
     const progresses = [0.38, 0.5, 0.62];
     for (let i = 0; i < progresses.length; i += 1) {

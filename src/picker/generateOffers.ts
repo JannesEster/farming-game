@@ -48,6 +48,7 @@ function buildOffer(
   livestock: FarmOfferCard["livestock"],
   herdHead: number,
   subtitle: string,
+  herdStartNearYard = false,
 ): FarmOfferCard {
   const region = REGIONS[regionKey];
   const campCount = campCountFor(regionKey, bundleSeed);
@@ -79,6 +80,7 @@ function buildOffer(
     herdHead,
     herdName: livestock.classLabel,
     mapSeed,
+    herdStartNearYard,
   };
   const config = buildGameConfig(params);
   const previewState = createGame(mapSeed, config);
@@ -156,6 +158,7 @@ export function generateFarmOffers(bundleSeed = 88001): FarmOfferCard[] {
       { species: "cattle", head: 120, classLabel: "120-head cattle herd" },
       120,
       "Thornbush savanna — your classic 120-head ranch",
+      true,
     ),
     buildOffer(
       "omaheke-weaners",
