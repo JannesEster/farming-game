@@ -8,7 +8,7 @@ The game saves in this browser. Refresh should put you back on the same date, ca
 
 ## 1. Open it (about 1 minute)
 
-The top bar shows a date in August 2026, Dry season, N$ 250,000, rainfall in mm, speed buttons, **Home**, and **New farm**. On first load the view should centre on the homestead at a readable zoom: cream house, zinc roof, windmill, round reservoir, trough, wooden kraal, shed, bakkie, and garden without pinching in. Around that yard you should see a **large** red ochre ranch: many fenced camps (12 or more), mostly dry gold grass with red sand showing through, and a few greener rested camps. Camelthorn style trees, pale wire fences with dark posts, and dirt tracks from the homestead to camp gates. **120** small Brahman style cattle should be spread across the opening camp, with a **120 head** label. A camp minimap in a corner shows the whole farm and should not cover the herd card when the herd is selected.
+The top bar is one slim row: date in August 2026, season icon, N$ 250,000, rain mm, and small pause or play or fast icons. **Home** and **New farm** sit under the three dot menu on the right. Hints flash as a short toast, not a permanent line. On first load the view should centre on the homestead at a readable zoom: cream house, zinc roof, windmill, round reservoir, trough, wooden kraal, shed, bakkie, and garden without pinching in. Around that yard you should see a **large** red ochre ranch: many fenced camps (12 or more), mostly dry gold grass with red sand showing through, and a few greener rested camps. Camelthorn style trees, pale wire fences with dark posts, and dirt tracks from the homestead to camp gates. **120** small Brahman style cattle should be spread across the opening camp, with a **120 head** label. A small camp minimap (about 90 px) sits in a corner and should stay clear of the collapsed herd strip at the bottom.
 
 ## 2. Portrait feel, pan, and pinch (about 2 minutes)
 
@@ -24,11 +24,11 @@ Turn the phone sideways. Pan and pinch once. Buttons should still be easy to tap
 
 ## 4. Select the herd (about 1 minute)
 
-Tap the cattle once. A card appears with the head count (120), condition, grass in the current camp, and days in this camp. Drag past the cattle without lifting your finger, then release. The herd should not select from that drag.
+Tap the cattle once. A one line bottom strip appears (herd name, camp, head count, grass percent). Tap the strip to expand details. Tap the cattle again, tap empty ground, press Escape, or tap the X on the strip to deselect. Drag past the cattle without lifting your finger, then release. The herd should not select from that drag.
 
 ## 5. Move them (about 2 minutes)
 
-Tap a nearby camp. The cattle should tighten into a column, leave through the gate on the shared fence, and walk there in about 6 to 10 seconds on Play. A camp across the farm should take at most about 15 seconds. On Fast, the walk should be clearly quicker than Play (several seconds faster on a long move) but never under about 1.5 seconds. The clock on the top bar should gain a few hours during the walk. Pause should freeze the walk and the clock. When they arrive they spread out again. Grazing only resumes after arrival. The card then switches camp and days in this camp goes back to 0.
+With the herd selected, tap a nearby camp. The card should offer **Move here** and **Cancel** before they leave. Confirm the move. The cattle should walk as a loose mob (not a single file column), bunch slightly at the gate, and spread again after. On Play they should arrive in about 6 to 10 seconds on a nearby camp. A camp across the farm should take at most about 15 seconds. On Fast, the walk should be clearly quicker than Play (several seconds faster on a long move) but never under about 1.5 seconds. The clock on the top bar should gain a few hours during the walk. Pause should freeze the walk and the clock. When they arrive they spread out again. Grazing only resumes after arrival. The card then switches camp and days in this camp goes back to 0.
 
 Tap the homestead. They should stay put, and the hint should say it is not a grazing camp.
 
@@ -42,7 +42,7 @@ Scroll to zoom on the pointer, drag to pan (with a short coast on release), clic
 
 ## Automated checks (developers)
 
-`npm test` covers pinch centre, zoom scroll clamping, homestead framing, pan friction, chunked ranch zoom limits, fence wire separation, walk duration and game-clock cost, near gate selection, and seed 3300 camp sizes.
+`npm test` covers pinch centre, zoom scroll clamping, homestead framing, pan friction, chunked ranch zoom limits, fence wire separation, walk duration and game-clock cost, near gate selection, seed 3300 camp sizes, herd deselect and pending move logic, and organic trek offsets. `npm run capture-artifacts` saves headless phone screenshots and HUD height measurements under `/opt/cursor/artifacts`.
 
 ## If something is wrong
 

@@ -17,6 +17,130 @@ export function centreScrollWhenViewExceedsLayout(
 /**
  * Phaser 4: world at screen centre is scroll + screenSize / 2. Clamp scroll so the map stays on screen.
  */
+export const CAMERA_CLEAR_MARGIN_PX = 8;
+
+export type ViewInsets = {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+};
+
+export function worldXAtScreenX(scrollX: number, screenW: number, zoom: number, screenX: number): number {
+  const viewW = screenW / zoom;
+  return scrollX + screenW / 2 - viewW / 2 + screenX / zoom;
+}
+
+export function worldYAtScreenY(scrollY: number, screenH: number, zoom: number, screenY: number): number {
+  const viewH = screenH / zoom;
+  return scrollY + screenH / 2 - viewH / 2 + screenY / zoom;
+}
+
+export function scrollXForWorldAtScreenX(
+  worldX: number,
+  screenW: number,
+  zoom: number,
+  screenX: number,
+): number {
+  const viewW = screenW / zoom;
+  return worldX - screenW / 2 + viewW / 2 - screenX / zoom;
+}
+
+export function scrollYForWorldAtScreenY(
+  worldY: number,
+  screenH: number,
+  zoom: number,
+  screenY: number,
+): number {
+  const viewH = screenH / zoom;
+  return worldY - screenH / 2 + viewH / 2 - screenY / zoom;
+}
+
+export type LayoutTip = "north" | "south" | "east" | "west";
+
+/** Scroll that places a map edge on the inner edge of the clear viewport band. */
+export function scrollToLayoutTip(
+  tip: LayoutTip,
+  layoutW: number,
+  layoutH: number,
+  screenW: number,
+  screenH: number,
+  zoom: number,
+  insets: ViewInsets,
+  margin = CAMERA_CLEAR_MARGIN_PX,
+): { scrollX: number; scrollY: number } {
+  const top = insets.top + margin;
+  const bottom = insets.bottom + margin;
+  const left = insets.left + margin;
+  const right = insets.right + margin;
+  let scrollX = scrollXForWorldAtScreenX(layoutW / 2, screenW, zoom, left + (screenW - left - right) / 2);
+  let scrollY = scrollYForWorldAtScreenY(layoutH / 2, screenH, zoom, top + (screenH - top - bottom) / 2);
+  if (tip === "north") scrollY = scrollYForWorldAtScreenY(0, screenH, zoom, top);
+  if (tip === "south") scrollY = scrollYForWorldAtScreenY(layoutH, screenH, zoom, screenH - bottom);
+  if (tip === "west") scrollX = scrollXForWorldAtScreenX(0, screenW, zoom, left);
+  if (tip === "east") scrollX = scrollXForWorldAtScreenX(layoutW, screenW, zoom, screenW - right);
+  return clampCameraScrollWithInsets(
+    scrollX,
+    scrollY,
+    layoutW,
+    layoutH,
+    screenW,
+    screenH,
+    zoom,
+    insets,
+    margin,
+  );
+}
+
+/**
+ * Clamps pan so map tips can reach the clear map band (below the top bar, above bottom chrome).
+ */
+export function clampCameraScrollWithInsets(
+  scrollX: number,
+  scrollY: number,
+  layoutW: number,
+  layoutH: number,
+  screenW: number,
+  screenH: number,
+  zoom: number,
+  insets: ViewInsets,
+  margin = CAMERA_CLEAR_MARGIN_PX,
+): { scrollX: number; scrollY: number } {
+  const top = insets.top + margin;
+  const bottom = insets.bottom + margin;
+  const left = insets.left + margin;
+  const right = insets.right + margin;
+  const contentW = Math.max(1, screenW - left - right);
+  const contentH = Math.max(1, screenH - top - bottom);
+  const bandViewW = contentW / zoom;
+  const bandViewH = contentH / zoom;
+
+  let sx = scrollX;
+  let sy = scrollY;
+
+  if (bandViewW >= layoutW) {
+    sx = scrollXForWorldAtScreenX(layoutW / 2, screenW, zoom, left + contentW / 2);
+  } else {
+    const north = scrollXForWorldAtScreenX(0, screenW, zoom, left);
+    const south = scrollXForWorldAtScreenX(layoutW, screenW, zoom, screenW - right);
+    const minX = Math.min(north, south);
+    const maxX = Math.max(north, south);
+    sx = clamp(scrollX, minX, maxX);
+  }
+
+  if (bandViewH >= layoutH) {
+    sy = scrollYForWorldAtScreenY(layoutH / 2, screenH, zoom, top + contentH / 2);
+  } else {
+    const north = scrollYForWorldAtScreenY(0, screenH, zoom, top);
+    const south = scrollYForWorldAtScreenY(layoutH, screenH, zoom, screenH - bottom);
+    const minY = Math.min(north, south);
+    const maxY = Math.max(north, south);
+    sy = clamp(scrollY, minY, maxY);
+  }
+
+  return { scrollX: sx, scrollY: sy };
+}
+
 export function clampCameraScroll(
   scrollX: number,
   scrollY: number,

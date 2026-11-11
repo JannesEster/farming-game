@@ -11,7 +11,11 @@ import {
   applyPanFriction,
   boundsCenter,
   boundsFromPoints,
-  clampCameraScroll,
+  clampCameraScrollWithInsets,
+  scrollToLayoutTip,
+  worldXAtScreenX,
+  worldYAtScreenY,
+  type LayoutTip,
   clampZoom,
   computeZoomLimits,
   homesteadBoundsPad,
@@ -38,7 +42,19 @@ import {
 } from "./art";
 import { groundTexture, terrainVariant, tileTint, trackKeys } from "./colour";
 import { collectFenceSegments, drawFences } from "./fences";
-import { mountHud, type Hud, type SpeedMode } from "./hud";
+import {
+  measureChipWidths,
+  measureHudHeights,
+  measureToastClearance,
+  measureTopbarMetrics,
+  measureTopbarSpare,
+  mountHud,
+  viewportCameraInsets,
+  type Hud,
+  type SpeedMode,
+} from "./hud";
+import { doubleTapGoesHome } from "./tap";
+import { resolveGroundTap, resolveHerdTap } from "./selection";
 import { isoLayout, tileCenter, tileTop, worldToTile, type IsoLayout } from "./iso";
 import { palette } from "./palette";
 import { offsetsForHerd } from "./herdLayout";
@@ -61,6 +77,8 @@ export class FarmScene extends Phaser.Scene {
   private hud!: Hud;
   private mode: SpeedMode = "play";
   private selected = false;
+  private pendingCampId: number | null = null;
+  private pendingCampName = "";
   private bank = 0;
   private minZoom = 0.2;
   private maxZoom = 2;
@@ -133,6 +151,9 @@ export class FarmScene extends Phaser.Scene {
       onMinimap: (nx, ny) => this.onMinimap(nx, ny),
       onNewFarm: () => this.startNewFarm(),
       onHome: () => this.goHome(),
+      onDeselect: () => this.deselectHerd(),
+      onConfirmMove: () => this.confirmPendingMove(),
+      onCancelMove: () => this.cancelPendingMove(),
     });
     this.hud.setSpeed(this.mode);
     this.hud.setHint(COPY.hintStart);
@@ -143,6 +164,95 @@ export class FarmScene extends Phaser.Scene {
     this.game.canvas.addEventListener("wheel", (event) => event.preventDefault(), { passive: false });
     this.game.canvas.addEventListener("contextmenu", (event) => event.preventDefault());
     requestAnimationFrame(() => this.layoutCamera(true));
+    this.installCaptureBridge();
+  }
+
+  private installCaptureBridge(): void {
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("capture") !== "1") return;
+    const bridge = {
+      measureHud: () => measureHudHeights(),
+      measureChips: () => measureChipWidths(),
+      measureTopbarSpare: () => measureTopbarSpare(),
+      measureTopbarMetrics: () => measureTopbarMetrics(),
+      measureToast: () => measureToastClearance(),
+      showHint: (text: string) => this.hud.setHint(text),
+      expandSheet: () => {
+        const summary = document.getElementById("sheet-summary");
+        summary?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      },
+      viewportInsets: () => viewportCameraInsets(),
+      deselect: () => this.deselectHerd(),
+      selectHerd: () => {
+        this.selected = true;
+        this.syncHud();
+      },
+      setPendingMove: (campId: number) => {
+        const camp = this.state.camps.find((item) => item.id === campId);
+        if (!camp) return false;
+        this.selected = true;
+        this.pendingCampId = campId;
+        this.pendingCampName = camp.name;
+        this.syncHud();
+        return true;
+      },
+      moveHerdTo: (campId: number) => this.commitMove(campId),
+      panToTip: (tip: LayoutTip, zoom: number | null = null) => {
+        const camera = this.cameras.main;
+        if (zoom !== null) camera.setZoom(clampZoom(zoom, this.minZoom, this.maxZoom));
+        const insets = viewportCameraInsets();
+        const next = scrollToLayoutTip(
+          tip,
+          this.layout.width,
+          this.layout.height,
+          camera.width,
+          camera.height,
+          camera.zoom,
+          insets,
+        );
+        camera.scrollX = next.scrollX;
+        camera.scrollY = next.scrollY;
+        return { scrollX: camera.scrollX, scrollY: camera.scrollY, zoom: camera.zoom };
+      },
+      centerOnHerd: () => {
+        this.cameras.main.centerOn(this.herdVisual.x, this.herdVisual.y);
+        this.clampScroll();
+      },
+      openingZoom: () => {
+        this.layoutCamera(true);
+        return this.cameras.main.zoom;
+      },
+      tipAtScreen: () => {
+        const camera = this.cameras.main;
+        const insets = viewportCameraInsets();
+        const top = insets.top + 8;
+        const bottom = camera.height - insets.bottom - 8;
+        const left = insets.left + 8;
+        const right = camera.width - insets.right - 8;
+        return {
+          northWorldY: worldYAtScreenY(camera.scrollY, camera.height, camera.zoom, top),
+          southWorldY: worldYAtScreenY(camera.scrollY, camera.height, camera.zoom, bottom),
+          westWorldX: worldXAtScreenX(camera.scrollX, camera.width, camera.zoom, left),
+          eastWorldX: worldXAtScreenX(camera.scrollX, camera.width, camera.zoom, right),
+        };
+      },
+      setTransitProgress: (progress: number) => {
+        const transit = this.state.herd.transit;
+        if (!transit) return false;
+        transit.progress = Math.max(0, Math.min(0.99, progress));
+        this.syncHerdFromSim();
+        this.placeHerd(performance.now());
+        this.redrawFences();
+        return true;
+      },
+      transitDestCampId: () => this.state.herd.transit?.toCampId ?? null,
+      findMoveCampId: () => {
+        const from = this.state.herd.campId;
+        const dest = this.state.camps.find((camp) => camp.id >= 0 && camp.id !== from);
+        return dest?.id ?? null;
+      },
+    };
+    (window as Window & { __farmCapture?: typeof bridge }).__farmCapture = bridge;
   }
 
   update(time: number, delta: number): void {
@@ -175,7 +285,6 @@ export class FarmScene extends Phaser.Scene {
     }
     const prevCamp = this.state.herd.campId;
     this.syncHerdFromSim();
-    this.refreshHerdOffsets();
     if (this.state.herd.campId !== prevCamp) this.redrawFences();
     this.placeHerd(time);
     this.cullProps();
@@ -389,11 +498,11 @@ export class FarmScene extends Phaser.Scene {
         .setScale(0.3);
       this.cows.push(cow);
     }
-    this.refreshHerdOffsets();
+    this.refreshHerdOffsets(0);
     this.placeHerd(0);
   }
 
-  private refreshHerdOffsets(): void {
+  private refreshHerdOffsets(timeMs: number): void {
     const walking = herdInTransit(this.state.herd);
     const progress = this.state.herd.transit?.progress ?? 0;
     this.herdOffsets = offsetsForHerd(
@@ -404,6 +513,7 @@ export class FarmScene extends Phaser.Scene {
       walking,
       progress,
       pathTangent(this.state),
+      timeMs,
     );
     if (this.state.herd.campId !== this.lastHerdCampId) this.lastHerdCampId = this.state.herd.campId;
   }
@@ -455,6 +565,7 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private placeHerd(time: number): void {
+    this.refreshHerdOffsets(time);
     const tile = worldToTile(
       this.herdVisual.x,
       this.herdVisual.y,
@@ -554,7 +665,11 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private syncHud(): void {
-    this.hud.update(this.state, this.selected);
+    this.hud.update(this.state, {
+      selected: this.selected,
+      pendingCampId: this.pendingCampId,
+      pendingCampName: this.pendingCampName,
+    });
     this.refreshCampLabels();
     if (herdInTransit(this.state.herd)) this.redrawFences();
   }
@@ -725,8 +840,16 @@ export class FarmScene extends Phaser.Scene {
       this.lastTapX = pointer.x;
       this.lastTapY = pointer.y;
       if (isDoubleTap) {
-        this.goHome();
-        return;
+        const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+        const radius = Math.max(
+          CONFIG.view.herdPickTiles * CONFIG.view.tileWidth,
+          CONFIG.view.herdPickMinScreenPx / this.cameras.main.zoom,
+        );
+        const hitHerd = Math.hypot(world.x - this.herdVisual.x, world.y - this.herdVisual.y) <= radius;
+        if (doubleTapGoesHome(hitHerd)) {
+          this.goHome();
+          return;
+        }
       }
       this.onTap(pointer);
     };
@@ -748,6 +871,28 @@ export class FarmScene extends Phaser.Scene {
     this.input.keyboard?.on("keydown-ONE", () => this.setSpeed("pause"));
     this.input.keyboard?.on("keydown-TWO", () => this.setSpeed("play"));
     this.input.keyboard?.on("keydown-THREE", () => this.setSpeed("fast"));
+    this.input.keyboard?.on("keydown-ESC", () => this.deselectHerd());
+    this.input.keyboard?.on("keydown-ESCAPE", () => this.deselectHerd());
+  }
+
+  private deselectHerd(): void {
+    if (!this.selected) return;
+    this.selected = false;
+    this.pendingCampId = null;
+    this.pendingCampName = "";
+    this.redrawFences();
+    this.syncHud();
+  }
+
+  private cancelPendingMove(): void {
+    this.pendingCampId = null;
+    this.pendingCampName = "";
+    this.syncHud();
+  }
+
+  private confirmPendingMove(): void {
+    if (this.pendingCampId === null) return;
+    this.commitMove(this.pendingCampId);
   }
 
   private onTap(pointer: Phaser.Input.Pointer): void {
@@ -757,7 +902,14 @@ export class FarmScene extends Phaser.Scene {
       CONFIG.view.herdPickMinScreenPx / this.cameras.main.zoom,
     );
     if (Math.hypot(world.x - this.herdVisual.x, world.y - this.herdVisual.y) <= radius) {
+      const action = resolveHerdTap(this.selected);
+      if (action === "deselect") {
+        this.deselectHerd();
+        return;
+      }
       this.selected = true;
+      this.pendingCampId = null;
+      this.pendingCampName = "";
       this.hud.setHint(COPY.hintSelected);
       this.redrawFences();
       this.syncHud();
@@ -776,35 +928,66 @@ export class FarmScene extends Phaser.Scene {
 
   private chooseTile(x: number, y: number): void {
     if (x < 0 || y < 0 || x >= this.state.width || y >= this.state.height) {
-      this.hud.setHint(COPY.hintOutside);
+      if (this.selected) this.deselectHerd();
+      else this.hud.setHint(COPY.hintOutside);
       return;
     }
     const id = campIdAt(this.state, x, y);
-    if (id === null) return;
-    if (!this.selected) {
+    const action = resolveGroundTap(this.selected, this.pendingCampId, id);
+    if (action === "noop") {
       this.hud.setHint(COPY.hintNeedHerd);
+      return;
+    }
+    if (action === "deselect") {
+      this.deselectHerd();
+      return;
+    }
+    if (action === "clear_pending") {
+      this.cancelPendingMove();
       return;
     }
     if (id === TILE_HOMESTEAD) {
       this.hud.setHint(COPY.hintHomestead);
       return;
     }
-    if (id === TILE_OUTSIDE || id < 0) {
+    if (id === TILE_OUTSIDE || id === null || id < 0) {
       this.hud.setHint(COPY.hintOutside);
+      return;
+    }
+    if (!this.selected) {
+      this.hud.setHint(COPY.hintNeedHerd);
       return;
     }
     if (herdInTransit(this.state.herd)) {
       this.hud.setHint(COPY.hintMoving);
       return;
     }
-    const result = moveHerd(this.state, id);
+    if (id === this.state.herd.campId) {
+      this.hud.setHint(COPY.hintSame);
+      return;
+    }
+    const camp = this.state.camps.find((item) => item.id === id);
+    if (!camp) return;
+    this.pendingCampId = id;
+    this.pendingCampName = camp.name;
+    this.hud.setHint(`Tap Move here to send the herd to ${camp.name}.`);
+    this.syncHud();
+  }
+
+  private commitMove(campId: number): void {
+    const result = moveHerd(this.state, campId);
     if (!result.ok) {
       const reason = result.reason;
       this.hud.setHint(
         reason === "same" ? COPY.hintSame : reason === "moving" ? COPY.hintMoving : COPY.hintNeedHerd,
       );
+      this.pendingCampId = null;
+      this.pendingCampName = "";
+      this.syncHud();
       return;
     }
+    this.pendingCampId = null;
+    this.pendingCampName = "";
     this.hud.setHint(`Walking to ${result.campName}. They graze again when they arrive.`);
     this.redrawFences();
     this.syncHud();
@@ -849,7 +1032,8 @@ export class FarmScene extends Phaser.Scene {
 
   private clampScroll(): void {
     const camera = this.cameras.main;
-    const next = clampCameraScroll(
+    const insets = viewportCameraInsets();
+    const next = clampCameraScrollWithInsets(
       camera.scrollX,
       camera.scrollY,
       this.layout.width,
@@ -857,6 +1041,7 @@ export class FarmScene extends Phaser.Scene {
       camera.width,
       camera.height,
       camera.zoom,
+      insets,
     );
     camera.scrollX = next.scrollX;
     camera.scrollY = next.scrollY;
