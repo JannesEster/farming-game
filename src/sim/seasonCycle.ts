@@ -1,4 +1,5 @@
 import { CONFIG, type GameConfig } from "./config";
+import { calvingFromPregnantHeifers } from "./cattleClasses";
 import { daysInMonth, isRainyMonth } from "./calendar";
 import { chargeMonthlyCosts, syncHeadFromComposition } from "./economy";
 import type { CalendarDate } from "./types";
@@ -53,17 +54,20 @@ export function tryCalving(state: GameState, config: GameConfig = CONFIG): void 
   if (story.seasonEventsFired.includes(eventId)) return;
   story.seasonEventsFired.push(eventId);
   const cows = story.composition.cow;
-  if (cows < 10) return;
   const calvingRate = config.story.monthlyCalvingFraction;
-  const births = Math.max(0, Math.floor(cows * calvingRate));
-  if (births <= 0) return;
+  const births = cows >= 10 ? Math.max(0, Math.floor(cows * calvingRate)) : 0;
+  const heiferBirths = calvingFromPregnantHeifers(state, config);
+  const total = births + heiferBirths;
+  if (total <= 0) return;
   story.composition.calf += births;
   syncHeadFromComposition(state);
+  const heiferNote =
+    heiferBirths > 0 ? ` ${heiferBirths} heifers calved and joined the cow herd.` : "";
   story.pendingCards.push({
     id: eventId,
     kind: "season",
     title: "Calving",
-    body: `${births} calves on the ground. Tag and register within six months.`,
+    body: `${births} calves on the ground.${heiferNote} Tag and register within six months.`,
     priority: 2,
   });
 }
@@ -79,14 +83,19 @@ export function tryWeaning(state: GameState, config: GameConfig = CONFIG): void 
   if (calves <= 0) return;
   const wean = Math.floor(calves * config.story.weaningFraction);
   if (wean <= 0) return;
+  const heifers = Math.floor(wean / 2);
+  const tollies = wean - heifers;
   story.composition.calf -= wean;
-  story.composition.weaner += wean;
+  story.composition.heifer += heifers;
+  story.composition.tolly += tollies;
+  story.classLiveweights.heifer = config.economy.defaultWeanerLiveKg;
+  story.classLiveweights.tolly = config.economy.defaultWeanerLiveKg;
   syncHeadFromComposition(state);
   story.pendingCards.push({
     id: eventId,
     kind: "season",
     title: "Weaning",
-    body: `${wean} weaners ready. Consider auction Apr to Jun.`,
+    body: `${wean} weaned: ${heifers} heifers and ${tollies} tollies. Consider sales Apr to Jun.`,
     priority: 2,
   });
 }
@@ -112,7 +121,9 @@ export function closeMonth(state: GameState, config: GameConfig = CONFIG): void 
     `Costs: labour ${money(costs.labour)}, lick ${money(costs.lick)}, diesel ${money(costs.diesel)}, repairs ${money(costs.repairs)}, other ${money(costs.other)}.`,
     `Net ${money(net)}. Rain season-to-date ${Math.round(state.seasonRainMm)} mm.`,
     story.ledger.deathCount > 0 ? `${story.ledger.deathCount} deaths logged.` : "No deaths logged.",
-    story.composition.weaner > 0 ? `${story.composition.weaner} weaners in herd.` : "",
+    story.composition.tolly + story.composition.heifer > 0
+      ? `${story.composition.tolly} tollies, ${story.composition.heifer} heifers in herd.`
+      : "",
   ]
     .filter(Boolean)
     .join("\n");

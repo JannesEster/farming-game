@@ -1,4 +1,10 @@
 import { CONFIG } from "../sim/config";
+import {
+  SELL_STOCK_CLASSES,
+  STOCK_CLASS_LABELS,
+  STOCK_CLASS_TOOLTIPS,
+  compositionSummaryLine,
+} from "../sim/cattleClasses";
 import { applySale, quoteSale } from "../sim/economy";
 import { resolveDroughtChoice } from "../sim/drought";
 import { formatHudMoney, formatMoney } from "../sim/format";
@@ -13,8 +19,6 @@ export type MarketSheet = {
   refresh(state: GameState): void;
   destroy(): void;
 };
-
-const CLASSES: StockClass[] = ["weaner", "ox", "cow", "calf", "bull"];
 
 export function mountMarketSheet(options: {
   getState: () => GameState;
@@ -37,8 +41,9 @@ export function mountMarketSheet(options: {
       <p class="extra" id="market-cash"></p>
       <p class="extra" id="market-herd"></p>
       <label class="market-field">Class
-        <select id="market-class"></select>
+        <select id="market-class" aria-describedby="market-class-tip"></select>
       </label>
+      <p class="extra market-class-tip" id="market-class-tip"></p>
       <label class="market-field">How many
         <input id="market-count" type="number" min="1" value="1" inputmode="numeric" />
       </label>
@@ -61,17 +66,18 @@ export function mountMarketSheet(options: {
     <div class="market-actions">
       <div id="market-drought" hidden>
         <p class="warn" id="market-drought-text"></p>
-        <button type="button" class="pill-btn confirm" data-drought="sell_down">Sell weaners</button>
+        <button type="button" class="pill-btn confirm" data-drought="sell_down">Sell tollies</button>
         <button type="button" class="pill-btn ghost" data-drought="buy_feed">Boskos feed</button>
         <button type="button" class="pill-btn ghost" data-drought="move_herd">Move camps</button>
       </div>
       <p class="extra" id="market-quote"></p>
-      <button type="button" class="pill-btn confirm" id="market-sell-btn">Sell</button>
+      <button type="button" class="pill-btn confirm" id="market-sell-btn">Confirm sale</button>
     </div>
   `;
   root.appendChild(sheet);
 
   const classSel = sheet.querySelector<HTMLSelectElement>("#market-class")!;
+  const classTip = sheet.querySelector<HTMLElement>("#market-class-tip")!;
   const countEl = sheet.querySelector<HTMLInputElement>("#market-count")!;
   const channelSel = sheet.querySelector<HTMLSelectElement>("#market-channel")!;
   const quoteEl = sheet.querySelector<HTMLElement>("#market-quote")!;
@@ -85,12 +91,18 @@ export function mountMarketSheet(options: {
   const sellBtn = sheet.querySelector<HTMLButtonElement>("#market-sell-btn")!;
   const hireBtn = sheet.querySelector<HTMLButtonElement>("#market-hire-btn")!;
 
-  CLASSES.forEach((c) => {
+  SELL_STOCK_CLASSES.forEach((c) => {
     const opt = document.createElement("option");
     opt.value = c;
-    opt.textContent = c;
+    opt.textContent = STOCK_CLASS_LABELS[c];
+    opt.title = STOCK_CLASS_TOOLTIPS[c];
     classSel.appendChild(opt);
   });
+
+  const syncClassTip = (): void => {
+    const stockClass = classSel.value as StockClass;
+    classTip.textContent = STOCK_CLASS_TOOLTIPS[stockClass];
+  };
 
   let open = false;
 
@@ -100,19 +112,21 @@ export function mountMarketSheet(options: {
     const count = Math.max(1, Number.parseInt(countEl.value, 10) || 1);
     const channel = channelSel.value as SaleChannel;
     const q = quoteSale(state, stockClass, count, channel);
+    syncClassTip();
     if ("reason" in q) {
       quoteEl.textContent = q.reason;
       return;
     }
     const sale = q as SaleLine;
-    quoteEl.textContent = `About ${formatMoney(sale.totalNad)} after levies (${sale.pricePerKgLive.toFixed(2)} N$/kg).`;
+    const available = state.story?.composition[stockClass] ?? 0;
+    quoteEl.textContent = `${sale.pricePerKgLive.toFixed(2)} N$/kg live · about ${formatMoney(sale.totalNad)} after levies (${count} of ${available} head).`;
   };
 
   const refresh = (state: GameState): void => {
     cashEl.textContent = `Cash ${formatHudMoney(state.cashNad)}`;
     const comp = state.story?.composition;
     if (comp) {
-      herdEl.textContent = `Cows ${comp.cow}, bulls ${comp.bull}, calves ${comp.calf}, weaners ${comp.weaner}, oxen ${comp.ox}`;
+      herdEl.textContent = compositionSummaryLine(comp);
     }
     const fh = state.story?.farmhand;
     if (fh?.hired) {
@@ -155,7 +169,7 @@ export function mountMarketSheet(options: {
       return;
     }
     applySale(state, q);
-    options.onToast(`Sold ${count} ${stockClass} for ${formatMoney(q.totalNad)}.`);
+    options.onToast(`Sold ${count} ${STOCK_CLASS_LABELS[stockClass]} for ${formatMoney(q.totalNad)}.`);
     options.onChange();
     refresh(state);
   });

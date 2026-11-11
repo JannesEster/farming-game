@@ -1,9 +1,13 @@
 import { CONFIG, type GameConfig } from "./config";
+import {
+  tollyNadPerKgLive,
+  totalCompositionHead,
+} from "./cattleClasses";
 import type { SaleChannel, SaleLine, StockClass } from "./storyTypes";
 import type { GameState } from "./types";
 
 /**
- * Liveweight prices (N$/kg live). See docs/STORY_RULES_REPORT.md for NAU / Reuben sources.
+ * Liveweight prices (N$/kg live). See docs/STORY_RULES_REPORT.md for sources.
  */
 
 export type PriceQuote = {
@@ -77,20 +81,49 @@ export function droughtSupplementCostNad(state: GameState, config: GameConfig = 
   const days = config.story.droughtSupplementDays;
   const boskosKg = head * config.story.droughtBoskosKgPerHeadDay * days;
   const boskosCost = boskosKg * config.story.droughtBoskosNadPerKg;
-  // Camelthorn pods: gathered on farm; no sourced cash price (TODO in report).
   return Math.round(boskosCost);
 }
 
-export function baseLivePrice(stockClass: StockClass, _config: GameConfig = CONFIG): PriceQuote {
+export function baseLivePrice(
+  stockClass: StockClass,
+  config: GameConfig = CONFIG,
+  state?: GameState,
+): PriceQuote {
   switch (stockClass) {
-    case "weaner":
-      // S: NAU Ox Production 2025 weaner/tollies auction N$32.81/kg live (mid of 32.81 to 34.83 band).
-      return { baseNadPerKgLive: 33.32, source: "sourced", note: "NAU 2025 weaner auction band" };
+    case "heifer":
+      return {
+        baseNadPerKgLive: config.cattle.heiferOpenNadPerKgLive,
+        source: "sourced",
+        note: "Jannes and Reuben, farm data, 12 Nov 2026",
+      };
+    case "pregnant_heifer":
+      return {
+        baseNadPerKgLive: config.cattle.heiferPregnantNadPerKgLive,
+        source: "sourced",
+        note: "Jannes and Reuben, farm data, 12 Nov 2026",
+      };
+    case "tolly": {
+      const date = state?.date ?? { year: config.calendar.startYear, month: config.calendar.startMonth, day: 1, hour: 0 };
+      const price = tollyNadPerKgLive(date, config);
+      return {
+        baseNadPerKgLive: price,
+        source: "sourced",
+        note: "Jannes tollies band; TODO confirm wet/dry mapping with Reuben",
+      };
+    }
+    case "stoor":
+      return {
+        baseNadPerKgLive: config.cattle.stoorNadPerKgLive,
+        source: "placeholder",
+        note: "TODO confirm with Reuben; midpoint between tolly and ox",
+      };
     case "ox":
-      // S: NAU live oxen 401 to 600 kg class N$40.17/kg live.
-      return { baseNadPerKgLive: 40.17, source: "sourced", note: "NAU 2025 ox 401 to 600 kg auction" };
+      return {
+        baseNadPerKgLive: config.cattle.oxNadPerKgLive,
+        source: "sourced",
+        note: "Jannes and Reuben, farm data, 12 Nov 2026",
+      };
     case "cow":
-      // S: NAU lean cows 301 to 500 kg N$27.90/kg live.
       return { baseNadPerKgLive: 27.9, source: "sourced", note: "NAU 2025 lean cows live" };
     case "calf":
       return {
@@ -99,7 +132,6 @@ export function baseLivePrice(stockClass: StockClass, _config: GameConfig = CONF
         note: "NAU 2025 calves 1 to 350 kg N$33.50/kg live",
       };
     case "bull":
-      // S: NAU Bulls 501 to 600 kg N$33.93/kg live at auction.
       return {
         baseNadPerKgLive: 33.93,
         source: "sourced",
@@ -110,20 +142,32 @@ export function baseLivePrice(stockClass: StockClass, _config: GameConfig = CONF
   }
 }
 
-export function classLiveweightKg(stockClass: StockClass, herdAvgKg: number, config: GameConfig = CONFIG): number {
+export function classLiveweightKg(
+  stockClass: StockClass,
+  state: GameState,
+  config: GameConfig = CONFIG,
+): number {
+  const story = state.story;
+  const weights = story?.classLiveweights;
   switch (stockClass) {
     case "calf":
-      return Math.max(120, herdAvgKg * 0.35);
-    case "weaner":
-      return config.economy.defaultWeanerLiveKg;
+      return Math.max(120, state.herd.averageLiveweightKg * 0.35);
+    case "heifer":
+      return weights?.heifer ?? config.economy.defaultWeanerLiveKg;
+    case "pregnant_heifer":
+      return weights?.heifer ?? config.economy.defaultWeanerLiveKg;
+    case "tolly":
+      return weights?.tolly ?? config.economy.defaultWeanerLiveKg;
+    case "stoor":
+      return weights?.stoor ?? (config.cattle.stoorWeightMinKg + config.cattle.stoorWeightMaxKg) / 2;
     case "ox":
-      return config.pasture.lsuLiveweightKg;
+      return weights?.ox ?? config.cattle.oxWeightMinKg;
     case "bull":
       return config.pasture.lsuLiveweightKg * 1.1;
     case "cow":
       return config.pasture.lsuLiveweightKg * 0.95;
     default:
-      return herdAvgKg;
+      return state.herd.averageLiveweightKg;
   }
 }
 
@@ -179,8 +223,8 @@ export function quoteSale(
   if (!story) return { reason: "missing story" };
   const available = story.composition[stockClass] ?? 0;
   if (count <= 0 || count > available) return { reason: "not enough animals" };
-  const base = baseLivePrice(stockClass, config);
-  const lw = classLiveweightKg(stockClass, state.herd.averageLiveweightKg, config);
+  const base = baseLivePrice(stockClass, config, state);
+  const lw = classLiveweightKg(stockClass, state, config);
   const unit =
     base.baseNadPerKgLive * lw * conditionPriceFactor(state.herd.condition) * channelPriceFactor(channel, config);
   const gross = unit * count;
@@ -189,7 +233,8 @@ export function quoteSale(
     stockClass,
     count,
     channel,
-    pricePerKgLive: base.baseNadPerKgLive * conditionPriceFactor(state.herd.condition) * channelPriceFactor(channel, config),
+    pricePerKgLive:
+      base.baseNadPerKgLive * conditionPriceFactor(state.herd.condition) * channelPriceFactor(channel, config),
     totalNad: Math.max(0, gross - costs),
   };
 }
@@ -207,8 +252,7 @@ export function applySale(state: GameState, line: SaleLine): void {
 export function syncHeadFromComposition(state: GameState): void {
   const c = state.story?.composition;
   if (!c) return;
-  const total = c.cow + c.bull + c.calf + c.weaner + c.ox;
-  state.herd.headCount = Math.max(0, total);
+  state.herd.headCount = Math.max(0, totalCompositionHead(c));
 }
 
 export function chargeMonthlyCosts(state: GameState, config: GameConfig = CONFIG): MonthlyCostBreakdown {

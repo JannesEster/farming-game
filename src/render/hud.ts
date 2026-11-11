@@ -14,6 +14,7 @@ import {
   formatHead,
   formatMoveWarning,
 } from "../sim/format";
+import { compositionSummaryLine } from "../sim/cattleClasses";
 import { seasonLabelForHud } from "../sim/story";
 import { moveAdvice } from "../sim/grazing";
 import { findCamp } from "../sim/simulation";
@@ -112,6 +113,7 @@ export function mountHud(options: {
         <p id="herd-days"></p>
         <p class="warn move-warn" id="herd-move-warn" hidden></p>
         <p class="move-recovery" id="herd-recovery" hidden></p>
+        <p class="extra" id="herd-classes"></p>
         <p class="extra" id="herd-left"></p>
         <p class="extra warn" id="herd-status"></p>
         <div class="move-confirm" id="move-confirm" hidden>
@@ -146,6 +148,7 @@ export function mountHud(options: {
   const daysEl = required(root, "herd-days");
   const moveWarnEl = required(root, "herd-move-warn");
   const recoveryEl = required(root, "herd-recovery");
+  const classesEl = required(root, "herd-classes");
   const leftEl = required(root, "herd-left");
   const statusEl = required(root, "herd-status");
   const moveConfirm = required(root, "move-confirm");
@@ -375,6 +378,12 @@ export function mountHud(options: {
           moveWarnEl.hidden = moveWarn.length === 0;
           recoveryEl.textContent = moveWarn.length > 0 ? COPY.moveRecovery : "";
           recoveryEl.hidden = moveWarn.length === 0;
+          if (state.story?.composition) {
+            classesEl.textContent = compositionSummaryLine(state.story.composition);
+            classesEl.hidden = false;
+          } else {
+            classesEl.hidden = true;
+          }
           leftEl.textContent = formatGrassLeft(daysLeft, fraction);
           const status = formatFeedStatus(daysLeft);
           statusEl.textContent = status;

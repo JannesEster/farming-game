@@ -85,6 +85,35 @@ export type GameConfig = {
     feedlotPriceFactor: number;
     droughtQuickSaleNadPerKg: number;
   };
+  cattle: {
+    tollyWeightMinKg: number;
+    tollyWeightMaxKg: number;
+    stoorWeightMinKg: number;
+    stoorWeightMaxKg: number;
+    oxWeightMinKg: number;
+    /** S: Jannes and Reuben, farm data, 12 Nov 2026. Open heifer slaughter. */
+    heiferOpenNadPerKgLive: number;
+    /** S: Jannes and Reuben, farm data, 12 Nov 2026. Pregnant heifer slaughter. */
+    heiferPregnantNadPerKgLive: number;
+    /** S: Jannes tollies band. TODO confirm with Reuben: wet Dec to Apr mapped to high end N$38. */
+    tollyNadPerKgWetSeason: number;
+  /** S: Jannes tollies band. TODO confirm with Reuben: dry months mapped to low end N$32. */
+    tollyNadPerKgDrySeason: number;
+    /** Months that use tollyNadPerKgWetSeason (Dec to Apr). */
+    tollyWetPriceMonths: number[];
+    /** TODO confirm with Reuben. Midpoint between tolly and ox live prices. */
+    stoorNadPerKgLive: number;
+    /** S: Jannes and Reuben, farm data, 12 Nov 2026. Finished oxen. */
+    oxNadPerKgLive: number;
+    /** A. kg/day liveweight gain for heifers and steers when intake is adequate. */
+    dailyYoungstockGainKg: number;
+    /** A. Month before calving when open heifers are marked pregnant. */
+    heiferBreedingMonth: number;
+    /** A. Fraction of open heifers marked pregnant each season. */
+    heiferPregnancyFraction: number;
+    /** A. Fraction of pregnant heifers that calve and join as cows. */
+    heiferCalvingFraction: number;
+  };
   calendar: {
     seasonStartMonth: number;
     rainyMonths: number[];
@@ -123,7 +152,7 @@ export type GameConfig = {
     droughtWarnMonth: number;
     droughtChoiceScore: number;
     droughtChoiceMonth: number;
-    droughtSellWeaners: number;
+    droughtSellTollies: number;
     droughtSupplementDays: number;
     /** Boskos drought feed, kg per head per day (Reuben: cattle 150 to 250 g/day). */
     droughtBoskosKgPerHeadDay: number;
@@ -343,6 +372,25 @@ export const CONFIG: GameConfig = {
     droughtQuickSaleNadPerKg: 27.9,
   },
 
+  cattle: {
+    tollyWeightMinKg: 180,
+    tollyWeightMaxKg: 299,
+    stoorWeightMinKg: 300,
+    stoorWeightMaxKg: 399,
+    oxWeightMinKg: 400,
+    heiferOpenNadPerKgLive: 28,
+    heiferPregnantNadPerKgLive: 34,
+    tollyNadPerKgWetSeason: 38,
+    tollyNadPerKgDrySeason: 32,
+    tollyWetPriceMonths: [12, 1, 2, 3, 4],
+    stoorNadPerKgLive: 37,
+    oxNadPerKgLive: 40,
+    dailyYoungstockGainKg: 0.45,
+    heiferBreedingMonth: 8,
+    heiferPregnancyFraction: 0.35,
+    heiferCalvingFraction: 0.9,
+  },
+
   calendar: {
     // S: the Atlas of Namibia rainfall season runs 1 July to 30 June. Lesson 8.2 uses the same year.
     seasonStartMonth: 7,
@@ -395,7 +443,8 @@ export const CONFIG: GameConfig = {
     droughtWarnMonth: 1,
     droughtChoiceScore: 0.45,
     droughtChoiceMonth: 2,
-    droughtSellWeaners: 8,
+    /** Young steers sold in drought quick down (was weaners). */
+    droughtSellTollies: 8,
     droughtSupplementDays: 30,
     droughtBoskosKgPerHeadDay: 0.2,
     droughtBoskosNadPerKg: 5.5,

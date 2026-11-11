@@ -26,6 +26,30 @@ describe("save migration", () => {
     expect(loaded?.story?.thirstWarnCampId).toBeNull();
   });
 
+  it("migrates legacy weaner and ox classes", () => {
+    const state = createGame(3300);
+    const legacyComp = {
+      cow: 80,
+      bull: 3,
+      calf: 10,
+      weaner: 12,
+      ox: 5,
+    };
+    const raw = JSON.stringify({
+      version: 2,
+      savedAt: "2026-08-01",
+      state: {
+        ...state,
+        story: { ...state.story!, composition: legacyComp },
+      },
+    });
+    const loaded = parseSaved(raw);
+    expect(loaded?.story?.composition.heifer).toBe(6);
+    expect(loaded?.story?.composition.tolly).toBe(6);
+    expect(loaded?.story?.composition.ox).toBe(5);
+    expect(loaded?.story?.classLiveweights?.tolly).toBeGreaterThan(0);
+  });
+
   it("round-trips v2 saves", () => {
     const state = createGame(3300);
     const raw = serializeState(state);

@@ -17,13 +17,14 @@ describe("calving and weaning", () => {
     expect(state.story.composition.calf).toBeGreaterThan(calvesBefore);
   });
 
-  it("moves calves to weaners in May", () => {
+  it("moves calves to heifers and tollies in May", () => {
     const state = createGame(3300);
     state.story = createStoryState(state.herd.headCount);
     state.story.composition.calf = 20;
     state.date = { year: 2027, month: CONFIG.calendar.weaningMonths[0], day: 3, hour: 6 };
     tryWeaning(state);
-    expect(state.story.composition.weaner).toBeGreaterThan(0);
+    expect(state.story.composition.heifer).toBeGreaterThan(0);
+    expect(state.story.composition.tolly).toBeGreaterThan(0);
     expect(state.story.composition.calf).toBeLessThan(20);
   });
 });
