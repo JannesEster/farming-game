@@ -1,7 +1,8 @@
 import type { CampState, GameState } from "../sim/types";
+import { TILE_HOMESTEAD, TILE_OUTSIDE } from "../sim/types";
 import type { HerdOffset } from "./art";
-import { tileCenter } from "./iso";
-import type { IsoLayout } from "./iso";
+import { worldToTile, type IsoLayout } from "./iso";
+import { trackKeys } from "./colour";
 
 function rng(seed: number): () => number {
   let state = seed >>> 0;
@@ -19,30 +20,83 @@ const GATE_PROGRESS = 0.5;
 const GATE_ALONG_PX = 32;
 const GATE_APPROACH_PX = 110;
 
-/** Spread cattle across camp tiles for grazing (August dry season mob). */
+function tileAllowed(
+  state: GameState,
+  tx: number,
+  ty: number,
+  fromCampId: number,
+  destCampId: number | undefined,
+  inTransit: boolean,
+  track: Set<string>,
+): boolean {
+  if (tx < 0 || ty < 0 || tx >= state.width || ty >= state.height) return false;
+  const key = `${tx},${ty}`;
+  const id = state.campIds[ty * state.width + tx];
+  if (id === TILE_HOMESTEAD) return false;
+  if (id === TILE_OUTSIDE) return inTransit && track.has(key);
+  if (inTransit) {
+    if (track.has(key)) return true;
+    if (id === fromCampId) return true;
+    if (destCampId !== undefined && id === destCampId) return true;
+    return false;
+  }
+  return id === fromCampId;
+}
+
+/** Pull offsets back until each animal stands on an allowed grazing tile. */
+export function clampOffsetsToCamp(
+  state: GameState,
+  fromCampId: number,
+  offsets: HerdOffset[],
+  herdX: number,
+  herdY: number,
+  layout: IsoLayout,
+  tileW: number,
+  tileH: number,
+  inTransit: boolean,
+  track: Set<string> = trackKeys(state),
+): HerdOffset[] {
+  const destCampId = state.herd.transit?.toCampId;
+  return offsets.map((o) => {
+    let x = o.x;
+    let y = o.y;
+    for (let step = 0; step < 12; step += 1) {
+      const tile = worldToTile(herdX + x, herdY + y, layout, tileW, tileH);
+      const tx = Math.round(tile.x);
+      const ty = Math.round(tile.y);
+      if (tileAllowed(state, tx, ty, fromCampId, destCampId, inTransit, track)) {
+        return { ...o, x, y };
+      }
+      x *= 0.78;
+      y *= 0.78;
+    }
+    return { ...o, x: 0, y: 0 };
+  });
+}
+
+/** One grazing mob clustered inside the occupied camp (not spread across tiles). */
 export function spreadInCamp(
   camp: CampState,
   count: number,
   seed: number,
-  layout: IsoLayout,
+  _layout: IsoLayout,
   tileW: number,
   tileH: number,
 ): HerdOffset[] {
   const next = rng(seed + camp.id * 997);
-  const tiles = camp.tiles.length > 0 ? camp.tiles : [camp.anchor];
-  const center = tileCenter(camp.anchor.x, camp.anchor.y, layout, tileW, tileH);
+  const radiusX = tileW * 0.36;
+  const radiusY = tileH * 0.2;
   const offsets: HerdOffset[] = [];
   for (let i = 0; i < count; i += 1) {
-    const tile = tiles[(i * 7 + 3) % tiles.length];
-    const pt = tileCenter(tile.x, tile.y, layout, tileW, tileH);
-    const jitterX = (next() - 0.5) * tileW * 0.72;
-    const jitterY = (next() - 0.5) * tileH * 1.1;
+    const t = count <= 1 ? 0.5 : i / (count - 1);
+    const angle = t * Math.PI * 2 * 2.1 + next() * 0.35;
+    const radial = Math.sqrt(t) * (0.55 + next() * 0.35);
     offsets.push({
-      x: pt.x - center.x + jitterX,
-      y: pt.y - center.y + jitterY,
+      x: Math.cos(angle) * radiusX * radial + (next() - 0.5) * tileW * 0.08,
+      y: Math.sin(angle) * radiusY * radial + (next() - 0.5) * tileH * 0.06,
       flip: next() > 0.5,
       coat: Math.floor(next() * 6),
-      scale: 0.62 + next() * 0.14,
+      scale: 0.88 + next() * 0.08,
     });
   }
   return offsets;
@@ -218,16 +272,24 @@ export function offsetsForHerd(
   progress: number,
   tangent: { x: number; y: number },
   timeMs: number,
+  herdX: number,
+  herdY: number,
 ): HerdOffset[] {
+  const track = trackKeys(state);
   const count = state.herd.headCount;
-  let campId = state.herd.campId;
-  if (inTransit && progress > 0.85 && state.herd.transit) campId = state.herd.transit.toCampId;
-  const camp = state.camps.find((c) => c.id === campId);
-  if (!camp) return [];
-  const spread = spreadInCamp(camp, count, state.seed, layout, tileW, tileH);
-  if (!inTransit) return spread;
-  const trek = organicTrekOffsets(count, state.seed, tangent.x, tangent.y, progress, timeMs);
-  let trekWeight = 1;
-  if (progress > 0.86) trekWeight = Math.max(0, (1 - progress) / 0.14);
-  return blendOffsets(spread, trek, trekWeight);
+  const fromCampId = state.herd.campId;
+  const fromCamp = state.camps.find((c) => c.id === fromCampId);
+  if (!fromCamp) return [];
+  let spreadCamp = fromCamp;
+  if (inTransit && progress > 0.85 && state.herd.transit) {
+    spreadCamp = state.camps.find((c) => c.id === state.herd.transit!.toCampId) ?? fromCamp;
+  }
+  let spread = spreadInCamp(spreadCamp, count, state.seed, layout, tileW, tileH);
+  if (inTransit) {
+    const trek = organicTrekOffsets(count, state.seed, tangent.x, tangent.y, progress, timeMs);
+    let trekWeight = 1;
+    if (progress > 0.86) trekWeight = Math.max(0, (1 - progress) / 0.14);
+    spread = blendOffsets(spread, trek, trekWeight);
+  }
+  return clampOffsetsToCamp(state, fromCampId, spread, herdX, herdY, layout, tileW, tileH, inTransit, track);
 }

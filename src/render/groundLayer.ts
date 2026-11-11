@@ -71,6 +71,11 @@ export function bakeTerrainChunk(
   const w = Math.ceil(maxX - minX + pad * 2);
   const h = Math.ceil(maxY - minY + pad * 2);
   const rt = scene.add.renderTexture(minX - pad, minY - pad, w, h).setOrigin(0, 0).setDepth(0);
+  const backdrop = scene.add.graphics();
+  backdrop.fillStyle(0x3b2a1e, 1);
+  backdrop.fillRect(0, 0, w, h);
+  rt.draw(backdrop, 0, 0);
+  backdrop.destroy();
 
   for (const stamp of stamps) {
     const localX = stamp.x - minX + pad;

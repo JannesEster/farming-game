@@ -157,10 +157,11 @@ export function propSpriteForKind(kind: string, x: number, y: number, featureSca
   }
 }
 
-/** Readable cattle scale (~1.8 m animal on 75 m tile, boosted for phone). */
+/** ~1/5 farmhouse width at yard zoom (2 m beast vs ~15 m house). */
 export function cattleDisplayScale(multiplier = 1): number {
   const tileW = CONFIG.view.tileWidth;
-  const readable = (tileW * 0.56) / 138;
+  const houseSpanTiles = 2.05;
+  const readable = (tileW * houseSpanTiles) / 5.5 / 138;
   return readable * multiplier;
 }
 

@@ -163,13 +163,13 @@ export class FarmScene extends Phaser.Scene {
     this.syncHerdFromSim();
     this.spawnCows();
     this.herdLabel = this.add
-      .text(this.herdVisual.x, this.herdVisual.y - 52, "", {
+      .text(this.herdVisual.x, this.herdVisual.y - 42, "", {
         fontFamily: "Segoe UI, Helvetica Neue, sans-serif",
-        fontSize: "15px",
-        color: "#f7f0e2",
-        stroke: "#2a1c12",
-        strokeThickness: 4,
-        fontStyle: "700",
+        fontSize: "11px",
+        color: "#f4eadc",
+        fontStyle: "600",
+        backgroundColor: "rgba(28, 18, 12, 0.82)",
+        padding: { x: 8, y: 4 },
       })
       .setOrigin(0.5, 1)
       .setDepth(20001)
@@ -809,6 +809,8 @@ export class FarmScene extends Phaser.Scene {
       progress,
       pathTangent(this.state),
       timeMs,
+      this.herdVisual.x,
+      this.herdVisual.y,
     );
     if (this.state.herd.campId !== this.lastHerdCampId) this.lastHerdCampId = this.state.herd.campId;
   }
@@ -861,7 +863,8 @@ export class FarmScene extends Phaser.Scene {
   private refreshHerdLabel(): void {
     if (!this.herdLabel) return;
     this.herdLabel.setText(`${this.state.herd.headCount} head`);
-    this.herdLabel.setPosition(this.herdVisual.x, this.herdVisual.y - 48);
+    this.herdLabel.setVisible(!this.selected);
+    this.herdLabel.setPosition(this.herdVisual.x, this.herdVisual.y - 40);
     const tile = worldToTile(
       this.herdVisual.x,
       this.herdVisual.y,
@@ -899,14 +902,16 @@ export class FarmScene extends Phaser.Scene {
         cow.setFlipX(false);
       } else if (this.paintedSprites) {
         cow.setTexture(cattleSpriteForCoat(offset.coat));
-        const base = cattleDisplayScale(offset.scale / 0.62);
+        const base = cattleDisplayScale(offset.scale / 0.94);
         const refZoom = (CONFIG.view.phoneTilePx * 0.92) / CONFIG.view.tileWidth;
-        const zoomComp = clamp(refZoom / Math.max(zoom, 0.35), 1, 1.85);
-        const squash = walking && !this.reduceMotion ? 1 + Math.sin(time / 170 + index * 0.9) * 0.04 : 1;
+        const zoomComp = zoom < 0.45 ? clamp(refZoom / Math.max(zoom, 0.08), 1, 1.45) : 1;
+        const squash = walking && !this.reduceMotion ? 1 + Math.sin(time / 170 + index * 0.9) * 0.03 : 1;
         const s = base * zoomComp;
         cow.setScale(s, s * squash);
         cow.setFlipX(offset.flip);
-        cow.setRotation(walking || this.reduceMotion ? 0 : 0.12);
+        const grazeTilt =
+          walking || this.reduceMotion ? 0 : Math.sin(time / 520 + index * 1.1) * 0.04;
+        cow.setRotation(grazeTilt);
       } else {
         const animFrame = walking
           ? Math.floor(time / 160 + index * 0.15) % 3
@@ -1006,6 +1011,7 @@ export class FarmScene extends Phaser.Scene {
       pendingCampName: this.pendingCampName,
     });
     this.refreshCampLabels();
+    this.refreshHerdLabel();
     if (herdInTransit(this.state.herd)) this.redrawFences();
   }
 
