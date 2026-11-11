@@ -4,7 +4,19 @@ import { COPY } from "../sim/format";
 import { clamp } from "../sim/math";
 import { clearSavedGame, initialGameState, saveGame } from "../sim/persist";
 import { campIdAt, moveHerd, stepDay } from "../sim/simulation";
-import { zoomScrollDelta } from "./camera";
+import {
+  PAN_INERTIA,
+  HOMESTEAD_KINDS,
+  applyPanFriction,
+  boundsCenter,
+  boundsFromPoints,
+  clampZoom,
+  pinchCenter,
+  pinchZoom,
+  preferredHomesteadZoom,
+  zoomScrollDelta,
+  type WorldBounds,
+} from "./camera";
 import { grazeableFraction } from "../sim/pasture";
 import { TILE_HOMESTEAD, TILE_OUTSIDE, type GameState } from "../sim/types";
 import { ART_ORIGIN, buildArt, WINDMILL_AXLE_LIFT } from "./art";
@@ -13,7 +25,16 @@ import { mountHud, type Hud, type SpeedMode } from "./hud";
 import { isoLayout, tileCenter, tileTop, worldToTile, type IsoLayout } from "./iso";
 import { palette } from "./palette";
 
-type PointerRec = { x: number; y: number; sx: number; sy: number; moved: boolean };
+type PointerRec = {
+  x: number;
+  y: number;
+  sx: number;
+  sy: number;
+  moved: boolean;
+  lastAt: number;
+  vx: number;
+  vy: number;
+};
 type Segment = { x1: number; y1: number; x2: number; y2: number };
 
 export class FarmScene extends Phaser.Scene {
@@ -39,6 +60,11 @@ export class FarmScene extends Phaser.Scene {
   private pinchStartDist = 0;
   private pinchStartZoom = 1;
   private gesturePinched = false;
+  private panVel: { vx: number; vy: number } | null = null;
+  private lastTapAt = 0;
+  private lastTapX = 0;
+  private lastTapY = 0;
+  private homesteadBounds: WorldBounds | null = null;
   private herdVisual = { x: 0, y: 0, fromX: 0, fromY: 0, toX: 0, toY: 0, t: 1 };
   private campLabels = new Map<number, Phaser.GameObjects.Text>();
 
@@ -67,6 +93,7 @@ export class FarmScene extends Phaser.Scene {
     this.herdVisual.toX = anchor.x;
     this.herdVisual.toY = anchor.y;
     this.spawnCows();
+    this.homesteadBounds = this.buildHomesteadBounds();
     this.cameras.main.setBounds(0, 0, this.layout.width, this.layout.height);
     this.layoutCamera(true);
     this.bindInput();
@@ -74,6 +101,7 @@ export class FarmScene extends Phaser.Scene {
       onSpeed: (mode) => this.setSpeed(mode),
       onMinimap: (nx, ny) => this.onMinimap(nx, ny),
       onNewFarm: () => this.startNewFarm(),
+      onHome: () => this.goHome(),
     });
     this.hud.setSpeed(this.mode);
     this.hud.setHint(COPY.hintStart);
@@ -106,6 +134,7 @@ export class FarmScene extends Phaser.Scene {
     if (this.blades && !this.reduceMotion) {
       this.blades.rotation += (delta / 1000) * CONFIG.view.windmillRadiansPerSecond;
     }
+    this.applyPanInertia(delta);
     this.drawRain(time);
     this.drawRing();
   }
@@ -406,14 +435,14 @@ export class FarmScene extends Phaser.Scene {
     const height = this.cameras.main.height;
     this.rain.lineStyle(2, 0xc5dce8, 0.45);
     const drift = this.reduceMotion ? 0 : time * 0.08;
+    this.rain.beginPath();
     for (let i = 0; i < count; i += 1) {
       const x = (i * 97 + 13) % Math.max(1, width);
       const y = (i * 53 + drift) % (height + 24) - 12;
-      this.rain.beginPath();
       this.rain.moveTo(x, y);
       this.rain.lineTo(x + 3, y + 11);
-      this.rain.strokePath();
     }
+    this.rain.strokePath();
   }
 
   private syncHud(): void {
@@ -421,15 +450,50 @@ export class FarmScene extends Phaser.Scene {
     this.refreshCampLabels();
   }
 
+  private buildHomesteadBounds(): WorldBounds | null {
+    const points = this.state.features
+      .filter((feature) => HOMESTEAD_KINDS.has(feature.kind))
+      .map((feature) =>
+        tileCenter(feature.x, feature.y, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight),
+      );
+    return boundsFromPoints(points, 112);
+  }
+
+  private goHome(): void {
+    this.panVel = null;
+    this.layoutCamera(true);
+  }
+
+  private applyPanInertia(delta: number): void {
+    if (!this.panVel) return;
+    const camera = this.cameras.main;
+    const dt = Math.min(delta, CONFIG.view.maxFrameMs);
+    camera.scrollX += (this.panVel.vx * dt) / 1000;
+    camera.scrollY += (this.panVel.vy * dt) / 1000;
+    this.clampScroll();
+    this.panVel = applyPanFriction(
+      this.panVel.vx,
+      this.panVel.vy,
+      dt,
+      PAN_INERTIA.decayPerFrame,
+      PAN_INERTIA.minSpeed,
+    );
+  }
+
   private bindInput(): void {
     this.input.addPointer(1);
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      this.panVel = null;
+      const now = performance.now();
       this.pointers.set(pointer.id, {
         x: pointer.x,
         y: pointer.y,
         sx: pointer.x,
         sy: pointer.y,
         moved: false,
+        lastAt: now,
+        vx: 0,
+        vy: 0,
       });
       if (this.pointers.size >= 2) {
         this.pinching = true;
@@ -450,15 +514,28 @@ export class FarmScene extends Phaser.Scene {
       if (this.pointers.size >= 2 && this.pinching) {
         const [a, b] = [...this.pointers.values()];
         const distance = Math.hypot(a.x - b.x, a.y - b.y);
-        if (this.pinchStartDist > 8) {
-          this.zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, this.pinchStartZoom * (distance / this.pinchStartDist));
-        }
+        const center = pinchCenter(a, b);
+        const next = pinchZoom(
+          this.pinchStartZoom,
+          this.pinchStartDist,
+          distance,
+          this.minZoom,
+          this.maxZoom,
+        );
+        if (next !== null) this.zoomAt(center.x, center.y, next);
         return;
       }
       if (this.pointers.size === 1 && rec.moved && !this.gesturePinched) {
         const camera = this.cameras.main;
-        camera.scrollX -= (pointer.x - previousX) / camera.zoom;
-        camera.scrollY -= (pointer.y - previousY) / camera.zoom;
+        const worldDx = -(pointer.x - previousX) / camera.zoom;
+        const worldDy = -(pointer.y - previousY) / camera.zoom;
+        camera.scrollX += worldDx;
+        camera.scrollY += worldDy;
+        const now = performance.now();
+        const dt = Math.max(1, now - rec.lastAt);
+        rec.vx = clamp((worldDx / dt) * 1000, -PAN_INERTIA.maxSpeed, PAN_INERTIA.maxSpeed);
+        rec.vy = clamp((worldDy / dt) * 1000, -PAN_INERTIA.maxSpeed, PAN_INERTIA.maxSpeed);
+        rec.lastAt = now;
         this.clampScroll();
       }
     });
@@ -466,10 +543,27 @@ export class FarmScene extends Phaser.Scene {
       const rec = this.pointers.get(pointer.id);
       this.pointers.delete(pointer.id);
       if (this.pointers.size < 2) this.pinching = false;
+      if (rec?.moved && !this.gesturePinched && this.pointers.size === 0) {
+        const speed = Math.hypot(rec.vx, rec.vy);
+        if (speed >= PAN_INERTIA.minSpeed) {
+          this.panVel = { vx: rec.vx, vy: rec.vy };
+        }
+      }
       if (this.pointers.size > 0) return;
       const pinched = this.gesturePinched;
       this.gesturePinched = false;
       if (!rec || rec.moved || pinched) return;
+      const now = performance.now();
+      const isDoubleTap =
+        now - this.lastTapAt < PAN_INERTIA.doubleTapMs &&
+        Math.hypot(pointer.x - this.lastTapX, pointer.y - this.lastTapY) < PAN_INERTIA.doubleTapSlopPx;
+      this.lastTapAt = now;
+      this.lastTapX = pointer.x;
+      this.lastTapY = pointer.y;
+      if (isDoubleTap) {
+        this.goHome();
+        return;
+      }
       this.onTap(pointer);
     };
     this.input.on("pointerup", end);
@@ -553,28 +647,31 @@ export class FarmScene extends Phaser.Scene {
     const camera = this.cameras.main;
     const fit =
       Math.min(camera.width / this.layout.width, camera.height / this.layout.height) * CONFIG.view.fitMargin;
-    this.minZoom = Math.max(0.05, fit);
+    this.minZoom = Math.max(0.05, fit * 0.88);
     this.maxZoom = Math.max(this.minZoom, CONFIG.view.maxTilePx / CONFIG.view.tileWidth);
-    const target =
-      camera.width >= CONFIG.view.desktopMinWidthPx ? CONFIG.view.desktopTilePx : CONFIG.view.phoneTilePx;
-    const fillHeight = (camera.height / this.layout.height) * CONFIG.view.fitMargin;
-    const preferred = clamp(
-      Math.max(target / CONFIG.view.tileWidth, fillHeight),
-      this.minZoom,
-      this.maxZoom,
-    );
-    if (resetView) {
-      camera.setZoom(preferred);
+    if (resetView && this.homesteadBounds) {
+      const center = boundsCenter(this.homesteadBounds);
+      const preferred = preferredHomesteadZoom(
+        this.homesteadBounds,
+        camera.width,
+        camera.height,
+        CONFIG.view.tileWidth,
+      );
+      camera.setZoom(clampZoom(preferred, this.minZoom, this.maxZoom));
+      camera.centerOn(center.x, center.y);
+    } else if (resetView) {
       camera.centerOn(this.herdVisual.x, this.herdVisual.y);
+      camera.setZoom(clampZoom(camera.zoom, this.minZoom, this.maxZoom));
     } else {
-      camera.setZoom(clamp(camera.zoom, this.minZoom, this.maxZoom));
+      camera.setZoom(clampZoom(camera.zoom, this.minZoom, this.maxZoom));
     }
     this.clampScroll();
   }
 
   private zoomAt(screenX: number, screenY: number, zoom: number): void {
     const camera = this.cameras.main;
-    const next = clamp(zoom, this.minZoom, this.maxZoom);
+    this.panVel = null;
+    const next = clampZoom(zoom, this.minZoom, this.maxZoom);
     const before = camera.getWorldPoint(screenX, screenY);
     camera.setZoom(next);
     const after = camera.getWorldPoint(screenX, screenY);
