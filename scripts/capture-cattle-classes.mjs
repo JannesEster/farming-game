@@ -63,6 +63,19 @@ async function main() {
 
     await capture({ width: 1280, height: 800 }, "desktop-1280x800");
     await capture({ width: 390, height: 844 }, "mobile-390x844");
+
+    const tutorialPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await tutorialPage.goto("http://127.0.0.1:4173/?capture=1&flowCapture=tutorial", {
+      waitUntil: "networkidle",
+    });
+    await tutorialPage.waitForFunction(() => window.__farmCapture?.showTutorialStep1);
+    await tutorialPage.evaluate(() => window.__farmCapture.showTutorialStep1());
+    await tutorialPage.waitForTimeout(450);
+    const tutorialName = "tutorial-tip-mobile-390x844.png";
+    await tutorialPage.screenshot({ path: path.join(outDir, tutorialName), fullPage: false });
+    shots.push(tutorialName);
+    await tutorialPage.close();
+
     await browser.close();
     console.log(JSON.stringify({ outDir, shots }, null, 2));
   } finally {

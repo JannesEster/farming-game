@@ -313,7 +313,7 @@ export function mountHud(options: {
     sheet.dataset.expanded = expanded ? "true" : "false";
     summary.setAttribute("aria-expanded", expanded ? "true" : "false");
     sheetDetail.hidden = !expanded;
-    if (expanded) options.onSheetExpanded?.(true);
+    options.onSheetExpanded?.(expanded);
     syncChromeInsets();
   }
 
@@ -341,11 +341,14 @@ export function mountHud(options: {
         expanded = false;
         sheet.dataset.expanded = "false";
         sheetDetail.hidden = true;
+        options.onSheetExpanded?.(false);
       } else {
+        const prevExpanded = expanded;
         if (ui.expanded !== undefined) expanded = ui.expanded;
         sheet.dataset.expanded = expanded ? "true" : "false";
         summary.setAttribute("aria-expanded", expanded ? "true" : "false");
         sheetDetail.hidden = !expanded;
+        if (prevExpanded !== expanded) options.onSheetExpanded?.(expanded);
 
         const camp = findCamp(state, state.herd.campId);
         const fraction = camp ? grazeableFraction(camp) : 0;

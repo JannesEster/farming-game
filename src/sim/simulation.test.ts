@@ -272,7 +272,8 @@ describe("calendar and rain", () => {
     expect(isRainyMonth(1)).toBe(true);
     expect(isRainyMonth(7)).toBe(false);
     expect(formatDate({ year: 2026, month: 8, day: 1, hour: 6 })).toBe("1 Aug 2026, 06:00");
-    expect(formatMoney(250000)).toBe("N$ 250,000");
+    expect(formatMoney(250000)).toBe("N$250,000");
+    expect(formatMoney(-19917)).toBe("-N$19,917");
   });
 
   it("resets season rain on 1 July and keeps June on the old total", () => {

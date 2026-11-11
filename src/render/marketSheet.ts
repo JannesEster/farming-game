@@ -24,6 +24,8 @@ export function mountMarketSheet(options: {
   getState: () => GameState;
   onChange: () => void;
   onToast: (text: string) => void;
+  onOpen?: () => void;
+  onClose?: () => void;
 }): MarketSheet {
   const root = document.getElementById("hud-root");
   if (!root) throw new Error("Missing HUD root for market sheet.");
@@ -151,6 +153,7 @@ export function mountMarketSheet(options: {
   const close = (): void => {
     open = false;
     sheet.hidden = true;
+    options.onClose?.();
   };
 
   closeBtn.addEventListener("click", close);
@@ -207,6 +210,7 @@ export function mountMarketSheet(options: {
       open = true;
       sheet.hidden = false;
       refresh(options.getState());
+      options.onOpen?.();
     },
     close,
     isOpen: () => open,

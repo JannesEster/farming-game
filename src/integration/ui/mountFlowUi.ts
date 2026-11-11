@@ -16,7 +16,7 @@ export type FlowUiRenderModel = {
 
 export type FlowUi = {
   render: (model: FlowUiRenderModel) => void;
-  showTutorial: (step: TutorialStep) => void;
+  showTutorial: (step: TutorialStep, options?: { dockTop?: boolean }) => void;
   hideTutorial: () => void;
   hideAll: () => void;
   destroy: () => void;
@@ -122,13 +122,15 @@ export function mountFlowUi(handlers: FlowUiHandlers): FlowUi {
         }
       }
     },
-    showTutorial(step) {
+    showTutorial(step, options) {
       tutorialEl.hidden = false;
+      tutorialEl.classList.toggle("flow-tutorial--dock-top", Boolean(options?.dockTop));
       required(root, "flow-tutorial-title").textContent = step.title;
       required(root, "flow-tutorial-body").textContent = step.body;
     },
     hideTutorial() {
       tutorialEl.hidden = true;
+      tutorialEl.classList.remove("flow-tutorial--dock-top");
     },
     hideAll() {
       hideScreens();

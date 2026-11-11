@@ -37,6 +37,16 @@ export function formatHudDate(date: CalendarDate): string {
   return `${date.day} ${month}`;
 }
 
+/** Full cash amount with thousands separators. Negative values use -N$… */
+export function formatNad(amount: number): string {
+  const rounded = Math.round(amount);
+  const sign = rounded < 0 ? "-" : "";
+  const body = Math.abs(rounded)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${sign}N$${body}`;
+}
+
 export function formatHudMoney(amount: number): string {
   const rounded = Math.round(amount);
   const sign = rounded < 0 ? "-" : "";
@@ -56,12 +66,7 @@ export function formatHerdSheetSummary(headCount: number, campName: string, gras
 }
 
 export function formatMoney(amount: number): string {
-  const rounded = Math.round(amount);
-  const body = Math.abs(rounded)
-    .toString()
-    .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  const sign = rounded < 0 ? "-" : "";
-  return `N$ ${sign}${body}`;
+  return formatNad(amount);
 }
 
 export function formatRain(mm: number): string {

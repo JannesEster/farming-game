@@ -35,6 +35,7 @@ import {
   tutorialActionForSimEvent,
   type TutorialStep,
 } from "./tutorial";
+import type { TutorialStepId } from "./types";
 import type { FlowPhase, FlowRuntime, YearEndReport } from "./types";
 import { mountFlowUi, type FlowUi } from "./ui/mountFlowUi";
 
@@ -64,6 +65,7 @@ export class GameFlowService {
   private farmHud: Hud | null = null;
   /** Player closed the current tip. The step stays until they do it. The clock may run. */
   private tutorialCardClosed = false;
+  private hudPanels = { market: false, herdSheet: false };
 
   boot(game: Phaser.Game): void {
     this.game = game;
@@ -243,6 +245,34 @@ export class GameFlowService {
     if (this.runtime.phase === "start") openStartScreen();
   }
 
+  setHudPanel(panel: "market" | "herdSheet", open: boolean): void {
+    this.hudPanels[panel] = open;
+    this.syncTutorialForHudPanels();
+  }
+
+  private tutorialVisibleForPanels(stepId: TutorialStepId): boolean {
+    if (this.hudPanels.market) return stepId === "sellAtMarket";
+    if (this.hudPanels.herdSheet) {
+      return stepId === "selectHerd" || stepId === "checkGrass";
+    }
+    if (stepId === "sellAtMarket") return false;
+    return true;
+  }
+
+  private syncTutorialForHudPanels(): void {
+    const step = activeStep(this.runtime.meta.tutorial);
+    if (!step || this.tutorialCardClosed || this.runtime.phase !== "playing") {
+      this.ui?.hideTutorial();
+      return;
+    }
+    if (!this.tutorialVisibleForPanels(step.id)) {
+      this.ui?.hideTutorial();
+      return;
+    }
+    this.ui?.showTutorial(step, { dockTop: this.hudPanels.market });
+    this.farmHud?.holdToasts();
+  }
+
   attachFarmHud(hud: Hud): void {
     this.hudUnsub?.();
     this.farmHud = hud;
@@ -363,7 +393,11 @@ export class GameFlowService {
 
   private showTutorial(step: TutorialStep): void {
     if (this.tutorialCardClosed) return;
-    this.ui?.showTutorial(step);
+    if (!this.tutorialVisibleForPanels(step.id)) {
+      this.ui?.hideTutorial();
+      return;
+    }
+    this.ui?.showTutorial(step, { dockTop: this.hudPanels.market });
     this.farmHud?.holdToasts();
   }
 
@@ -428,8 +462,12 @@ export class GameFlowService {
     if (!this.game) return;
     const farm = this.game.scene.getScene(this.farmSceneKey);
     if (!farm) return;
-    if (pause) farm.scene.pause();
-    else farm.scene.resume();
+    const sys = farm.scene;
+    if (pause) {
+      if (sys.isActive() && !sys.isPaused()) sys.pause();
+    } else if (sys.isPaused()) {
+      sys.resume();
+    }
   }
 
   /** Capture / test bridge */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CONFIG } from "./config";
-import { tryCalving, tryWeaning } from "./seasonCycle";
+import { closeMonth, monthPhaseTransitionLine, tryCalving, tryWeaning } from "./seasonCycle";
 import { createGame } from "./simulation";
 import { createStoryState } from "./story";
 
@@ -26,5 +26,22 @@ describe("calving and weaning", () => {
     expect(state.story.composition.heifer).toBeGreaterThan(0);
     expect(state.story.composition.tolly).toBeGreaterThan(0);
     expect(state.story.composition.calf).toBeLessThan(20);
+  });
+});
+
+describe("month in review", () => {
+  it("omits a season line when the phase did not change", () => {
+    const line = monthPhaseTransitionLine({ year: 2026, month: 7, day: 31, hour: 6 });
+    expect(line).toBeNull();
+  });
+
+  it("lists costs on separate lines", () => {
+    const state = createGame(88);
+    state.story = createStoryState(state.herd.headCount);
+    state.date = { year: 2026, month: 8, day: 31, hour: 6 };
+    closeMonth(state);
+    const card = state.story!.pendingCards.find((c) => c.kind === "summary");
+    expect(card?.body).toContain("Costs\nLabour");
+    expect(card?.body).not.toContain("Dry season ended");
   });
 });

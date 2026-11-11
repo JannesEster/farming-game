@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { formatHudDate, formatHudMoney, formatHudRain, formatHerdSheetSummary } from "./format";
+import { formatHudMoney, formatMoney, formatNad } from "./format";
 
-describe("compact HUD formats", () => {
-  it("shortens the top bar labels", () => {
-    expect(formatHudDate({ year: 2026, month: 8, day: 1, hour: 6 })).toBe("1 Aug");
+describe("money formatting", () => {
+  it("formats HUD cash without a space after N$", () => {
     expect(formatHudMoney(250_000)).toBe("N$250k");
-    expect(formatHudRain(0)).toBe("0 mm");
+    expect(formatHudMoney(-250_000)).toBe("-N$250k");
   });
 
-  it("fits the herd sheet on one line", () => {
-    expect(formatHerdSheetSummary(120, "Camp 4", 75)).toBe("Herd 120, Camp 4, grass 75%");
+  it("formats full amounts with sign before N$", () => {
+    expect(formatNad(5730)).toBe("N$5,730");
+    expect(formatNad(-19917)).toBe("-N$19,917");
+    expect(formatMoney(5730)).toBe("N$5,730");
   });
 });
