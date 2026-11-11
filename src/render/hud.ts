@@ -1,6 +1,7 @@
 import { CONFIG } from "../sim/config";
 import {
   COPY,
+  formatCampBadge,
   formatCampLine,
   formatCondition,
   formatDate,
@@ -10,9 +11,11 @@ import {
   formatGrassPercent,
   formatHead,
   formatMoney,
+  formatMoveWarning,
   formatRain,
   formatSeason,
 } from "../sim/format";
+import { moveAdvice } from "../sim/grazing";
 import { findCamp } from "../sim/simulation";
 import { grazeableFraction, grazingDaysLeft } from "../sim/pasture";
 import type { GameState } from "../sim/types";
@@ -23,6 +26,7 @@ export type SpeedMode = "pause" | "play" | "fast";
 
 export type Hud = {
   update(state: GameState, selected: boolean): void;
+  campBadge(campId: number): string;
   setSpeed(mode: SpeedMode): void;
   setHint(text: string): void;
   destroy(): void;
@@ -38,6 +42,7 @@ const ICONS = {
 export function mountHud(options: {
   onSpeed: (mode: SpeedMode) => void;
   onMinimap: (nx: number, ny: number) => void;
+  onNewFarm: () => void;
 }): Hud {
   const root = document.getElementById("hud-root");
   if (!root) throw new Error("Missing the HUD root.");
@@ -56,6 +61,7 @@ export function mountHud(options: {
         <button type="button" id="speed-play" aria-label="Play">${ICONS.play}</button>
         <button type="button" id="speed-fast" aria-label="Fast">${ICONS.fast}</button>
       </div>
+      <button type="button" class="pill-btn" id="new-farm">${COPY.newFarmLabel}</button>
       <p class="hint" id="hint"></p>
     </header>
     <section class="card" id="herd-card" hidden>
@@ -65,6 +71,8 @@ export function mountHud(options: {
       <div class="meter"><span>Condition</span><div class="bar"><span id="condition-bar"></span></div><b id="condition-value"></b></div>
       <div class="meter"><span>Grass</span><div class="bar"><span id="grass-bar"></span></div><b id="grass-value"></b></div>
       <p id="herd-days"></p>
+      <p class="warn move-warn" id="herd-move-warn" hidden></p>
+      <p class="move-recovery" id="herd-recovery" hidden></p>
       <p class="extra" id="herd-left"></p>
       <p class="extra warn" id="herd-status"></p>
     </section>
@@ -85,8 +93,11 @@ export function mountHud(options: {
   const grassBar = required(root, "grass-bar");
   const grassValue = required(root, "grass-value");
   const daysEl = required(root, "herd-days");
+  const moveWarnEl = required(root, "herd-move-warn");
+  const recoveryEl = required(root, "herd-recovery");
   const leftEl = required(root, "herd-left");
   const statusEl = required(root, "herd-status");
+  const newFarmBtn = requiredButton(root, "new-farm");
   const minimap = root.querySelector<HTMLCanvasElement>("#minimap");
   if (!minimap) throw new Error("Missing the minimap.");
 
@@ -98,6 +109,7 @@ export function mountHud(options: {
   (Object.keys(buttons) as SpeedMode[]).forEach((mode) => {
     buttons[mode].addEventListener("click", () => options.onSpeed(mode));
   });
+  newFarmBtn.addEventListener("click", () => options.onNewFarm());
   minimap.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -107,8 +119,18 @@ export function mountHud(options: {
     options.onMinimap(nx, ny);
   });
 
+  let lastState: GameState | null = null;
+
   return {
+    campBadge(campId) {
+      if (!lastState) return "";
+      const camp = findCamp(lastState, campId);
+      if (!camp) return "";
+      const advice = moveAdvice(lastState.herd, camp, lastState.date);
+      return formatCampBadge(advice, campId === lastState.herd.campId);
+    },
     update(state, selected) {
+      lastState = state;
       dateEl.textContent = formatDate(state.date);
       seasonEl.textContent = formatSeason(state.date);
       cashEl.textContent = formatMoney(state.cashNad);
@@ -133,6 +155,11 @@ export function mountHud(options: {
           grassBar.style.background = toCss(grassTint(fraction));
           grassValue.textContent = formatGrassPercent(fraction);
           daysEl.textContent = formatDaysInCamp(state.herd.daysInCamp);
+          const moveWarn = formatMoveWarning(state.herd, camp, state.date);
+          moveWarnEl.textContent = moveWarn;
+          moveWarnEl.hidden = moveWarn.length === 0;
+          recoveryEl.textContent = moveWarn.length > 0 ? COPY.moveRecovery : "";
+          recoveryEl.hidden = moveWarn.length === 0;
           leftEl.textContent = formatGrassLeft(daysLeft, fraction);
           const status = formatFeedStatus(daysLeft);
           statusEl.textContent = status;

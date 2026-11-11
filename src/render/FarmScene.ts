@@ -2,7 +2,9 @@ import Phaser from "phaser";
 import { CONFIG } from "../sim/config";
 import { COPY } from "../sim/format";
 import { clamp } from "../sim/math";
+import { clearSavedGame, initialGameState, saveGame } from "../sim/persist";
 import { campIdAt, createGame, moveHerd, stepDay } from "../sim/simulation";
+import { zoomScrollDelta } from "./camera";
 import { grazeableFraction } from "../sim/pasture";
 import { TILE_HOMESTEAD, TILE_OUTSIDE, type GameState } from "../sim/types";
 import { ART_ORIGIN, buildArt, WINDMILL_AXLE_LIFT } from "./art";
@@ -38,13 +40,14 @@ export class FarmScene extends Phaser.Scene {
   private pinchStartZoom = 1;
   private gesturePinched = false;
   private herdVisual = { x: 0, y: 0, fromX: 0, fromY: 0, toX: 0, toY: 0, t: 1 };
+  private campLabels = new Map<number, Phaser.GameObjects.Text>();
 
   constructor() {
     super("farm");
   }
 
   create(): void {
-    this.state = createGame();
+    this.state = initialGameState();
     this.reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const tileW = CONFIG.view.tileWidth;
     const tileH = CONFIG.view.tileHeight;
@@ -70,6 +73,7 @@ export class FarmScene extends Phaser.Scene {
     this.hud = mountHud({
       onSpeed: (mode) => this.setSpeed(mode),
       onMinimap: (nx, ny) => this.onMinimap(nx, ny),
+      onNewFarm: () => this.startNewFarm(),
     });
     this.hud.setSpeed(this.mode);
     this.hud.setHint(COPY.hintStart);
@@ -95,6 +99,7 @@ export class FarmScene extends Phaser.Scene {
       if (steps > 0) {
         this.refreshGrass();
         this.syncHud();
+        this.persist();
       }
     }
     this.animateHerd(time, delta);
@@ -203,7 +208,7 @@ export class FarmScene extends Phaser.Scene {
         CONFIG.view.tileWidth,
         CONFIG.view.tileHeight,
       );
-      this.add
+      const label = this.add
         .text(point.x, point.y, String(camp.id + 1), {
           fontFamily: "Segoe UI, Helvetica Neue, sans-serif",
           fontSize: `${CONFIG.view.labelSizePx}px`,
@@ -215,7 +220,29 @@ export class FarmScene extends Phaser.Scene {
         .setOrigin(0.5, 0.5)
         .setDepth(20000)
         .setResolution(2);
+      this.campLabels.set(camp.id, label);
     }
+    this.refreshCampLabels();
+  }
+
+  private refreshCampLabels(): void {
+    for (const camp of this.state.camps) {
+      const label = this.campLabels.get(camp.id);
+      if (!label) continue;
+      const base = String(camp.id + 1);
+      const badge = this.hud?.campBadge(camp.id) ?? "";
+      label.setText(badge ? `${base}\n${badge}` : base);
+      label.setColor(camp.id === this.state.herd.campId && badge ? "#f0c27a" : "#f7f0e2");
+    }
+  }
+
+  private startNewFarm(): void {
+    clearSavedGame();
+    this.scene.restart();
+  }
+
+  private persist(): void {
+    saveGame(this.state);
   }
 
   private spawnCows(): void {
@@ -391,6 +418,7 @@ export class FarmScene extends Phaser.Scene {
 
   private syncHud(): void {
     this.hud.update(this.state, this.selected);
+    this.refreshCampLabels();
   }
 
   private bindInput(): void {
@@ -518,6 +546,7 @@ export class FarmScene extends Phaser.Scene {
     this.startMove();
     this.redrawFences();
     this.syncHud();
+    this.persist();
   }
 
   private layoutCamera(resetView: boolean): void {
@@ -549,8 +578,9 @@ export class FarmScene extends Phaser.Scene {
     const before = camera.getWorldPoint(screenX, screenY);
     camera.setZoom(next);
     const after = camera.getWorldPoint(screenX, screenY);
-    camera.scrollX += before.x - after.x;
-    camera.scrollY += after.y - after.y;
+    const delta = zoomScrollDelta(before.x, before.y, after.x, after.y);
+    camera.scrollX += delta.scrollX;
+    camera.scrollY += delta.scrollY;
     this.clampScroll();
   }
 

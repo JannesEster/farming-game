@@ -20,12 +20,30 @@ export function dailyDemandKg(herd: HerdState, config: GameConfig = CONFIG): num
   return herdLiveweightKg(herd) * config.pasture.dailyIntakeFractionOfLiveweight;
 }
 
+/** Litter and unpalatable residue left in the camp after grazing. Not the May budget half. */
+export function residualDmKgPerHa(peakDmKgPerHa: number, config: GameConfig = CONFIG): number {
+  return Math.max(
+    config.pasture.residualDmKgPerHaMin,
+    peakDmKgPerHa * config.pasture.residualFractionOfPeak,
+  );
+}
+
+/** @deprecated Use residualDmKgPerHa. Kept for older tests that name the grazing stop line. */
 export function floorDmKgPerHa(peakDmKgPerHa: number, config: GameConfig = CONFIG): number {
-  return peakDmKgPerHa * (1 - config.pasture.consumableFractionOfStandingDm);
+  return residualDmKgPerHa(peakDmKgPerHa, config);
+}
+
+/** Kruger May budget: only this fraction of standing DM counts as consumable for the season plan. */
+export function consumableDmKgInCamp(camp: CampState, config: GameConfig = CONFIG): number {
+  return camp.standingDmKgPerHa * camp.hectares * config.pasture.consumableFractionOfStandingDm;
+}
+
+export function effectiveGrazingHectares(hectares: number, config: GameConfig = CONFIG): number {
+  return Math.max(1, hectares * config.pasture.activeGrazingFractionOfCamp);
 }
 
 export function grazeableFraction(camp: CampState, config: GameConfig = CONFIG): number {
-  const floor = floorDmKgPerHa(camp.peakDmKgPerHa, config);
+  const floor = residualDmKgPerHa(camp.peakDmKgPerHa, config);
   const band = camp.peakDmKgPerHa - floor;
   if (band <= 0) return 0;
   return clamp((camp.standingDmKgPerHa - floor) / band, 0, 1);
@@ -34,8 +52,9 @@ export function grazeableFraction(camp: CampState, config: GameConfig = CONFIG):
 export function grazingDaysLeft(camp: CampState, herd: HerdState, config: GameConfig = CONFIG): number {
   const demand = dailyDemandKg(herd, config);
   if (demand <= 0) return Number.POSITIVE_INFINITY;
-  const floor = floorDmKgPerHa(camp.peakDmKgPerHa, config);
-  const available = Math.max(0, camp.standingDmKgPerHa - floor) * camp.hectares;
+  const floor = residualDmKgPerHa(camp.peakDmKgPerHa, config);
+  const available =
+    Math.max(0, camp.standingDmKgPerHa - floor) * effectiveGrazingHectares(camp.hectares, config);
   return available / demand;
 }
 
@@ -62,8 +81,9 @@ export function grazeStanding(
   config: GameConfig = CONFIG,
 ): { standingDmKgPerHa: number; eatenKg: number } {
   if (hectares <= 0) return { standingDmKgPerHa, eatenKg: 0 };
-  const floor = floorDmKgPerHa(peakDmKgPerHa, config);
-  const available = Math.max(0, standingDmKgPerHa - floor) * hectares;
+  const floor = residualDmKgPerHa(peakDmKgPerHa, config);
+  const grazeHa = effectiveGrazingHectares(hectares, config);
+  const available = Math.max(0, standingDmKgPerHa - floor) * grazeHa;
   const eatenKg = Math.min(Math.max(0, demandKg), available);
   return {
     standingDmKgPerHa: standingDmKgPerHa - eatenKg / hectares,

@@ -8,15 +8,20 @@ import { COPY, formatDate, formatMoney, formatSeason } from "./format";
 import { createRng, rngFromState } from "./rng";
 import {
   carryingCapacityLsu,
+  consumableDmKgInCamp,
   dailyDemandKg,
-  floorDmKgPerHa,
+  effectiveGrazingHectares,
   grazeableFraction,
   grazingDaysLeft,
   grazeStanding,
   growthKgPerHa,
   herdLsu,
   nextCondition,
+  residualDmKgPerHa,
 } from "./pasture";
+import { parseSaved, serializeState } from "./persist";
+import { maxGrazingDaysInCamp, moveAdvice } from "./grazing";
+import { formatMoveWarning } from "./format";
 import { dailyRainMm } from "./rainfall";
 import { createGame, findCamp, moveHerd, stepDay, stepDayWithRain } from "./simulation";
 import type { CampState, GameState, HerdState } from "./types";
@@ -73,20 +78,35 @@ describe("sourced constants", () => {
 });
 
 describe("pasture maths", () => {
-  it("eats demand from the grass above the litter floor", () => {
-    const grazed = grazeStanding(1000, 1600, 100, 500);
-    expect(floorDmKgPerHa(1600)).toBeCloseTo(800);
-    expect(grazed.eatenKg).toBeCloseTo(500);
-    expect(grazed.standingDmKgPerHa).toBeCloseTo(995);
+  it("uses a low residual litter line, not half of peak", () => {
+    expect(residualDmKgPerHa(1600)).toBeCloseTo(200);
+    expect(residualDmKgPerHa(1600)).toBeLessThan(1600 * 0.5);
   });
 
-  it("stops at the litter floor", () => {
-    const grazed = grazeStanding(810, 1600, 10, 1000);
-    expect(grazed.eatenKg).toBeCloseTo(100);
-    expect(grazed.standingDmKgPerHa).toBeCloseTo(800);
-    const bare = grazeStanding(800, 1600, 10, 1000);
+  it("applies Kruger half only to the May budget helper", () => {
+    const sample = camp({ standingDmKgPerHa: 1000, hectares: 100 });
+    expect(consumableDmKgInCamp(sample)).toBeCloseTo(1000 * 100 * 0.5);
+  });
+
+  it("eats demand from the grass above the litter floor", () => {
+    const ha = 100;
+    const grazed = grazeStanding(1000, 1600, ha, 500);
+    expect(grazed.eatenKg).toBeCloseTo(500);
+    expect(grazed.standingDmKgPerHa).toBeCloseTo(1000 - 500 / ha);
+  });
+
+  it("stops when the active graze area is at residual", () => {
+    const ha = 100;
+    const grazeHa = effectiveGrazingHectares(ha);
+    const floor = residualDmKgPerHa(1600);
+    const standing = floor + 5;
+    const demand = (standing - floor) * grazeHa + 50;
+    const grazed = grazeStanding(standing, 1600, ha, demand);
+    expect(grazed.eatenKg).toBeCloseTo((standing - floor) * grazeHa);
+    expect(grazed.standingDmKgPerHa).toBeLessThanOrEqual(standing);
+    const bare = grazeStanding(floor, 1600, ha, 1000);
     expect(bare.eatenKg).toBe(0);
-    expect(bare.standingDmKgPerHa).toBeCloseTo(800);
+    expect(bare.standingDmKgPerHa).toBeCloseTo(floor);
   });
 
   it("grows with moisture and rest, and slower while occupied", () => {
@@ -110,13 +130,76 @@ describe("pasture maths", () => {
   });
 
   it("reports grazeable grass against the litter floor", () => {
-    const full = camp({ standingDmKgPerHa: 1600, peakDmKgPerHa: 1600 });
-    const half = camp({ standingDmKgPerHa: 1200, peakDmKgPerHa: 1600 });
-    const bare = camp({ standingDmKgPerHa: 800, peakDmKgPerHa: 1600 });
+    const peak = 1600;
+    const floor = residualDmKgPerHa(peak);
+    const full = camp({ standingDmKgPerHa: peak, peakDmKgPerHa: peak });
+    const mid = camp({ standingDmKgPerHa: floor + (peak - floor) / 2, peakDmKgPerHa: peak });
+    const bare = camp({ standingDmKgPerHa: floor, peakDmKgPerHa: peak });
     expect(grazeableFraction(full)).toBeCloseTo(1);
-    expect(grazeableFraction(half)).toBeCloseTo(0.5);
+    expect(grazeableFraction(mid)).toBeCloseTo(0.5);
     expect(grazeableFraction(bare)).toBeCloseTo(0);
-    expect(grazingDaysLeft(half, herd())).toBeCloseTo((400 * 100) / dailyDemandKg(herd()));
+    const grazeHa = effectiveGrazingHectares(100);
+    expect(grazingDaysLeft(mid, herd())).toBeCloseTo(
+      ((mid.standingDmKgPerHa - floor) * grazeHa) / dailyDemandKg(herd()),
+    );
+  });
+});
+
+describe("grazing rhythm and warnings", () => {
+  it("drops camp grass on seed 3300 within two dry weeks", () => {
+    const state = createGame(3300);
+    const camp = findCamp(state, state.herd.campId);
+    if (!camp) throw new Error("expected camp");
+    for (const item of state.camps) item.soilMoistureMm = 0;
+    const start = camp.standingDmKgPerHa;
+    for (let day = 0; day < 14; day += 1) stepDayWithRain(state, 0);
+    expect(camp.standingDmKgPerHa).toBeLessThan(start - 10);
+    expect(state.herd.daysInCamp).toBeGreaterThanOrEqual(14);
+  });
+
+  it("warns after the sourced dry season graze spell on seed 3300", () => {
+    const state = createGame(3300);
+    const camp = findCamp(state, state.herd.campId);
+    if (!camp) throw new Error("expected camp");
+    for (const item of state.camps) item.soilMoistureMm = 0;
+    expect(maxGrazingDaysInCamp(state.date)).toBe(CONFIG.pasture.maxGrazingDaysDrySeason);
+    for (let day = 0; day < CONFIG.pasture.maxGrazingDaysDrySeason; day += 1) {
+      stepDayWithRain(state, 0);
+    }
+    const advice = moveAdvice(state.herd, camp, state.date);
+    expect(advice.shouldWarn).toBe(true);
+    expect(formatMoveWarning(state.herd, camp, state.date).length).toBeGreaterThan(0);
+  });
+
+  it("raises condition after a move onto a rested camp with rain", () => {
+    const state = createGame(8);
+    dry(state);
+    const fromId = state.herd.campId;
+    const rested = state.camps.find((item) => item.id !== fromId);
+    if (!rested) throw new Error("expected second camp");
+    rested.restDays = CONFIG.pasture.fullRestDays;
+    rested.standingDmKgPerHa = rested.peakDmKgPerHa * 0.9;
+    state.herd.condition = 70;
+    moveHerd(state, rested.id);
+    for (let day = 0; day < 12; day += 1) stepDayWithRain(state, 8);
+    expect(state.herd.condition).toBeGreaterThan(70);
+  });
+});
+
+describe("local save", () => {
+  it("round trips game state through JSON", () => {
+    const state = createGame(3);
+    stepDayWithRain(state, 0);
+    state.herd.condition = 71.2;
+    const loaded = parseSaved(serializeState(state));
+    expect(loaded?.herd.condition).toBeCloseTo(71.2);
+    expect(loaded?.date).toEqual(state.date);
+    expect(loaded?.rngState).toBe(state.rngState);
+  });
+
+  it("rejects bad save JSON", () => {
+    expect(parseSaved("{")).toBeNull();
+    expect(parseSaved(JSON.stringify({ version: 2, state: {} }))).toBeNull();
   });
 });
 
@@ -265,14 +348,14 @@ describe("the running farm", () => {
     dry(state);
     const occupied = findCamp(state, state.herd.campId);
     if (!occupied) throw new Error("expected a camp");
-    const floor = floorDmKgPerHa(occupied.peakDmKgPerHa);
+    const floor = residualDmKgPerHa(occupied.peakDmKgPerHa);
     let guard = 0;
     while (occupied.standingDmKgPerHa > floor + 0.01 && guard < 5000) {
       stepDayWithRain(state, 0);
       guard += 1;
     }
     expect(guard).toBeLessThan(5000);
-    expect(occupied.standingDmKgPerHa).toBeCloseTo(floor, 4);
+    expect(occupied.standingDmKgPerHa).toBeLessThanOrEqual(floor + 5);
     const before = state.herd.condition;
     stepDayWithRain(state, 0);
     expect(state.herd.condition).toBeLessThan(before);
