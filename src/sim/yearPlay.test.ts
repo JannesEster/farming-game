@@ -51,7 +51,15 @@ describe("year of play", () => {
 
   it("lets a herd that stays in one camp starve out", () => {
     const state = otjozondu();
-    for (let day = 0; day < 370; day += 1) stepDay(state);
+    const smallest = state.camps
+      .filter((camp) => camp.id >= 0)
+      .sort((a, b) => a.hectares - b.hectares)[0];
+    state.herd.campId = smallest.id;
+    state.herd.daysInCamp = 0;
+    for (let day = 0; day < 370; day += 1) {
+      state.herd.campId = smallest.id;
+      stepDay(state);
+    }
     expect(state.herd.headCount).toBeLessThan(10);
   });
 
