@@ -1,4 +1,5 @@
 import { CONFIG, type GameConfig } from "./config";
+import { droughtSupplementCostNad } from "./economy";
 import type { DroughtChoiceId, StoryState } from "./storyTypes";
 import type { GameState } from "./types";
 
@@ -59,7 +60,7 @@ export function tickDrought(state: GameState, config: GameConfig = CONFIG): void
       id: `drought-choice-${state.date.year}-${month}`,
       kind: "drought",
       title: "Drought building",
-      body: "Choose: sell down weaners, buy supplement feed, or move to greener camps.",
+      body: "Choose: sell down weaners, cut boskos with camelthorn pods, or move to greener camps.",
       priority: 6,
     });
   }
@@ -86,14 +87,17 @@ export function resolveDroughtChoice(
       return { ok: true, message: `Sold ${n} weaners out of hand for N$${Math.round(price)}.` };
     }
     case "buy_feed": {
-      const cost = config.story.droughtSupplementCostNad;
-      if (state.cashNad < cost) return { ok: false, message: "Not enough cash for supplement." };
+      const cost = droughtSupplementCostNad(state, config);
+      if (state.cashNad < cost) return { ok: false, message: "Not enough cash for boskos drought feed." };
       state.cashNad -= cost;
       story.ledger.expenseNad += cost;
       story.supplementDaysLeft += config.story.droughtSupplementDays;
       story.drought.choicePending = null;
       story.drought.forageMultiplier = Math.min(1, story.drought.forageMultiplier + 0.15);
-      return { ok: true, message: `Bought lick and hay for ${config.story.droughtSupplementDays} days.` };
+      return {
+        ok: true,
+        message: `Boskos and camelthorn pods for ${config.story.droughtSupplementDays} days (N$${cost}).`,
+      };
     }
     case "move_herd":
       story.drought.choicePending = null;

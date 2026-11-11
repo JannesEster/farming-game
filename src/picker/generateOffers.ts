@@ -135,7 +135,7 @@ export function generateFarmOffers(bundleSeed = 88001): FarmOfferCard[] {
       "Sheep & small stock coming soon",
       { species: "sheep", head: 820, classLabel: "Dorper & Damara sheep" },
       0,
-      "Dry south //Karas — Dorper country, jackal pressure",
+      "Dry south //Karas. Dorper country, jackal pressure.",
     ),
     buildOffer(
       "khomas-mixed",
@@ -146,7 +146,7 @@ export function generateFarmOffers(bundleSeed = 88001): FarmOfferCard[] {
       "Mixed small stock coming soon",
       { species: "mixed", head: 140, classLabel: "Cattle with Dorper flock" },
       0,
-      "Central highlands — cattle plus sheep camps",
+      "Central highlands. Cattle plus sheep camps.",
     ),
     buildOffer(
       "otjozondjupa-ranch",
@@ -155,9 +155,9 @@ export function generateFarmOffers(bundleSeed = 88001): FarmOfferCard[] {
       base + 303,
       true,
       undefined,
-      { species: "cattle", head: 120, classLabel: "120-head cattle herd" },
+      { species: "cattle", head: 120, classLabel: "cattle herd" },
       120,
-      "Thornbush savanna — your classic 120-head ranch",
+      "Thornbush savanna. Your classic 120 head ranch.",
       true,
     ),
     buildOffer(
@@ -169,7 +169,7 @@ export function generateFarmOffers(bundleSeed = 88001): FarmOfferCard[] {
       undefined,
       { species: "cattle", head: 95, classLabel: "Weaners for SA feedlots" },
       95,
-      "Kalahari east — weaner outfit, live export story",
+      "Kalahari east. Weaner outfit, live export story.",
     ),
   ];
 }

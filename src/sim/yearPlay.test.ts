@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CONFIG } from "./config";
 import { stateFromOfferCard } from "../integration/pickerAdapter";
 import { generateFarmOffers } from "../picker/generateOffers";
+import { applySale, quoteSale } from "./economy";
 import { grazeableFraction, grazingDaysLeft } from "./pasture";
 import { findCamp, stepDay } from "./simulation";
 import type { GameState } from "./types";
@@ -10,6 +11,20 @@ function otjozondu(): GameState {
   const card = generateFarmOffers(88001).find((offer) => offer.id === "otjozondjupa-ranch");
   if (!card) throw new Error("missing otjozondjupa offer");
   return stateFromOfferCard(card);
+}
+
+function marketSales(state: GameState): void {
+  if (!state.story) return;
+  if (!CONFIG.calendar.weanerSaleMonths.includes(state.date.month)) return;
+  const sellClass = (stockClass: "weaner" | "ox", keep: number) => {
+    const excess = state.story!.composition[stockClass] - keep;
+    if (excess <= 0) return;
+    const line = quoteSale(state, stockClass, excess, "auction");
+    if ("reason" in line) return;
+    applySale(state, line);
+  };
+  sellClass("weaner", 8);
+  sellClass("ox", 4);
 }
 
 function rotateToBetterGrass(state: GameState): void {
@@ -63,15 +78,18 @@ describe("year of play", () => {
     expect(state.herd.headCount).toBeLessThan(10);
   });
 
-  it("keeps a player who rotates camps solvent through year 1", () => {
+  it("stays roughly break-even to modestly profitable with rotation and weaner sales", () => {
     const state = otjozondu();
+    const startCash = state.cashNad;
     const startHead = state.herd.headCount;
     for (let day = 0; day < 370; day += 1) {
       rotateToBetterGrass(state);
+      marketSales(state);
       stepDay(state);
     }
-    expect(state.herd.headCount).toBeGreaterThanOrEqual(startHead);
+    expect(state.herd.headCount).toBeGreaterThanOrEqual(startHead - 12);
     expect(state.herd.condition).toBeGreaterThan(50);
-    expect(state.cashNad).toBeGreaterThan(50_000);
+    expect(state.cashNad).toBeGreaterThan(startCash * 0.9);
+    expect(state.cashNad).toBeLessThan(startCash * 1.2);
   });
 });

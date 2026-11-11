@@ -61,7 +61,7 @@ export function mountMarketSheet(options: {
       <div id="market-drought" hidden>
         <p class="warn" id="market-drought-text"></p>
         <button type="button" class="pill-btn confirm" data-drought="sell_down">Sell weaners</button>
-        <button type="button" class="pill-btn ghost" data-drought="buy_feed">Buy supplement</button>
+        <button type="button" class="pill-btn ghost" data-drought="buy_feed">Boskos feed</button>
         <button type="button" class="pill-btn ghost" data-drought="move_herd">Move camps</button>
       </div>
       <p class="extra" id="market-quote"></p>

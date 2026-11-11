@@ -305,9 +305,9 @@ function destroyRoot(): void {
 }
 
 function fenceLabel(condition: string): string {
-  if (condition === "good") return "Good — jackal netting intact";
-  if (condition === "fair") return "Fair — some re-tensioning due";
-  return "Poor — breaks after stock pressure";
+  if (condition === "good") return "Good. Jackal netting intact.";
+  if (condition === "fair") return "Fair. Some re-tensioning due.";
+  return "Poor. Breaks after stock pressure.";
 }
 
 export function runStartFlow(options: {

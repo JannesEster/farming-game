@@ -54,11 +54,25 @@ export type GameConfig = {
     farmhandMonthlyCashNad: number;
     payrollIntervalDays: number;
     defaultWeanerLiveKg: number;
-    monthlyLickNad: number;
-    monthlyVetNad: number;
-    monthlyDieselNad: number;
+    /** Reuben farm anchor: 13,000 ha, 500 head, N$90k/month running costs (Nov 2026). */
+    operatingCostAnchorHectares: number;
+    operatingCostAnchorHead: number;
+    operatingCostAnchorMonthlyNad: number;
+  /** Exponents for sub-linear scale (starter ranch smaller than head × ha). */
+    operatingCostHaExponent: number;
+    operatingCostHeadExponent: number;
+    operatingCostShareLabour: number;
+    operatingCostShareLick: number;
+    operatingCostShareDiesel: number;
+    operatingCostShareRepairs: number;
+    operatingCostShareOther: number;
+    dieselNadPerLitre: number;
+    stateVetAdminNadPerMonth: number;
+    vaccineNadPerHeadPerYear: number;
+    lickNadPerHeadPerMonth: number;
     llpbnLevyRate: number;
     auctionCommissionRate: number;
+    ncaGradingNadPerHead: number;
     liveExportLevyRate: number;
     feedlotPriceFactor: number;
     droughtQuickSaleNadPerKg: number;
@@ -102,8 +116,12 @@ export type GameConfig = {
     droughtChoiceScore: number;
     droughtChoiceMonth: number;
     droughtSellWeaners: number;
-    droughtSupplementCostNad: number;
     droughtSupplementDays: number;
+    /** Boskos drought feed, kg per head per day (Reuben: cattle 150–250 g/day). */
+    droughtBoskosKgPerHeadDay: number;
+    /** Reuben lick N$5,000–7,000/t as proxy until boskos cash price is sourced (TODO). */
+    droughtBoskosNadPerKg: number;
+    droughtCamelthornPodsKgPerHeadDay: number;
     supplementConditionPerDay: number;
     farmhandWaterCheckInterval: number;
     farmhandWaterConditionBonus: number;
@@ -277,28 +295,39 @@ export const CONFIG: GameConfig = {
   economy: {
     // A. Operating cash on hand at game start.
     startingCashNad: 250000,
-    // S: N$14/hr × 45h × 52/12 ≈ N$2,730 cash wage Jan 2026 (farm-life-lesson §1.4).
-    farmhandMonthlyCashNad: 2730,
-    // A. One payroll tick per month on month close.
+    // S: NAU Ox Production 2025 permanent salary N$2,168.62/worker/month (Reuben may pay more; not modeled).
+    farmhandMonthlyCashNad: 2168.62,
     payrollIntervalDays: 30,
-    // A: ~220 kg weaner for price math (farm-life-lesson §8.5).
     defaultWeanerLiveKg: 220,
-    // TODO: tune monthly lick spend; no single sourced farm total in lessons.
-    monthlyLickNad: 4500,
-    // TODO: tune routine vet/dosing cash per month.
-    monthlyVetNad: 1200,
-    // TODO: tune diesel for water rounds and camp checks.
-    monthlyDieselNad: 2800,
-    // S: LLPBN levy 0.6% on auctions/out of hand (levy schedule 2025/26).
-    llpbnLevyRate: 0.006,
-    // A: SA public auction ~8% commission (Farmer's Weekly Dec 2021); Namibia rate unpublished.
-    auctionCommissionRate: 0.08,
-    // S: live export levy 1.0% (LLPBN levy schedule).
+    operatingCostAnchorHectares: 13000,
+    operatingCostAnchorHead: 500,
+    operatingCostAnchorMonthlyNad: 90000,
+    operatingCostHaExponent: 0.52,
+    operatingCostHeadExponent: 0.62,
+    // S-ish: Ox Production 2025 cost mix (labour, feeds, fuel, repair & maintenance, other).
+    operatingCostShareLabour: 0.16,
+    operatingCostShareLick: 0.2,
+    operatingCostShareDiesel: 0.18,
+    operatingCostShareRepairs: 0.1,
+    operatingCostShareOther: 0.36,
+    // S: Reuben Nov 2026 ~N$30/L diesel (NAU sheet: N$21.36/L).
+    dieselNadPerLitre: 30,
+    // S-ish: Reuben state vets, admin only; NAU cites N$9,815/yr private visit on 488 head.
+    stateVetAdminNadPerMonth: 150,
+    // S: NAU Medicine & Veterinary N$75,876/yr ÷ 488 head.
+    vaccineNadPerHeadPerYear: 155.5,
+    // S: NAU feeds N$183,036/yr ÷ 488 head ÷ 12.
+    lickNadPerHeadPerMonth: 31.25,
+    // S: NAU Meat Board levy 0.7% (LLPBN schedule also cites 0.6%; game uses NAU).
+    llpbnLevyRate: 0.007,
+    // S: NAU Marketing Commission 6%.
+    auctionCommissionRate: 0.06,
+    // S: NAU NCA grading & inspection N$16.85/head.
+    ncaGradingNadPerHead: 16.85,
     liveExportLevyRate: 0.01,
-    // A: feedlot/speculator spread vs auction.
     feedlotPriceFactor: 1.03,
-    // A: distressed drought sale price per kg live.
-    droughtQuickSaleNadPerKg: 27,
+    // S-ish: NAU lean cows live N$27.90/kg distressed band.
+    droughtQuickSaleNadPerKg: 27.9,
   },
 
   calendar: {
@@ -354,9 +383,10 @@ export const CONFIG: GameConfig = {
     droughtChoiceScore: 0.45,
     droughtChoiceMonth: 2,
     droughtSellWeaners: 8,
-    // TODO: tune bought feed lump sum for drought choice.
-    droughtSupplementCostNad: 18000,
     droughtSupplementDays: 30,
+    droughtBoskosKgPerHeadDay: 0.2,
+    droughtBoskosNadPerKg: 5.5,
+    droughtCamelthornPodsKgPerHeadDay: 0.03,
     supplementConditionPerDay: 0.25,
     farmhandWaterCheckInterval: 3,
     farmhandWaterConditionBonus: 0.08,

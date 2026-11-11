@@ -87,7 +87,7 @@ export function tryWeaning(state: GameState, config: GameConfig = CONFIG): void 
     id: eventId,
     kind: "season",
     title: "Weaning",
-    body: `${wean} weaners ready. Consider auction Apr–Jun.`,
+    body: `${wean} weaners ready. Consider auction Apr to Jun.`,
     priority: 2,
   });
 }
@@ -98,12 +98,13 @@ export function closeMonth(state: GameState, config: GameConfig = CONFIG): void 
   const key = monthKey(state.date);
   if (story.lastMonthKey === key) return;
   story.lastMonthKey = key;
-  chargeMonthlyCosts(state, config);
+  const costs = chargeMonthlyCosts(state, config);
   const phase = cyclePhase(state.date, config);
   const net = story.ledger.incomeNad - story.ledger.expenseNad;
   const body = [
     `${cyclePhaseLabel(phase)} ended.`,
     `Income N$${Math.round(story.ledger.incomeNad)} · Expenses N$${Math.round(story.ledger.expenseNad)}.`,
+    `Costs: labour N$${Math.round(costs.labour)}, lick N$${Math.round(costs.lick)}, diesel N$${Math.round(costs.diesel)}, repairs N$${Math.round(costs.repairs)}, other N$${Math.round(costs.other)}.`,
     `Net N$${Math.round(net)}. Rain season-to-date ${Math.round(state.seasonRainMm)} mm.`,
     story.ledger.deathCount > 0 ? `${story.ledger.deathCount} deaths logged.` : "No deaths logged.",
     story.composition.weaner > 0 ? `${story.composition.weaner} weaners in herd.` : "",
