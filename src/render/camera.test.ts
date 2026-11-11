@@ -4,12 +4,21 @@ import {
   boundsCenter,
   boundsFromPoints,
   clampZoom,
+  computeZoomLimits,
+  fullMapZoom,
+  homesteadBoundsPad,
+  minimapTileFromNormalized,
   pinchCenter,
   pinchZoom,
   preferredHomesteadZoom,
   zoomScrollDelta,
   zoomToFrameBounds,
 } from "./camera";
+import { isoLayout } from "./iso";
+
+const TILE_W = 64;
+const TILE_H = 32;
+const PAD = 24;
 
 describe("zoom scroll correction", () => {
   it("keeps the world point under the pointer when zoom changes", () => {
@@ -76,10 +85,70 @@ describe("homestead framing", () => {
     expect(boundsCenter(bounds!)).toEqual({ x: 150, y: 125 });
   });
 
+  it("scales homestead padding with tile size", () => {
+    expect(homesteadBoundsPad(64, 32)).toBe(64 * 1.75);
+  });
+
   it("prefers at least phone tile zoom on a narrow viewport", () => {
     const bounds = { minX: 0, minY: 0, maxX: 400, maxY: 400 };
-    const zoom = preferredHomesteadZoom(bounds, 390, 844, 64);
+    const zoom = preferredHomesteadZoom(bounds, 390, 844, 64, {
+      viewportFill: 0.5,
+      phoneTilePx: 44,
+      desktopTilePx: 54,
+      desktopMinWidthPx: 900,
+    });
     expect(zoom).toBeGreaterThanOrEqual(44 / 64);
+  });
+});
+
+describe("zoom limits for map size", () => {
+  const viewport = { w: 390, h: 844 };
+  const fitMargin = 0.92;
+
+  it("allows full-map zoom on a small layout", () => {
+    const small = isoLayout(34, 34, TILE_W, TILE_H, PAD);
+    const full = fullMapZoom(small.width, small.height, viewport.w, viewport.h, fitMargin);
+    const limits = computeZoomLimits({
+      layoutWidth: small.width,
+      layoutHeight: small.height,
+      mapWidth: 34,
+      mapHeight: 34,
+      viewportWidth: viewport.w,
+      viewportHeight: viewport.h,
+      tileWidth: TILE_W,
+      tileHeight: TILE_H,
+      fitMargin,
+      maxTilePx: 96,
+      maxOnScreenTiles: 900,
+    });
+    expect(limits.minZoom).toBeCloseTo(full * 0.92, 4);
+  });
+
+  it("raises min zoom on a large layout so pinch-out stays culling friendly", () => {
+    const large = isoLayout(120, 120, TILE_W, TILE_H, PAD);
+    const full = fullMapZoom(large.width, large.height, viewport.w, viewport.h, fitMargin);
+    const limits = computeZoomLimits({
+      layoutWidth: large.width,
+      layoutHeight: large.height,
+      mapWidth: 120,
+      mapHeight: 120,
+      viewportWidth: viewport.w,
+      viewportHeight: viewport.h,
+      tileWidth: TILE_W,
+      tileHeight: TILE_H,
+      fitMargin,
+      maxTilePx: 96,
+      maxOnScreenTiles: 900,
+    });
+    expect(full).toBeLessThan(limits.minZoom);
+    expect(limits.minZoom).toBeGreaterThan(0.2);
+  });
+});
+
+describe("minimap tile pick", () => {
+  it("maps normalised coordinates using live map width and height", () => {
+    expect(minimapTileFromNormalized(0.5, 0.5, 80, 60)).toEqual({ x: 40, y: 30 });
+    expect(minimapTileFromNormalized(1.2, -0.1, 80, 60)).toEqual({ x: 79, y: 0 });
   });
 });
 

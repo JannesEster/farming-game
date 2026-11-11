@@ -11,11 +11,17 @@ import {
   boundsCenter,
   boundsFromPoints,
   clampZoom,
+  computeZoomLimits,
+  homesteadBoundsPad,
+  maxOnScreenTileBudget,
+  minimapTileFromNormalized,
   pinchCenter,
   pinchZoom,
   preferredHomesteadZoom,
+  readableCampZoom,
   zoomScrollDelta,
   type WorldBounds,
+  type ZoomTargets,
 } from "./camera";
 import { grazeableFraction } from "../sim/pasture";
 import { TILE_HOMESTEAD, TILE_OUTSIDE, type GameState } from "../sim/types";
@@ -450,13 +456,65 @@ export class FarmScene extends Phaser.Scene {
     this.refreshCampLabels();
   }
 
+  private zoomTargets(): ZoomTargets {
+    return {
+      viewportFill: 0.5,
+      phoneTilePx: CONFIG.view.phoneTilePx,
+      desktopTilePx: CONFIG.view.desktopTilePx,
+      desktopMinWidthPx: CONFIG.view.desktopMinWidthPx,
+    };
+  }
+
+  private refreshZoomLimits(): void {
+    const camera = this.cameras.main;
+    const limits = computeZoomLimits({
+      layoutWidth: this.layout.width,
+      layoutHeight: this.layout.height,
+      mapWidth: this.state.width,
+      mapHeight: this.state.height,
+      viewportWidth: camera.width,
+      viewportHeight: camera.height,
+      tileWidth: CONFIG.view.tileWidth,
+      tileHeight: CONFIG.view.tileHeight,
+      fitMargin: CONFIG.view.fitMargin,
+      maxTilePx: CONFIG.view.maxTilePx,
+      maxOnScreenTiles: maxOnScreenTileBudget(camera.width, camera.height),
+    });
+    this.minZoom = limits.minZoom;
+    this.maxZoom = limits.maxZoom;
+  }
+
   private buildHomesteadBounds(): WorldBounds | null {
-    const points = this.state.features
-      .filter((feature) => HOMESTEAD_KINDS.has(feature.kind))
-      .map((feature) =>
-        tileCenter(feature.x, feature.y, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight),
-      );
-    return boundsFromPoints(points, 112);
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    const points: { x: number; y: number }[] = [];
+    for (let y = 0; y < this.state.height; y += 1) {
+      for (let x = 0; x < this.state.width; x += 1) {
+        if (this.state.campIds[y * this.state.width + x] === TILE_HOMESTEAD) {
+          points.push(tileCenter(x, y, this.layout, tileW, tileH));
+        }
+      }
+    }
+    for (const feature of this.state.features) {
+      if (!HOMESTEAD_KINDS.has(feature.kind)) continue;
+      points.push(tileCenter(feature.x, feature.y, this.layout, tileW, tileH));
+    }
+    return boundsFromPoints(points, homesteadBoundsPad(tileW, tileH));
+  }
+
+  private jumpCameraTo(worldX: number, worldY: number, ensureReadable: boolean): void {
+    this.panVel = null;
+    const camera = this.cameras.main;
+    this.refreshZoomLimits();
+    if (ensureReadable) {
+      const readable = readableCampZoom(camera.width, CONFIG.view.tileWidth, this.zoomTargets());
+      const target = clampZoom(Math.max(camera.zoom, readable), this.minZoom, this.maxZoom);
+      if (target !== camera.zoom) {
+        this.zoomAt(camera.width / 2, camera.height / 2, target);
+      }
+    }
+    camera.centerOn(worldX, worldY);
+    this.clampScroll();
   }
 
   private goHome(): void {
@@ -604,11 +662,9 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private onMinimap(nx: number, ny: number): void {
-    const x = clamp(Math.floor(nx * this.state.width), 0, this.state.width - 1);
-    const y = clamp(Math.floor(ny * this.state.height), 0, this.state.height - 1);
+    const { x, y } = minimapTileFromNormalized(nx, ny, this.state.width, this.state.height);
     const center = tileCenter(x, y, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
-    this.cameras.main.centerOn(center.x, center.y);
-    this.clampScroll();
+    this.jumpCameraTo(center.x, center.y, true);
     this.chooseTile(x, y);
   }
 
@@ -645,10 +701,7 @@ export class FarmScene extends Phaser.Scene {
 
   private layoutCamera(resetView: boolean): void {
     const camera = this.cameras.main;
-    const fit =
-      Math.min(camera.width / this.layout.width, camera.height / this.layout.height) * CONFIG.view.fitMargin;
-    this.minZoom = Math.max(0.05, fit * 0.88);
-    this.maxZoom = Math.max(this.minZoom, CONFIG.view.maxTilePx / CONFIG.view.tileWidth);
+    this.refreshZoomLimits();
     if (resetView && this.homesteadBounds) {
       const center = boundsCenter(this.homesteadBounds);
       const preferred = preferredHomesteadZoom(
@@ -656,6 +709,7 @@ export class FarmScene extends Phaser.Scene {
         camera.width,
         camera.height,
         CONFIG.view.tileWidth,
+        this.zoomTargets(),
       );
       camera.setZoom(clampZoom(preferred, this.minZoom, this.maxZoom));
       camera.centerOn(center.x, center.y);

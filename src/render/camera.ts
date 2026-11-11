@@ -82,9 +82,19 @@ export function zoomToFrameBounds(
 
 export const HOMESTEAD_KINDS = new Set(["house", "windmill", "reservoir", "kraal"]);
 
-/** How the opening view frames the homestead yard (world units and viewport fill). */
-export const HOMESTEAD_VIEW = {
-  worldPadPx: 96,
+/** Pads the homestead framing box in world pixels from tile size. */
+export function homesteadBoundsPad(tileWidth: number, tileHeight: number): number {
+  return Math.max(tileWidth, tileHeight) * 1.75;
+}
+
+export type ZoomTargets = {
+  viewportFill: number;
+  phoneTilePx: number;
+  desktopTilePx: number;
+  desktopMinWidthPx: number;
+};
+
+export const DEFAULT_HOMESTEAD_VIEW: ZoomTargets = {
   viewportFill: 0.5,
   phoneTilePx: 44,
   desktopTilePx: 54,
@@ -96,14 +106,127 @@ export function preferredHomesteadZoom(
   viewportW: number,
   viewportH: number,
   tileWidth: number,
+  targets: ZoomTargets = DEFAULT_HOMESTEAD_VIEW,
 ): number {
-  const framed = zoomToFrameBounds(bounds, viewportW, viewportH, HOMESTEAD_VIEW.viewportFill);
+  const framed = zoomToFrameBounds(bounds, viewportW, viewportH, targets.viewportFill);
   const tileTarget =
-    viewportW >= HOMESTEAD_VIEW.desktopMinWidthPx
-      ? HOMESTEAD_VIEW.desktopTilePx
-      : HOMESTEAD_VIEW.phoneTilePx;
+    viewportW >= targets.desktopMinWidthPx ? targets.desktopTilePx : targets.phoneTilePx;
   const tileZoom = tileTarget / tileWidth;
   return Math.max(framed, tileZoom);
+}
+
+/** Zoom level where one camp is readable after a minimap jump (uses viewport width only). */
+export function readableCampZoom(
+  viewportW: number,
+  tileWidth: number,
+  targets: Pick<ZoomTargets, "phoneTilePx" | "desktopTilePx" | "desktopMinWidthPx">,
+): number {
+  const tileTarget = viewportW >= targets.desktopMinWidthPx ? targets.desktopTilePx : targets.phoneTilePx;
+  return tileTarget / tileWidth;
+}
+
+export type ZoomLimitsInput = {
+  layoutWidth: number;
+  layoutHeight: number;
+  mapWidth: number;
+  mapHeight: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  tileWidth: number;
+  tileHeight: number;
+  fitMargin: number;
+  maxTilePx: number;
+  /** Rough cap on tiles that should fit on screen at the widest pinch-out. */
+  maxOnScreenTiles: number;
+};
+
+/** Minimum zoom so the viewport does not expose more tiles than the render budget. */
+export function minZoomForTileBudget(
+  viewportW: number,
+  viewportH: number,
+  tileWidth: number,
+  tileHeight: number,
+  maxOnScreenTiles: number,
+): number {
+  const tileArea = Math.max(1, tileWidth * tileHeight);
+  const viewArea = viewportW * viewportH;
+  const safeTiles = Math.max(64, maxOnScreenTiles);
+  return Math.sqrt(viewArea / (safeTiles * tileArea));
+}
+
+/** Fit-zoom that shows the whole world bounds inside the viewport. */
+export function fullMapZoom(
+  layoutWidth: number,
+  layoutHeight: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  fitMargin: number,
+): number {
+  return Math.min(viewportWidth / layoutWidth, viewportHeight / layoutHeight) * fitMargin;
+}
+
+/**
+ * Min and max zoom from layout and viewport size. On large maps the tile budget
+ * stops pinch-out from showing the entire farm at once; small maps can still fit entirely.
+ */
+export function computeZoomLimits(input: ZoomLimitsInput): { minZoom: number; maxZoom: number } {
+  const fullMap = fullMapZoom(
+    input.layoutWidth,
+    input.layoutHeight,
+    input.viewportWidth,
+    input.viewportHeight,
+    input.fitMargin,
+  );
+  const mapTiles = input.mapWidth * input.mapHeight;
+  const tileBudget = limitsTileBudget(
+    input.mapWidth,
+    input.mapHeight,
+    input.viewportWidth,
+    input.viewportHeight,
+  );
+  const cullFloor = minZoomForTileBudget(
+    input.viewportWidth,
+    input.viewportHeight,
+    input.tileWidth,
+    input.tileHeight,
+    Math.min(tileBudget, input.maxOnScreenTiles),
+  );
+  const fullMin = fullMap * 0.92;
+  const minZoom = tileBudget >= mapTiles ? fullMin : Math.max(cullFloor, fullMin);
+  const maxZoom = Math.max(minZoom, input.maxTilePx / input.tileWidth);
+  return { minZoom, maxZoom };
+}
+
+/** Default on-screen tile budget for pinch-out on phones and desktops. */
+export function maxOnScreenTileBudget(viewportW: number, viewportH: number): number {
+  const area = viewportW * viewportH;
+  if (area < 260000) return 720;
+  if (area < 640000) return 960;
+  return 1280;
+}
+
+/** Tile budget for min zoom: small maps may show everything; large maps use the viewport cap. */
+export function limitsTileBudget(
+  mapWidth: number,
+  mapHeight: number,
+  viewportW: number,
+  viewportH: number,
+): number {
+  const mapTiles = mapWidth * mapHeight;
+  const cap = maxOnScreenTileBudget(viewportW, viewportH);
+  if (mapTiles <= cap * 1.35) return mapTiles;
+  return cap;
+}
+
+export function minimapTileFromNormalized(
+  nx: number,
+  ny: number,
+  mapWidth: number,
+  mapHeight: number,
+): { x: number; y: number } {
+  const x = clamp(Math.floor(nx * mapWidth), 0, mapWidth - 1);
+  const y = clamp(Math.floor(ny * mapHeight), 0, mapHeight - 1);
+  return { x, y };
 }
 
 export const PAN_INERTIA = {

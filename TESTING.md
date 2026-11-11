@@ -16,6 +16,8 @@ Stay in portrait. Drag the land with one finger. When you let go, the map should
 
 Double tap an open part of the map (not on the cattle). The view should jump back to the homestead, same as **Home**.
 
+On a large farm you cannot pinch out to see every camp at once; use the minimap to jump. After a minimap tap the main view should centre on that spot at a readable zoom, not stay zoomed out over the whole ranch.
+
 ## 3. Landscape (about 1 minute)
 
 Turn the phone sideways. Pan and pinch once. Buttons should still be easy to tap. The herd card and minimap should stay in opposite corners with safe areas respected. Turn back to portrait when you are done.
