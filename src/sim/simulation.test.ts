@@ -18,6 +18,7 @@ import {
   herdLsu,
   nextCondition,
   residualDmKgPerHa,
+  tramplingLossKgPerHa,
 } from "./pasture";
 import { parseSaved, serializeState } from "./persist";
 import { maxGrazingDaysInCamp, moveAdvice } from "./grazing";
@@ -119,16 +120,35 @@ describe("pasture maths", () => {
     expect(bare.standingDmKgPerHa).toBeCloseTo(floor);
   });
 
-  it("grows with moisture and rest, and slower while occupied", () => {
+  it("grows with moisture and rest only when the camp is empty", () => {
     const full = CONFIG.rain.moistureMmForFullGrowth;
     expect(growthKgPerHa(0, 42, false)).toBe(0);
     expect(growthKgPerHa(full, 42, false)).toBeCloseTo(CONFIG.pasture.maxDailyGrowthKgPerHa);
     const justRested = growthKgPerHa(full, 0, false);
     expect(justRested).toBeCloseTo(CONFIG.pasture.maxDailyGrowthKgPerHa * CONFIG.pasture.restGrowthFloor);
-    expect(growthKgPerHa(full, 42, true)).toBeCloseTo(
-      CONFIG.pasture.maxDailyGrowthKgPerHa * CONFIG.pasture.occupiedGrowthFactor,
-    );
-    expect(growthKgPerHa(full, 42, true)).toBeLessThan(justRested);
+    expect(growthKgPerHa(full, 42, true)).toBe(0);
+    expect(growthKgPerHa(full, 0, true)).toBe(0);
+  });
+
+  it("tramples faster when stocking pressure is higher", () => {
+    const ha = 200;
+    const small: HerdState = {
+      name: "small",
+      campId: 0,
+      headCount: 40,
+      averageLiveweightKg: 450,
+      condition: 70,
+      daysInCamp: 0,
+      transit: null,
+    };
+    const large: HerdState = {
+      ...small,
+      headCount: 200,
+    };
+    const light = tramplingLossKgPerHa(ha, small);
+    const heavy = tramplingLossKgPerHa(ha, large);
+    expect(heavy).toBeGreaterThan(light);
+    expect(heavy / light).toBeCloseTo(5);
   });
 
   it("drops condition in proportion to the missed feed and clamps it", () => {
@@ -355,6 +375,31 @@ describe("the running farm", () => {
     expect(state.herd.daysInCamp).toBe(1);
     expect(moveHerd(state, other.id)).toEqual({ ok: false, reason: "same" });
     expect(moveHerd(state, 999)).toEqual({ ok: false, reason: "missing" });
+  });
+
+  it("never regrows grass in an occupied camp even with rain", () => {
+    const state = createGame(61);
+    const camp = findCamp(state, state.herd.campId);
+    if (!camp) throw new Error("expected camp");
+    camp.standingDmKgPerHa = camp.peakDmKgPerHa * 0.85;
+    camp.soilMoistureMm = CONFIG.rain.moistureMmForFullGrowth;
+    camp.restDays = CONFIG.pasture.fullRestDays;
+    const before = camp.standingDmKgPerHa;
+    for (let day = 0; day < 10; day += 1) stepDayWithRain(state, 12);
+    expect(camp.standingDmKgPerHa).toBeLessThan(before);
+  });
+
+  it("regrows an empty camp when rain returns", () => {
+    const state = createGame(62);
+    const occupiedId = state.herd.campId;
+    const empty = state.camps.find((item) => item.id !== occupiedId);
+    if (!empty) throw new Error("expected second camp");
+    empty.standingDmKgPerHa = empty.peakDmKgPerHa * 0.5;
+    empty.soilMoistureMm = 0;
+    empty.restDays = CONFIG.pasture.fullRestDays;
+    const before = empty.standingDmKgPerHa;
+    for (let day = 0; day < 15; day += 1) stepDayWithRain(state, 10);
+    expect(empty.standingDmKgPerHa).toBeGreaterThan(before);
   });
 
   it("lets a rested camp recover in the rain while the occupied camp falls behind", () => {

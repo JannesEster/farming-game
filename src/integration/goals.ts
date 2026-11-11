@@ -16,7 +16,7 @@ export const FIRST_YEAR_GOALS: { id: FirstYearGoalId; label: string }[] = [
 ];
 
 export const MILESTONE_LABELS: Record<MilestoneId, string> = {
-  restCamp: "Rest a camp until grass recovers",
+  restCamp: "Rest a camp empty until grass recovers",
   sellBeforeDrought: "Sell stock before the dry pinch",
   keepWaterRunning: "Keep water points running through the year",
 };
