@@ -3,8 +3,7 @@ import type { SaleChannel, SaleLine, StockClass } from "./storyTypes";
 import type { GameState } from "./types";
 
 /**
- * Liveweight prices (N$/kg live) and fees. S = sourced in farm-life-lesson; A = gameplay placeholder.
- * See story report for line references in uploaded research files.
+ * Liveweight prices (N$/kg live). See docs/STORY_RULES_REPORT.md for NAU / Reuben sources.
  */
 
 export type PriceQuote = {
@@ -13,30 +12,98 @@ export type PriceQuote = {
   note: string;
 };
 
+export type MonthlyCostBreakdown = {
+  total: number;
+  labour: number;
+  lick: number;
+  diesel: number;
+  repairs: number;
+  other: number;
+  lines: string[];
+};
+
+export function farmHectares(state: GameState, config: GameConfig = CONFIG): number {
+  return state.farmMeta?.hectares ?? config.farm.hectares;
+}
+
+export function operatingCostScale(
+  hectares: number,
+  head: number,
+  config: GameConfig = CONFIG,
+): number {
+  const haR = hectares / config.economy.operatingCostAnchorHectares;
+  const headR = head / config.economy.operatingCostAnchorHead;
+  const haPart = Math.pow(Math.max(0.01, haR), config.economy.operatingCostHaExponent);
+  const headPart = Math.pow(Math.max(0.01, headR), config.economy.operatingCostHeadExponent);
+  return haPart * headPart;
+}
+
+export function monthlyOperatingTotalNad(
+  state: GameState,
+  config: GameConfig = CONFIG,
+): number {
+  const scale = operatingCostScale(farmHectares(state, config), state.herd.headCount, config);
+  return config.economy.operatingCostAnchorMonthlyNad * scale;
+}
+
+export function monthlyOperatingCosts(state: GameState, config: GameConfig = CONFIG): MonthlyCostBreakdown {
+  const totalBase = monthlyOperatingTotalNad(state, config);
+  const labourShare =
+    totalBase * config.economy.operatingCostShareLabour +
+    (state.story?.farmhand.hired ? state.story.farmhand.wageCashNad : 0);
+  const lick = totalBase * config.economy.operatingCostShareLick;
+  const diesel = totalBase * config.economy.operatingCostShareDiesel;
+  const repairs = totalBase * config.economy.operatingCostShareRepairs;
+  const other =
+    totalBase * config.economy.operatingCostShareOther +
+    config.economy.stateVetAdminNadPerMonth +
+    (state.herd.headCount * config.economy.vaccineNadPerHeadPerYear) / 12;
+
+  const labour = labourShare;
+  const total = labour + lick + diesel + repairs + other;
+
+  const lines = [
+    `Labour N$${Math.round(labour)}`,
+    `Lick N$${Math.round(lick)}`,
+    `Diesel N$${Math.round(diesel)}`,
+    `Repairs N$${Math.round(repairs)}`,
+    `Other N$${Math.round(other)}`,
+  ];
+  return { total, labour, lick, diesel, repairs, other, lines };
+}
+
+export function droughtSupplementCostNad(state: GameState, config: GameConfig = CONFIG): number {
+  const head = state.herd.headCount;
+  const days = config.story.droughtSupplementDays;
+  const boskosKg = head * config.story.droughtBoskosKgPerHeadDay * days;
+  const boskosCost = boskosKg * config.story.droughtBoskosNadPerKg;
+  // Camelthorn pods: gathered on farm; no sourced cash price (TODO in report).
+  return Math.round(boskosCost);
+}
+
 export function baseLivePrice(stockClass: StockClass, _config: GameConfig = CONFIG): PriceQuote {
   switch (stockClass) {
     case "weaner":
-      // S: LLPBN 2025 annual average weaners at auction N$31.47/kg (farm-life-lesson §5.2).
-      return { baseNadPerKgLive: 31.47, source: "sourced", note: "LLPBN 2025 weaner auction avg" };
+      // S: NAU Ox Production 2025 weaner/tollies auction N$32.81/kg live (mid of 32.81–34.83 band).
+      return { baseNadPerKgLive: 33.32, source: "sourced", note: "NAU 2025 weaner auction band" };
     case "ox":
-      // S: LABTA slaughter oxen average N$35.91/kg live, week to 15 Jun 2026 (farm-life-lesson §5.2).
-      return { baseNadPerKgLive: 35.91, source: "sourced", note: "LABTA slaughter oxen avg Jun 2026" };
+      // S: NAU live oxen 401–600 kg class N$40.17/kg live.
+      return { baseNadPerKgLive: 40.17, source: "sourced", note: "NAU 2025 ox 401–600 kg auction" };
     case "cow":
-      // S: lean cows N$23.95/kg live same auction week (farm-life-lesson §5.2).
-      return { baseNadPerKgLive: 23.95, source: "sourced", note: "LABTA lean cows avg Jun 2026" };
+      // S: NAU lean cows 301–500 kg N$27.90/kg live.
+      return { baseNadPerKgLive: 27.9, source: "sourced", note: "NAU 2025 lean cows live" };
     case "calf":
-      // A: share of weaner price for young calf sold out of hand.
       return {
-        baseNadPerKgLive: 28,
-        source: "placeholder",
-        note: "TODO tune: calf out-of-hand vs weaner auction",
+        baseNadPerKgLive: 33.5,
+        source: "sourced",
+        note: "NAU 2025 calves 1–350 kg N$33.50/kg live",
       };
     case "bull":
-      // A: no Namibian bull/kg quote in lessons; use slaughter bull SA proxy scaled.
+      // S: NAU Bulls 501–600 kg N$33.93/kg live at auction.
       return {
-        baseNadPerKgLive: 28.92,
-        source: "placeholder",
-        note: "TODO tune: SA slaughter bulls R/kg proxy (Vleisprys Nov 2026)",
+        baseNadPerKgLive: 33.93,
+        source: "sourced",
+        note: "NAU 2025 bulls 501–600 kg auction",
       };
     default:
       return { baseNadPerKgLive: 25, source: "placeholder", note: "TODO" };
@@ -46,10 +113,8 @@ export function baseLivePrice(stockClass: StockClass, _config: GameConfig = CONF
 export function classLiveweightKg(stockClass: StockClass, herdAvgKg: number, config: GameConfig = CONFIG): number {
   switch (stockClass) {
     case "calf":
-      // A: ~55% of cow weight at weaning (NAU ratios; namibian-livestock §2.4).
       return Math.max(120, herdAvgKg * 0.35);
     case "weaner":
-      // A: ~220 kg weaner for price math (farm-life-lesson §8.5 assumption).
       return config.economy.defaultWeanerLiveKg;
     case "ox":
       return config.pasture.lsuLiveweightKg;
@@ -76,27 +141,31 @@ export function channelPriceFactor(channel: SaleChannel, config: GameConfig = CO
     case "auction":
       return 1;
     case "speculator":
-      // A: quick out-of-hand discount.
       return 0.94;
     case "feedlot":
-      // S-ish: weaner export/feedlot demand; A spread for gameplay.
       return config.economy.feedlotPriceFactor;
     default:
       return 1;
   }
 }
 
-export function sellingCosts(totalNad: number, channel: SaleChannel, config: GameConfig = CONFIG): number {
+export function sellingCosts(
+  totalNad: number,
+  channel: SaleChannel,
+  headCount: number,
+  config: GameConfig = CONFIG,
+): number {
   let levy = totalNad * config.economy.llpbnLevyRate;
   let commission = 0;
+  let grading = 0;
   if (channel === "auction") {
-    // A: SA public auction ~8% (Farmer's Weekly Dec 2021); Namibia Agra rate unpublished.
     commission = totalNad * config.economy.auctionCommissionRate;
+    grading = headCount * config.economy.ncaGradingNadPerHead;
   }
   if (channel === "feedlot") {
     levy = totalNad * config.economy.liveExportLevyRate;
   }
-  return levy + commission;
+  return levy + commission + grading;
 }
 
 export function quoteSale(
@@ -115,7 +184,7 @@ export function quoteSale(
   const unit =
     base.baseNadPerKgLive * lw * conditionPriceFactor(state.herd.condition) * channelPriceFactor(channel, config);
   const gross = unit * count;
-  const costs = sellingCosts(gross, channel, config);
+  const costs = sellingCosts(gross, channel, count, config);
   return {
     stockClass,
     count,
@@ -138,37 +207,16 @@ export function applySale(state: GameState, line: SaleLine): void {
 export function syncHeadFromComposition(state: GameState): void {
   const c = state.story?.composition;
   if (!c) return;
-  const total =
-    c.cow + c.bull + c.calf + c.weaner + c.ox;
+  const total = c.cow + c.bull + c.calf + c.weaner + c.ox;
   state.herd.headCount = Math.max(0, total);
 }
 
-export function monthlyOperatingCosts(state: GameState, config: GameConfig = CONFIG): { total: number; lines: string[] } {
-  const lines: string[] = [];
-  let total = 0;
-  if (state.story?.farmhand.hired) {
-  // S: N$14/hr × 45h × 52/12 ≈ N$2,730 (farm-life-lesson §1.4); housing compulsory, not deducted.
-    total += state.story.farmhand.wageCashNad;
-    lines.push(`Wages N$${Math.round(state.story.farmhand.wageCashNad)}`);
-  }
-  // S: phosphate/green & protein/dry licks are real costs; amounts are placeholders.
-  const lick = config.economy.monthlyLickNad;
-  total += lick;
-  lines.push(`Licks & supplements N$${lick}`);
-  const vet = config.economy.monthlyVetNad;
-  total += vet;
-  lines.push(`Vet & dosing N$${vet}`);
-  const diesel = config.economy.monthlyDieselNad;
-  total += diesel;
-  lines.push(`Diesel (farm run) N$${diesel}`);
-  return { total, lines };
-}
-
-export function chargeMonthlyCosts(state: GameState, config: GameConfig = CONFIG): void {
+export function chargeMonthlyCosts(state: GameState, config: GameConfig = CONFIG): MonthlyCostBreakdown {
   const story = state.story;
-  if (!story) return;
   const costs = monthlyOperatingCosts(state, config);
+  if (!story) return costs;
   state.cashNad -= costs.total;
   story.ledger.expenseNad += costs.total;
-  story.ledger.notes.push(...costs.lines.map((l) => `Paid ${l}`));
+  story.ledger.notes.push(`Running costs N$${Math.round(costs.total)}`);
+  return costs;
 }
