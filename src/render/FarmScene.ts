@@ -4,6 +4,7 @@ import { COPY } from "../sim/format";
 import { clamp } from "../sim/math";
 import { getGameFlow } from "../integration/GameFlowService";
 import { popNextCard } from "../sim/story";
+import { presentStoryCard } from "./storyPresent";
 import { campIdAt, moveHerd, stepDay } from "../sim/simulation";
 import { herdInTransit, herdWorldTile, pathTangent, tickTransitRealtime } from "../sim/transit";
 import {
@@ -154,15 +155,6 @@ export class FarmScene extends Phaser.Scene {
     this.refreshHerdLabel();
     this.layoutCamera(true);
     this.bindInput();
-    this.market = mountMarketSheet({
-      getState: () => this.state,
-      onChange: () => {
-        this.syncHud();
-        this.persist();
-        getGameFlow().notifySim("salePlanned");
-      },
-      onToast: (text) => this.hud.setHint(text),
-    });
     this.hud = mountHud({
       onSpeed: (mode) => this.setSpeed(mode),
       onMinimap: (nx, ny) => this.onMinimap(nx, ny),
@@ -174,10 +166,18 @@ export class FarmScene extends Phaser.Scene {
       onOpenMarket: () => this.market.open(),
       onSheetExpanded: () => getGameFlow().notifySim("grassChecked"),
     });
+    this.market = mountMarketSheet({
+      getState: () => this.state,
+      onChange: () => {
+        this.syncHud();
+        this.persist();
+        getGameFlow().notifySim("salePlanned");
+      },
+      onToast: (text) => this.hud.setHint(text),
+    });
     flow.attachFarmHud(this.hud);
     this.hud.setSpeed(this.mode);
-    const tutorial = flow.getTutorialStep();
-    this.hud.setHint(tutorial ? `${tutorial.title}: ${tutorial.body}` : COPY.hintStart);
+    if (!flow.getTutorialStep()) this.hud.setHint(COPY.hintStart);
     this.syncHud();
     this.scale.on("resize", () => this.layoutCamera(false));
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -354,17 +354,10 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private flushStoryCards(): void {
-    const flow = getGameFlow();
     for (let i = 0; i < 2; i += 1) {
       const card = popNextCard(this.state);
       if (!card) break;
-      if (card.kind === "summary" || card.kind === "drought" || card.kind === "warning") {
-        this.hud.showEventCard(card.title, card.body);
-        flow.showStoryCard(card.title, card.body);
-      } else {
-        this.hud.setHint(`${card.title}: ${card.body}`);
-        flow.storyEvents.publish({ kind: "toast", message: `${card.title}: ${card.body}` });
-      }
+      presentStoryCard(card, this.hud);
     }
   }
 
@@ -556,7 +549,8 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private startNewFarm(): void {
-    getGameFlow().clearActiveSlot();
+    this.persist();
+    getGameFlow().returnToStart();
   }
 
   private persist(): void {

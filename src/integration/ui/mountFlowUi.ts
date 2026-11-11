@@ -79,6 +79,9 @@ export function mountFlowUi(handlers: FlowUiHandlers): FlowUi {
   return {
     render(model) {
       hideScreens();
+      if (model.phase === "yearEndReview" || model.phase === "gameOver") {
+        tutorialEl.hidden = true;
+      }
       if (model.phase === "yearEndReview" && model.yearEnd) {
         yearEl.hidden = false;
         required(root, "flow-yearend-season").textContent = model.yearEnd.seasonLabel;

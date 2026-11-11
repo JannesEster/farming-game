@@ -34,6 +34,10 @@ export type Hud = {
   setSpeed(mode: SpeedMode): void;
   setHint(text: string): void;
   showEventCard(title: string, body: string): void;
+  /** Hide the hint toast while a tutorial or story card is on screen. */
+  holdToasts(): void;
+  /** Show the newest queued hint once every card is closed. */
+  releaseToasts(): void;
   destroy(): void;
 };
 
@@ -165,10 +169,69 @@ export function mountHud(options: {
   });
   marketBtn.addEventListener("click", (event) => {
     event.stopPropagation();
+    overflowMenu.hidden = true;
+    overflowBtn.setAttribute("aria-expanded", "false");
     options.onOpenMarket();
   });
+  let toastTimer: ReturnType<typeof setTimeout> | null = null;
+  let toastHeld = false;
+  let queuedHint: string | null = null;
+  let blockedText: string[] = [];
+
+  const tutorialOpen = (): boolean => {
+    const tutorial = document.getElementById("flow-tutorial");
+    return Boolean(tutorial && !tutorial.hidden);
+  };
+  const cardBlocksToast = (): boolean => toastHeld || tutorialOpen() || !eventCard.hidden;
+  const rememberBlockedCopy = (): void => {
+    const bits: string[] = [];
+    const push = (value: string | null | undefined) => {
+      const text = value?.trim();
+      if (text) bits.push(text);
+    };
+    if (tutorialOpen() || toastHeld) {
+      push(document.getElementById("flow-tutorial-title")?.textContent);
+      push(document.getElementById("flow-tutorial-body")?.textContent);
+    }
+    if (!eventCard.hidden) {
+      push(eventTitle.textContent);
+      push(eventBody.textContent);
+    }
+    if (bits.length > 0) blockedText = bits;
+  };
+  const echoesCard = (text: string, bits: string[]): boolean =>
+    bits.some((bit) => bit.length > 8 && text.includes(bit));
+  const hideToast = (): void => {
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = null;
+    toastEl.classList.remove("is-visible");
+    toastEl.hidden = true;
+  };
+  const showToast = (text: string): void => {
+    toastEl.textContent = text;
+    toastEl.hidden = false;
+    toastEl.classList.add("is-visible");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      toastEl.classList.remove("is-visible");
+      toastTimer = setTimeout(() => {
+        toastEl.hidden = true;
+      }, 320);
+    }, 3000);
+  };
+  const flushQueuedToast = (): void => {
+    if (cardBlocksToast()) return;
+    const text = queuedHint;
+    const bits = blockedText;
+    queuedHint = null;
+    blockedText = [];
+    if (!text || echoesCard(text, bits)) return;
+    showToast(text);
+  };
+
   eventDismiss.addEventListener("click", () => {
     eventCard.hidden = true;
+    flushQueuedToast();
   });
   newFarmBtn.addEventListener("click", () => {
     overflowMenu.hidden = true;
@@ -219,7 +282,6 @@ export function mountHud(options: {
 
   let lastState: GameState | null = null;
   let expanded = false;
-  let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
   const syncChromeInsets = (): void => {
     const topbarH = root.querySelector<HTMLElement>(".topbar")?.getBoundingClientRect().height ?? 44;
@@ -334,21 +396,36 @@ export function mountHud(options: {
     },
     setHint(text) {
       if (!text) return;
-      toastEl.textContent = text;
-      toastEl.hidden = false;
-      toastEl.classList.add("is-visible");
-      if (toastTimer) clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => {
-        toastEl.classList.remove("is-visible");
-        toastTimer = setTimeout(() => {
-          toastEl.hidden = true;
-        }, 320);
-      }, 3000);
+      if (cardBlocksToast()) {
+        rememberBlockedCopy();
+        queuedHint = echoesCard(text, blockedText) ? queuedHint : text;
+        hideToast();
+        return;
+      }
+      queuedHint = null;
+      showToast(text);
     },
     showEventCard(title, body) {
       eventTitle.textContent = title;
       eventBody.textContent = body;
       eventCard.hidden = false;
+      rememberBlockedCopy();
+      if (!toastEl.hidden && toastEl.textContent && !echoesCard(toastEl.textContent, blockedText)) {
+        queuedHint = toastEl.textContent;
+      }
+      hideToast();
+    },
+    holdToasts() {
+      toastHeld = true;
+      rememberBlockedCopy();
+      if (!toastEl.hidden && toastEl.textContent && !echoesCard(toastEl.textContent, blockedText)) {
+        queuedHint = toastEl.textContent;
+      }
+      hideToast();
+    },
+    releaseToasts() {
+      toastHeld = false;
+      flushQueuedToast();
     },
     destroy() {
       if (toastTimer) clearTimeout(toastTimer);

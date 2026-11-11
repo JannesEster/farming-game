@@ -1,6 +1,6 @@
 # Integration layer (game flow agent)
 
-This document is the contract between **integration** (`src/integration/**`) and the parallel branches **ART**, **STORY**, and **FARM PICKER**. Phase 1 ships stubs; Phase 2 replaces stubs and wires real data.
+This document is the contract for the wired vertical slice. Art, story, the farm picker, and game flow run through `GameFlowService`. The old stub modules are gone.
 
 ## Flow state machine
 
@@ -11,17 +11,17 @@ Implementation: `src/integration/stateMachine.ts`, orchestrated by `GameFlowServ
 | Phase | UI owner | Sim running |
 | --- | --- | --- |
 | `start` | Integration overlay | Farm scene paused |
-| `farmPicker` | Integration (stub offers) | Paused |
+| `farmPicker` | Farm picker (`src/picker/flow.ts`) | Paused |
 | `playing` | ART HUD + map | Active |
 | `yearEndReview` | Integration overlay | Paused |
 | `gameOver` | Integration overlay | Paused |
 
-## Ports (replace stubs)
+## Ports
 
 ### FARM PICKER — `FarmPickerPort`
 
 File: `src/integration/interfaces.ts`  
-Stub: `src/integration/stubs/farmOffers.ts`
+Wired: `src/integration/pickerAdapter.ts` and `src/picker/flow.ts`
 
 ```ts
 listOffers(rollSeed: number): FarmOffer[];
@@ -32,12 +32,12 @@ createGameStateFromOffer(offer: FarmOffer): GameState;
 
 - Start + offer UI: `src/picker/flow.ts` (“Dust & Hooves”).
 - On buy: `getGameFlow().pickFarmPurchase(state, offer)` via `PickerFlowHost`.
-- `integration/pickerAdapter.ts` remains the typed port for tests/stubs.
+- `integration/pickerAdapter.ts` is the typed port.
 
 ### STORY — `StoryEconomyPort` + `StoryEventsPort`
 
 Files: `src/integration/interfaces.ts`  
-Stubs: `src/integration/stubs/storyEconomy.ts`, `src/integration/stubs/storyEvents.ts`
+Wired: `src/integration/storyEconomyAdapter.ts`, `src/integration/storyEventsAdapter.ts`
 
 **Economy**
 
@@ -51,7 +51,7 @@ buildMonthEndSummary?(state): MonthEndSummary;
 
 **Events (notification bus)**
 
-Publish via `stubStoryEvents` replacement or directly:
+Publish via `storyEvents`:
 
 ```ts
 getGameFlow().bus.toast(message, "warn");
@@ -60,16 +60,11 @@ getGameFlow().storyEvents.publish({ kind: "monthEnd", summary });
 
 `NotificationBus` lives in `src/integration/events.ts`. STORY should publish drought warnings, auction reminders, and starvation notices here—not call HUD directly.
 
-**STORY branch TODO**
-
-1. Swap `stubStoryEconomy` inside `GameFlowService` for your economy module.
-2. Hook `onDayAdvanced` from your calendar/year cycle (after `stepDay`).
-3. Emit month-end and story cards through `StoryEventsPort`.
-4. Use real bankruptcy / herd-lost rules in `isBankrupt` / `isHerdLost`.
+Month review is the card `closeMonth` queues on the last day of the month. `onSimDayAdvanced` does not publish a second month-end. Starvation, sales, and the drought choice are in `src/sim`.
 
 ### ART — `ArtTutorialPort` (optional)
 
-No stub required for Phase 1. Farm rendering stays in `src/render/**`.
+Farm rendering stays in `src/render/**`.
 
 **ART branch TODO (optional)**
 
@@ -120,7 +115,7 @@ Query params: `?capture=1&flowCapture=tutorial|yearend`
 
 ## Phase 2 merge checklist
 
-1. Replace stub ports in `GameFlowService` constructor or factory.
+1. Keep economy and picker calls on the wired adapters, not a second save writer.
 2. Resolve conflicts: keep flow ownership in `src/integration/**`.
 3. Run `npm test` and `npm run capture-artifacts`.
 4. Play through start → picker → play → year-end on a 390×844 viewport.

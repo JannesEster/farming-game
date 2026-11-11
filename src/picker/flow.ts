@@ -19,11 +19,20 @@ let pickerShowStart: (() => void) | null = null;
 let pickerShowOffers: (() => void) | null = null;
 let pickerResolve: ((result: PickerResult) => void) | null = null;
 
+export type PickerSlotSummary = {
+  id: number;
+  occupied: boolean;
+  label: string;
+};
+
 export type PickerFlowHost = {
   hasSavedGame: () => boolean;
   onContinue: () => void;
   onRequestOffers: () => void;
   onPurchased: (state: GameState, offer: FarmOfferCard) => void;
+  slots?: () => PickerSlotSummary[];
+  activeSlot?: () => number;
+  onSelectSlot?: (slotId: number) => void;
 };
 
 let pickerHost: PickerFlowHost | null = null;
@@ -58,7 +67,10 @@ export function closePickerScreen(): void {
 }
 
 function ensurePickerMounted(): void {
-  if (pickerShowStart) return;
+  if (pickerShowStart && pickerRoot?.isConnected) return;
+  pickerShowStart = null;
+  pickerShowOffers = null;
+  pickerRenderCard = null;
   pickerIndex = 0;
   pickerOffers = generateFarmOffers(88001);
   mountPickerUi();
@@ -69,6 +81,22 @@ function mountPickerUi(): void {
   const root = ensureRoot();
   const showStart = () => {
     const saved = pickerHost ? pickerHost.hasSavedGame() : hasSavedGame();
+    const slots = pickerHost?.slots?.() ?? [];
+    const activeSlot = pickerHost?.activeSlot?.() ?? 0;
+    const slotRow =
+      slots.length === 0
+        ? ""
+        : `<div class="picker-slots" role="listbox" aria-label="Save slots">
+            ${slots
+              .map(
+                (slot) => `<button type="button" role="option" class="picker-slot${slot.id === activeSlot ? " active" : ""}" data-slot="${slot.id}" aria-selected="${slot.id === activeSlot ? "true" : "false"}">
+              <span>Slot ${slot.id + 1}</span>
+              <small>${slot.occupied ? slot.label : "Empty"}</small>
+            </button>`,
+              )
+              .join("")}
+          </div>
+          <p class="picker-slot-note">New game replaces the highlighted slot.</p>`;
     root.innerHTML = `
         <div class="picker-screen start-screen" data-test="start-screen">
           <div class="picker-panel">
@@ -79,6 +107,7 @@ function mountPickerUi(): void {
               <span class="picker-budget-label">Your purse</span>
               <strong>${formatMoney(PURCHASE_BUDGET_NAD)}</strong>
             </p>
+            ${slotRow}
             <div class="picker-actions">
               <button type="button" class="picker-btn primary" data-action="new">New game</button>
               <button type="button" class="picker-btn" data-action="continue" ${saved ? "" : "disabled"}>Continue</button>
@@ -87,6 +116,12 @@ function mountPickerUi(): void {
         </div>
       `;
 
+    root.querySelectorAll<HTMLButtonElement>("[data-slot]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = Number(btn.dataset.slot);
+        if (Number.isFinite(id)) pickerHost?.onSelectSlot?.(id);
+      });
+    });
     root.querySelector<HTMLButtonElement>('[data-action="new"]')?.addEventListener("click", () => {
       if (pickerHost) pickerHost.onRequestOffers();
       else showPicker();
@@ -253,7 +288,8 @@ export function installPickerCaptureBridge(): void {
 }
 
 function ensureRoot(): HTMLElement {
-  if (pickerRoot) return pickerRoot;
+  if (pickerRoot?.isConnected) return pickerRoot;
+  pickerRoot?.remove();
   pickerRoot = document.createElement("div");
   pickerRoot.id = "picker-root";
   document.body.appendChild(pickerRoot);
@@ -263,6 +299,9 @@ function ensureRoot(): HTMLElement {
 function destroyRoot(): void {
   pickerRoot?.remove();
   pickerRoot = null;
+  pickerShowStart = null;
+  pickerShowOffers = null;
+  pickerRenderCard = null;
 }
 
 function fenceLabel(condition: string): string {

@@ -10,7 +10,10 @@ import { defaultFlowMeta } from "./metaDefaults";
 import {
   clearSlot,
   getActiveSlotId,
+  listSlotSummaries,
   readSlot,
+  setActiveSlotId,
+  SLOT_COUNT,
   writeSlot,
   type SavedSlotPayload,
 } from "./saveSlots";
@@ -56,16 +59,25 @@ export class GameFlowService {
   private game: Phaser.Game | null = null;
   private farmSceneKey = "farm";
   private pendingState: GameState | null = null;
-  private lastMonthKey = "";
   private yearEndReport: YearEndReport | null = null;
+  private hudUnsub: (() => void) | null = null;
+  private farmHud: Hud | null = null;
 
   boot(game: Phaser.Game): void {
     this.game = game;
     setPickerFlowHost({
-      hasSavedGame: () => Boolean(readSlot(getActiveSlotId())),
-      onContinue: () => this.dispatch({ type: "PRESS_CONTINUE", hasSave: true }),
+      hasSavedGame: () => Boolean(readSlot(this.runtime.slotId)),
+      onContinue: () => this.dispatch({ type: "PRESS_CONTINUE", hasSave: Boolean(readSlot(this.runtime.slotId)) }),
       onRequestOffers: () => this.dispatch({ type: "PRESS_NEW_GAME" }),
       onPurchased: (state, offer) => this.pickFarmPurchase(state, offer),
+      slots: () =>
+        listSlotSummaries().map((slot) => ({
+          id: slot.slotId,
+          occupied: slot.occupied,
+          label: slot.dateLabel ?? "Saved",
+        })),
+      activeSlot: () => this.runtime.slotId,
+      onSelectSlot: (slotId) => this.selectSlot(slotId),
     });
     this.ui = mountFlowUi({
       onYearEndContinue: () => this.onYearEndContinue(),
@@ -195,7 +207,6 @@ export class GameFlowService {
     this.runtime.gameState = slot.state;
     this.pendingState = slot.state;
     this.economy = createStoryEconomy(this.runtime.meta);
-    this.lastMonthKey = `${slot.state.date.year}-${slot.state.date.month}`;
   }
 
   private startStubFarm(): void {
@@ -214,8 +225,18 @@ export class GameFlowService {
     return state;
   }
 
+  selectSlot(slotId: number): void {
+    if (!Number.isInteger(slotId) || slotId < 0 || slotId >= SLOT_COUNT) return;
+    this.runtime.slotId = slotId;
+    setActiveSlotId(slotId);
+    if (this.runtime.phase === "start") openStartScreen();
+  }
+
   attachFarmHud(hud: Hud): void {
-    this.bus.subscribe((event) => {
+    this.hudUnsub?.();
+    this.farmHud = hud;
+    if (activeStep(this.runtime.meta.tutorial)) hud.holdToasts();
+    this.hudUnsub = this.bus.subscribe((event) => {
       if (event.type === "toast") hud.setHint(event.message);
     });
   }
@@ -223,12 +244,8 @@ export class GameFlowService {
   onSimDayAdvanced(state: GameState): void {
     this.runtime.gameState = state;
     this.runtime.meta.milestones = detectMilestones(state, this.runtime.meta.milestones);
-    const monthKey = `${state.date.year}-${state.date.month}`;
-    if (monthKey !== this.lastMonthKey) {
-      this.lastMonthKey = monthKey;
-      const summary = this.economy.buildMonthEndSummary?.(state);
-      if (summary) this.storyEvents.publish({ kind: "monthEnd", summary });
-    }
+    // Month review is the card closeMonth queues on the last day. A second
+    // publish here showed the same review again, including on day one.
     if (isSeasonStart(state.date) && this.runtime.meta.yearBaseline) {
       this.openYearEnd(state);
     }
@@ -275,6 +292,14 @@ export class GameFlowService {
     this.runtime.gameState = state;
   }
 
+  /** Leave the farm for the start screen and keep the slot save. */
+  returnToStart(): void {
+    this.persist();
+    this.runtime.phase = "start";
+    this.pauseFarmScene(true);
+    this.syncUi();
+  }
+
   clearActiveSlot(): void {
     clearSlot(this.runtime.slotId);
     this.runtime.gameState = null;
@@ -290,13 +315,13 @@ export class GameFlowService {
     this.runtime.meta.tutorial = advanceTutorial(this.runtime.meta.tutorial, action);
     const step = activeStep(this.runtime.meta.tutorial);
     if (step) this.showTutorial(step);
-    else this.ui?.hideTutorial();
+    else this.closeTutorial();
     this.persist();
   }
 
   private skipTutorial(): void {
     this.runtime.meta.tutorial = advanceTutorial(this.runtime.meta.tutorial, "skip");
-    this.ui?.hideTutorial();
+    this.closeTutorial();
     this.persist();
   }
 
@@ -307,11 +332,17 @@ export class GameFlowService {
     }
     const step = activeStep(this.runtime.meta.tutorial);
     if (step) this.showTutorial(step);
-    else this.ui?.hideTutorial();
+    else this.closeTutorial();
   }
 
   private showTutorial(step: TutorialStep): void {
     this.ui?.showTutorial(step);
+    this.farmHud?.holdToasts();
+  }
+
+  private closeTutorial(): void {
+    this.ui?.hideTutorial();
+    this.farmHud?.releaseToasts();
   }
 
   getPhase(): FlowPhase {
@@ -339,6 +370,10 @@ export class GameFlowService {
       yearEnd: this.yearEndReport,
       gameOverReason: this.runtime.meta.gameOverReason,
     });
+    if (this.runtime.phase === "playing") {
+      const step = activeStep(this.runtime.meta.tutorial);
+      if (step) this.showTutorial(step);
+    }
   }
 
   showStoryCard(title: string, body: string): void {

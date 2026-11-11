@@ -1,7 +1,7 @@
 import { CONFIG, type GameConfig } from "./config";
 import { daysInMonth, isRainyMonth } from "./calendar";
 import { syncHeadFromComposition } from "./economy";
-import { chargeMonthlyCosts, monthlyOperatingCosts } from "./economy";
+import { chargeMonthlyCosts } from "./economy";
 import type { CalendarDate } from "./types";
 import type { GameState } from "./types";
 
@@ -100,11 +100,10 @@ export function closeMonth(state: GameState, config: GameConfig = CONFIG): void 
   story.lastMonthKey = key;
   chargeMonthlyCosts(state, config);
   const phase = cyclePhase(state.date, config);
-  const costs = monthlyOperatingCosts(state, config);
   const net = story.ledger.incomeNad - story.ledger.expenseNad;
   const body = [
     `${cyclePhaseLabel(phase)} ended.`,
-    `Income N$${Math.round(story.ledger.incomeNad)} · Expenses N$${Math.round(story.ledger.expenseNad)} (incl. ${costs.lines.length} lines).`,
+    `Income N$${Math.round(story.ledger.incomeNad)} · Expenses N$${Math.round(story.ledger.expenseNad)}.`,
     `Net N$${Math.round(net)}. Rain season-to-date ${Math.round(state.seasonRainMm)} mm.`,
     story.ledger.deathCount > 0 ? `${story.ledger.deathCount} deaths logged.` : "No deaths logged.",
     story.composition.weaner > 0 ? `${story.composition.weaner} weaners in herd.` : "",

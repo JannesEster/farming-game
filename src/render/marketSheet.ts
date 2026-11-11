@@ -48,8 +48,6 @@ export function mountMarketSheet(options: {
           <option value="feedlot">Feedlot buyer</option>
         </select>
       </label>
-      <p class="extra" id="market-quote"></p>
-      <button type="button" class="pill-btn confirm" id="market-sell-btn">Sell</button>
       <hr class="market-divider" />
       <p class="extra"><strong>Farmhand</strong></p>
       <p class="extra" id="market-worker"></p>
@@ -58,12 +56,16 @@ export function mountMarketSheet(options: {
         <button type="button" class="pill-btn ghost" data-job="check_water">Check water</button>
         <button type="button" class="pill-btn ghost" data-job="move_herd">Help move herd</button>
       </div>
+    </div>
+    <div class="market-actions">
       <div id="market-drought" hidden>
         <p class="warn" id="market-drought-text"></p>
         <button type="button" class="pill-btn confirm" data-drought="sell_down">Sell weaners</button>
         <button type="button" class="pill-btn ghost" data-drought="buy_feed">Buy supplement</button>
         <button type="button" class="pill-btn ghost" data-drought="move_herd">Move camps</button>
       </div>
+      <p class="extra" id="market-quote"></p>
+      <button type="button" class="pill-btn confirm" id="market-sell-btn">Sell</button>
     </div>
   `;
   root.appendChild(sheet);

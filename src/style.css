@@ -305,6 +305,25 @@ body {
   flex-direction: column;
 }
 
+.market-sheet {
+  max-height: min(68vh, calc(100vh - 56px));
+  overflow: hidden;
+}
+
+.market-sheet .sheet-detail {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.market-actions {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 10px 10px;
+  background: var(--panel);
+}
+
 .sheet-summary {
   display: flex;
   align-items: center;
@@ -479,6 +498,10 @@ body {
     max-height: min(40vh, calc(100vh - 52px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
     right: calc(98px + env(safe-area-inset-right));
   }
+
+  .market-sheet {
+    max-height: calc(100vh - 52px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
 }
 #picker-root {
   position: fixed;
@@ -553,6 +576,49 @@ body {
 
 .picker-budget-label {
   font-size: 13px;
+  color: var(--muted);
+}
+
+.picker-slots {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.picker-slot {
+  font: inherit;
+  text-align: left;
+  border-radius: 10px;
+  border: 1px solid rgba(226, 177, 90, 0.4);
+  background: rgba(255, 244, 220, 0.04);
+  color: var(--paper);
+  padding: 8px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.picker-slot span {
+  display: block;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.picker-slot small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.picker-slot.active {
+  border-color: var(--gold);
+  background: rgba(226, 177, 90, 0.18);
+}
+
+.picker-slot-note {
+  margin: 0 0 12px;
+  font-size: 12px;
   color: var(--muted);
 }
 
@@ -710,12 +776,28 @@ body {
   background: var(--gold);
 }
 
+@media (orientation: portrait) and (max-height: 900px) {
+  .picker-card {
+    max-height: calc(100dvh - 176px);
+    overflow: auto;
+  }
+}
+
 @media (orientation: landscape) and (max-height: 520px) {
+  #picker-root {
+    overflow: hidden;
+  }
+
   .picker-flow {
     max-width: none;
+    height: 100dvh;
+    min-height: 0;
+    max-height: 100dvh;
+    overflow: hidden;
+    box-sizing: border-box;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto 1fr auto auto;
+    grid-template-rows: auto minmax(0, 1fr) auto;
     column-gap: 16px;
     align-items: start;
   }
@@ -727,6 +809,9 @@ body {
   .picker-card {
     grid-column: 1;
     grid-row: 2;
+    min-height: 0;
+    max-height: 100%;
+    overflow: auto;
   }
 
   .picker-nav,
@@ -918,7 +1003,7 @@ body {
 }
 
 .flow-tutorial-inner {
-  background: rgba(42, 28, 18, 0.94);
+  background: #2a1c12;
   border: 1px solid rgba(247, 240, 226, 0.18);
   border-radius: 12px;
   padding: 12px 14px;

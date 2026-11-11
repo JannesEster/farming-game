@@ -2,7 +2,7 @@ import type { GameState } from "../sim/types";
 import type { MonthEndSummary, YearEndReport } from "./types";
 
 /**
- * FARM PICKER branch: replace stub implementation and call {@link GameFlowService.pickFarmOffer}.
+ * Farm offers. The play path uses `src/picker` and `pickerAdapter.ts`.
  */
 export type FarmOffer = {
   id: string;
@@ -25,7 +25,7 @@ export interface FarmPickerPort {
 }
 
 /**
- * STORY branch: economy rules, auctions, drought, costs, farmhand.
+ * Economy rules, auctions, drought, costs, and the farmhand. Wired in `storyEconomyAdapter.ts`.
  */
 export interface StoryEconomyPort {
   /** Called each sim day; return cash delta and optional story copy. */
@@ -34,7 +34,7 @@ export interface StoryEconomyPort {
   isBankrupt(state: GameState): boolean;
   /** True when herd is wiped (starvation / sell-out). */
   isHerdLost(state: GameState): boolean;
-  /** Year-end financial and narrative rollup (stub may be partial). */
+  /** Year-end financial and narrative rollup. */
   buildYearEndReport(state: GameState, farmYear: number): YearEndReport;
   /** Month tick from STORY; integration surfaces via event bus. */
   buildMonthEndSummary?(state: GameState): MonthEndSummary;
@@ -51,7 +51,7 @@ export type StoryEventPayload =
   | { kind: "custom"; type: string; data: Record<string, unknown> };
 
 export interface StoryEventsPort {
-  /** Subscribe from STORY when sim hooks exist; stub is no-op. */
+  /** Publish a story event onto the notification bus. */
   publish(event: StoryEventPayload): void;
 }
 

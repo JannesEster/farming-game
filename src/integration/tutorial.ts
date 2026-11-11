@@ -32,7 +32,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: "sellAtMarket",
     title: "Plan a sale",
-    body: "When markets arrive (STORY), plan a sale before grass and prices turn against you.",
+    body: "Open the menu on the top right and tap Sell / market. Auction or a private buyer, then confirm.",
   },
   {
     id: "dismissDone",
