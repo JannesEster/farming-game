@@ -57,9 +57,21 @@ export type HerdState = {
   transit: HerdTransit | null;
 };
 
+export type FarmMeta = {
+  offerId: string;
+  regionKey: string;
+  regionLabel: string;
+  hectares: number;
+  rainfallMm: number;
+  campCount: number;
+  fenceCondition: "good" | "fair" | "poor";
+  water: { boreholes: number; windmills: number; solar: number };
+};
+
 export type GameState = {
   seed: number;
   rngState: number;
+  farmMeta?: FarmMeta;
   date: CalendarDate;
   seasonRainMm: number;
   todayRainMm: number;

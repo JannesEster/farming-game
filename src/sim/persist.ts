@@ -2,7 +2,9 @@ import { CONFIG } from "./config";
 import { createGame } from "./simulation";
 import type { GameState } from "./types";
 
-export const SAVE_KEY = "farming-game-v1";
+export const SAVE_KEY = "farming-game-v2";
+
+export const LEGACY_SAVE_KEY = "farming-game-v1";
 
 export type SavedGame = {
   version: 1;
@@ -41,9 +43,14 @@ export function parseSaved(raw: string): GameState | null {
   }
 }
 
+export function hasSavedGame(): boolean {
+  if (typeof localStorage === "undefined") return false;
+  return Boolean(localStorage.getItem(SAVE_KEY) || localStorage.getItem(LEGACY_SAVE_KEY));
+}
+
 export function loadSavedGame(): GameState | null {
   if (typeof localStorage === "undefined") return null;
-  const raw = localStorage.getItem(SAVE_KEY);
+  const raw = localStorage.getItem(SAVE_KEY) ?? localStorage.getItem(LEGACY_SAVE_KEY);
   if (!raw) return null;
   return parseSaved(raw);
 }

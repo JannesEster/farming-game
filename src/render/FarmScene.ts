@@ -2,7 +2,10 @@ import Phaser from "phaser";
 import { CONFIG } from "../sim/config";
 import { COPY } from "../sim/format";
 import { clamp } from "../sim/math";
-import { clearSavedGame, initialGameState, saveGame } from "../sim/persist";
+import { clearSavedGame, saveGame } from "../sim/persist";
+import { REGISTRY_STATE_KEY } from "../boot/registry";
+import { returnToPicker, type PickerResult } from "../picker/flow";
+import type { GameState } from "../sim/types";
 import { campIdAt, moveHerd, stepDay } from "../sim/simulation";
 import { herdInTransit, herdWorldTile, pathTangent, tickTransitRealtime } from "../sim/transit";
 import {
@@ -30,7 +33,7 @@ import {
   type ZoomTargets,
 } from "./camera";
 import { grazeableFraction } from "../sim/pasture";
-import { TILE_HOMESTEAD, TILE_OUTSIDE, type GameState } from "../sim/types";
+import { TILE_HOMESTEAD, TILE_OUTSIDE } from "../sim/types";
 import {
   ART_ORIGIN,
   buildArt,
@@ -114,7 +117,9 @@ export class FarmScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.state = initialGameState();
+    const fromRegistry = this.game.registry.get(REGISTRY_STATE_KEY) as GameState | undefined;
+    if (!fromRegistry) throw new Error("FarmScene requires initial state from the picker.");
+    this.state = fromRegistry;
     this.reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const tileW = CONFIG.view.tileWidth;
     const tileH = CONFIG.view.tileHeight;
@@ -482,7 +487,19 @@ export class FarmScene extends Phaser.Scene {
 
   private startNewFarm(): void {
     clearSavedGame();
-    this.scene.restart();
+    this.hud.destroy();
+    this.game.canvas.style.visibility = "hidden";
+    returnToPicker((result: PickerResult) => {
+      if (result.kind === "cancel") {
+        this.game.canvas.style.visibility = "visible";
+        return;
+      }
+      const next = result.state;
+      if (result.kind === "bought") saveGame(next);
+      this.game.registry.set(REGISTRY_STATE_KEY, next);
+      this.game.canvas.style.visibility = "visible";
+      this.scene.restart();
+    });
   }
 
   private persist(): void {

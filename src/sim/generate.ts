@@ -243,6 +243,27 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
     features.push({ kind: "trough", x: anchor.x, y: anchor.y, scale: 1 });
   }
 
+  const extraWater = config.farm.extraWater;
+  if (extraWater) {
+    const campOrder = [...camps].sort((a, b) => a.id - b.id);
+    const used = new Set(features.map((feature) => `${feature.x},${feature.y}`));
+    let cursor = 0;
+    const placeOnCamp = (kind: Feature["kind"], count: number) => {
+      for (let n = 0; n < count; n += 1) {
+        const camp = campOrder[cursor % campOrder.length];
+        cursor += 1;
+        const at = camp.anchor;
+        const key = `${at.x},${at.y}`;
+        if (used.has(key)) continue;
+        features.push({ kind, x: at.x, y: at.y, scale: 1 });
+        used.add(key);
+      }
+    };
+    placeOnCamp("reservoir", extraWater.boreholes);
+    placeOnCamp("windmill", extraWater.windmills);
+    placeOnCamp("shed", extraWater.solar);
+  }
+
   const occupied = new Set(features.map((feature) => `${feature.x},${feature.y}`));
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {

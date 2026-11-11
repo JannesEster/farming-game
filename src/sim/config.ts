@@ -13,6 +13,10 @@ export type GameConfig = {
     homesteadHectares: number;
     hectaresPerLsu: number;
     landValueNadPerHa: number;
+    /** Extra water infrastructure beyond the homestead windmill (picker / generator). */
+    extraWater?: { boreholes: number; windmills: number; solar: number };
+    /** Shown on picker cards; gameplay wear is TODO. */
+    fenceCondition?: "good" | "fair" | "poor";
   };
   pasture: {
     lsuLiveweightKg: number;
