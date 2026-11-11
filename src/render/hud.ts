@@ -3,13 +3,15 @@ import {
   formatCampBadge,
   formatCampLine,
   formatCondition,
-  formatDate,
+  formatHudDate,
+  formatHudMoney,
+  formatHudRain,
+  formatHerdSheetSummary,
   formatDaysInCamp,
   formatFeedStatus,
   formatGrassLeft,
   formatGrassPercent,
   formatHead,
-  formatMoney,
   formatMoveWarning,
   formatSeason,
 } from "../sim/format";
@@ -17,6 +19,7 @@ import { moveAdvice } from "../sim/grazing";
 import { findCamp } from "../sim/simulation";
 import { grazeableFraction, grazingDaysLeft } from "../sim/pasture";
 import type { GameState } from "../sim/types";
+import type { ViewInsets } from "./camera";
 import { paintMinimap } from "./colour";
 import { grassTint, lerpColour, palette, toCss } from "./palette";
 
@@ -154,11 +157,23 @@ export function mountHud(options: {
     overflowMenu.hidden = true;
     options.onHome();
   });
-  overflowBtn.addEventListener("click", () => {
+  overflowBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
     const open = overflowMenu.hidden;
     overflowMenu.hidden = !open;
     overflowBtn.setAttribute("aria-expanded", open ? "true" : "false");
   });
+  root.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (overflowMenu.hidden) return;
+      const target = event.target as Node | null;
+      if (target && (overflowBtn.contains(target) || overflowMenu.contains(target))) return;
+      overflowMenu.hidden = true;
+      overflowBtn.setAttribute("aria-expanded", "false");
+    },
+    true,
+  );
   closeBtn.addEventListener("click", (event) => {
     event.stopPropagation();
     options.onDeselect();
@@ -185,11 +200,27 @@ export function mountHud(options: {
   let expanded = false;
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
+  const syncChromeInsets = (): void => {
+    const topbarH = root.querySelector<HTMLElement>(".topbar")?.getBoundingClientRect().height ?? 44;
+    const minimapRect = minimap.getBoundingClientRect();
+    const sheetRect = sheet.hidden ? null : sheet.getBoundingClientRect();
+    const clearTop = topbarH;
+    const clearBottom =
+      sheetRect === null
+        ? Math.max(0, window.innerHeight - minimapRect.top)
+        : Math.max(0, window.innerHeight - Math.min(sheetRect.top, minimapRect.top));
+    root.style.setProperty("--hud-top-chrome", `${clearTop}px`);
+    root.style.setProperty("--hud-bottom-chrome", `${clearBottom}px`);
+    const toastLift = clearBottom + (expanded ? 12 : 8);
+    root.style.setProperty("--toast-bottom", `${toastLift}px`);
+  };
+
   function toggleExpanded(): void {
     expanded = !expanded;
     sheet.dataset.expanded = expanded ? "true" : "false";
     summary.setAttribute("aria-expanded", expanded ? "true" : "false");
     sheetDetail.hidden = !expanded;
+    syncChromeInsets();
   }
 
   return {
@@ -203,11 +234,11 @@ export function mountHud(options: {
     update(state, ui) {
       lastState = state;
       const dry = formatSeason(state.date) === "Dry season";
-      dateEl.textContent = formatDate(state.date).replace(/, \d{2}:00$/, "");
+      dateEl.textContent = formatHudDate(state.date);
       seasonEl.innerHTML = dry ? ICONS.dry : ICONS.rain;
       seasonEl.title = formatSeason(state.date);
-      cashEl.textContent = formatMoney(state.cashNad);
-      rainEl.textContent = `${Math.round(state.seasonRainMm)} mm`;
+      cashEl.textContent = formatHudMoney(state.cashNad);
+      rainEl.textContent = formatHudRain(state.seasonRainMm);
       rainEl.classList.toggle("is-raining", state.todayRainMm > 0);
 
       sheet.hidden = !ui.selected;
@@ -225,7 +256,11 @@ export function mountHud(options: {
         const fraction = camp ? grazeableFraction(camp) : 0;
         const pct = Math.round(fraction * 100);
         const warn = camp ? formatMoveWarning(state.herd, camp, state.date).length > 0 : false;
-        sheetLine.textContent = `${state.herd.name}, ${camp?.name ?? "camp"}, ${state.herd.headCount} head, grass ${pct}%`;
+        sheetLine.textContent = formatHerdSheetSummary(
+          state.herd.headCount,
+          camp?.name ?? "Camp",
+          pct,
+        );
         warnDot.hidden = !warn;
 
         if (expanded && camp) {
@@ -267,6 +302,7 @@ export function mountHud(options: {
         }
       }
       paintMinimap(minimap, state);
+      syncChromeInsets();
     },
     setSpeed(mode) {
       (Object.keys(buttons) as SpeedMode[]).forEach((key) => {
@@ -319,4 +355,39 @@ export function measureHudHeights(root: HTMLElement = document.getElementById("h
     sheetCollapsedPx: sheet?.querySelector<HTMLElement>(".sheet-summary")?.getBoundingClientRect().height ?? 0,
     minimapPx: minimap?.getBoundingClientRect().height ?? 0,
   };
+}
+
+export function measureChipWidths(root: HTMLElement = document.getElementById("hud-root")!): Record<
+  string,
+  { chipPx: number; textPx: number; label: string }
+> {
+  const measure = (id: string, labelId?: string): { chipPx: number; textPx: number; label: string } => {
+    const chip = root.querySelector<HTMLElement>(`#${id}`);
+    const label = labelId ? root.querySelector<HTMLElement>(`#${labelId}`) : chip;
+    const text = label?.textContent ?? "";
+    return {
+      chipPx: chip?.getBoundingClientRect().width ?? 0,
+      textPx: label ? label.scrollWidth : 0,
+      label: text,
+    };
+  };
+  return {
+    date: measure("stat-date"),
+    cash: measure("stat-cash"),
+    rain: measure("stat-rain"),
+    sheet: measure("sheet-line", "sheet-line"),
+  };
+}
+
+export function viewportCameraInsets(root: HTMLElement = document.getElementById("hud-root")!): ViewInsets {
+  const topbar = root.querySelector<HTMLElement>(".topbar");
+  const top = topbar?.getBoundingClientRect().height ?? 44;
+  const minimap = root.querySelector<HTMLElement>(".minimap");
+  const sheet = root.querySelector<HTMLElement>(".sheet:not([hidden])");
+  const minimapTop = minimap?.getBoundingClientRect().top ?? window.innerHeight;
+  const sheetTop = sheet?.getBoundingClientRect().top ?? window.innerHeight;
+  const bottom = Math.max(0, window.innerHeight - Math.min(minimapTop, sheetTop));
+  const safeLeft = 6;
+  const safeRight = 6;
+  return { top, bottom, left: safeLeft, right: safeRight };
 }

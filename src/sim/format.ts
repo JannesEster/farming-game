@@ -33,6 +33,29 @@ export function formatSeason(date: CalendarDate, config: GameConfig = CONFIG): s
   return isRainyMonth(date.month, config) ? "Rainy season" : "Dry season";
 }
 
+export function formatHudDate(date: CalendarDate): string {
+  const month = MONTHS[date.month - 1] ?? "";
+  return `${date.day} ${month}`;
+}
+
+export function formatHudMoney(amount: number): string {
+  const rounded = Math.round(amount);
+  const sign = rounded < 0 ? "-" : "";
+  const abs = Math.abs(rounded);
+  if (abs >= 1_000_000) return `${sign}N$${Math.round(abs / 100_000) / 10}M`;
+  if (abs >= 10_000) return `${sign}N$${Math.round(abs / 1000)}k`;
+  if (abs >= 1000) return `${sign}N$${(abs / 1000).toFixed(abs % 1000 === 0 ? 0 : 1)}k`;
+  return `${sign}N$${abs}`;
+}
+
+export function formatHudRain(mm: number): string {
+  return `${Math.round(mm)} mm`;
+}
+
+export function formatHerdSheetSummary(headCount: number, campName: string, grassPercent: number): string {
+  return `Herd ${headCount}, ${campName}, grass ${grassPercent}%`;
+}
+
 export function formatMoney(amount: number): string {
   const rounded = Math.round(amount);
   const body = Math.abs(rounded)

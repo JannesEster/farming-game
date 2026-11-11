@@ -62,21 +62,23 @@ export function organicTrekOffsets(
   const px = -uy;
   const py = ux;
   const next = rng(seed + 4049);
-  const stringOut = 12 + progress * 62;
+  const herdScale = Math.max(1, Math.sqrt(count / 24));
+  const stringOut = (36 + progress * 260) * herdScale;
   const gatePinch = Math.exp(-((progress - 0.48) ** 2) / 0.012);
   const offsets: HerdOffset[] = [];
   for (let i = 0; i < count; i += 1) {
     const phase = cowPhase(seed, i);
     const rank = count <= 1 ? 0.5 : i / (count - 1);
     const speedMul = 0.85 + phase * 0.3;
-    const alongCompress = 1 - gatePinch * 0.22;
+    const alongCompress = 1 - gatePinch * 0.28;
     const leaderLag = (rank - 0.42) * stringOut * speedMul * alongCompress;
-    const wobbleAlong = Math.sin(timeMs / 820 + phase * 8.4) * 2.8;
+    const wobbleAlong = Math.sin(timeMs / 820 + phase * 8.4) * (5.5 * herdScale);
+    const baseAcross = (next() - 0.5) * 52 * herdScale;
     const drift =
-      Math.sin(timeMs / 640 + phase * 14.2) * 10 +
-      Math.cos(timeMs / 930 + phase * 6.1) * 6 +
-      (next() - 0.5) * 11;
-    const gateTight = gatePinch * 0.78;
+      Math.sin(timeMs / 640 + phase * 14.2) * (22 * herdScale) +
+      Math.cos(timeMs / 930 + phase * 6.1) * (16 * herdScale) +
+      baseAcross;
+    const gateTight = gatePinch * 0.55;
     const across = drift * (1 - gateTight);
     const nibble = Math.sin(timeMs / 380 + i * 1.65 + phase * 4) > 0.965;
     const nibbleBack = nibble ? -5.5 : 0;
@@ -103,6 +105,21 @@ export function lateralSpreadPx(offsets: HerdOffset[]): number {
 }
 
 /** Width of the mob perpendicular to the march direction (world units). */
+export function mobSpanPx(offsets: HerdOffset[]): { width: number; height: number } {
+  if (offsets.length < 2) return { width: 0, height: 0 };
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const o of offsets) {
+    minX = Math.min(minX, o.x);
+    maxX = Math.max(maxX, o.x);
+    minY = Math.min(minY, o.y);
+    maxY = Math.max(maxY, o.y);
+  }
+  return { width: maxX - minX, height: maxY - minY };
+}
+
 export function mobWidthPx(offsets: HerdOffset[], dirX: number, dirY: number): number {
   if (offsets.length < 2) return 0;
   const len = Math.hypot(dirX, dirY) || 1;

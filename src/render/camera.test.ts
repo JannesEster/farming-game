@@ -4,7 +4,9 @@ import {
   boundsCenter,
   boundsFromPoints,
   centreScrollWhenViewExceedsLayout,
+  CAMERA_CLEAR_MARGIN_PX,
   clampCameraScroll,
+  clampCameraScrollWithInsets,
   clampZoom,
   computeZoomLimits,
   fullMapZoom,
@@ -13,9 +15,13 @@ import {
   pinchCenter,
   pinchZoom,
   preferredHomesteadZoom,
+  scrollToLayoutTip,
   visibleWorldLeft,
+  worldXAtScreenX,
+  worldYAtScreenY,
   zoomScrollDelta,
   zoomToFrameBounds,
+  type LayoutTip,
 } from "./camera";
 import { isoLayout } from "./iso";
 
@@ -185,6 +191,96 @@ describe("minimap tile pick", () => {
   it("maps normalised coordinates using live map width and height", () => {
     expect(minimapTileFromNormalized(0.5, 0.5, 80, 60)).toEqual({ x: 40, y: 30 });
     expect(minimapTileFromNormalized(1.2, -0.1, 80, 60)).toEqual({ x: 79, y: 0 });
+  });
+});
+
+describe("clampCameraScrollWithInsets", () => {
+  const ranch = isoLayout(76, 76, TILE_W, TILE_H, PAD);
+  const limits = computeZoomLimits({
+    layoutWidth: ranch.width,
+    layoutHeight: ranch.height,
+    mapWidth: 76,
+    mapHeight: 76,
+    viewportWidth: 390,
+    viewportHeight: 844,
+    tileWidth: TILE_W,
+    tileHeight: TILE_H,
+    fitMargin: 0.92,
+    maxTilePx: 96,
+    maxOnScreenTiles: 900,
+    terrainChunkTiles: 16,
+    campCount: 14,
+  });
+  const phoneInsets = { top: 52, bottom: 102, left: 14, right: 14 };
+
+  const assertTip = (
+    tip: LayoutTip,
+    screenW: number,
+    screenH: number,
+    zoom: number,
+    insets: typeof phoneInsets,
+  ) => {
+    const margin = CAMERA_CLEAR_MARGIN_PX;
+    const top = insets.top + margin;
+    const bottom = insets.bottom + margin;
+    const contentH = screenH - top - bottom;
+    const contentW = screenW - insets.left - insets.right - 2 * margin;
+    const bandH = contentH / zoom;
+    const bandW = contentW / zoom;
+    const next = scrollToLayoutTip(tip, ranch.width, ranch.height, screenW, screenH, zoom, insets);
+    const bottomY = screenH - bottom;
+    const left = insets.left + margin;
+    const rightX = screenW - insets.right - margin;
+    const eps = 2;
+    const fitsY = bandH >= ranch.height;
+    const fitsX = bandW >= ranch.width;
+    if (fitsY) {
+      const midY = top + contentH / 2;
+      expect(worldYAtScreenY(next.scrollY, screenH, zoom, midY)).toBeCloseTo(ranch.height / 2, eps);
+    } else if (tip === "north") {
+      expect(worldYAtScreenY(next.scrollY, screenH, zoom, top)).toBeCloseTo(0, eps);
+    } else if (tip === "south") {
+      expect(worldYAtScreenY(next.scrollY, screenH, zoom, bottomY)).toBeCloseTo(ranch.height, eps);
+    }
+    if (fitsX) {
+      const midX = left + contentW / 2;
+      expect(worldXAtScreenX(next.scrollX, screenW, zoom, midX)).toBeCloseTo(ranch.width / 2, eps);
+    } else if (tip === "west") {
+      expect(worldXAtScreenX(next.scrollX, screenW, zoom, left)).toBeCloseTo(0, eps);
+    } else if (tip === "east") {
+      expect(worldXAtScreenX(next.scrollX, screenW, zoom, rightX)).toBeCloseTo(ranch.width, eps);
+    }
+    return clampCameraScrollWithInsets(
+      next.scrollX,
+      next.scrollY,
+      ranch.width,
+      ranch.height,
+      screenW,
+      screenH,
+      zoom,
+      insets,
+    );
+  };
+
+  it("lets each ranch tip reach the clear band on phone portrait at opening, mid, and min zoom", () => {
+    const zooms = [44 / TILE_W, 0.35, limits.minZoom];
+    const tips: LayoutTip[] = ["north", "south", "east", "west"];
+    for (const zoom of zooms) {
+      for (const tip of tips) {
+        assertTip(tip, 390, 844, zoom, phoneInsets);
+      }
+    }
+  });
+
+  it("lets each ranch tip reach the clear band in landscape", () => {
+    const landscapeInsets = { top: 52, bottom: 98, left: 14, right: 14 };
+    const zooms = [44 / TILE_W, 0.35, limits.minZoom];
+    const tips: LayoutTip[] = ["north", "south", "east", "west"];
+    for (const zoom of zooms) {
+      for (const tip of tips) {
+        assertTip(tip, 844, 390, zoom, landscapeInsets);
+      }
+    }
   });
 });
 
