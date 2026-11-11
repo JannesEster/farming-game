@@ -24,7 +24,16 @@ import { maxGrazingDaysInCamp, moveAdvice } from "./grazing";
 import { formatMoveWarning } from "./format";
 import { dailyRainMm } from "./rainfall";
 import { createGame, findCamp, moveHerd, stepDay, stepDayWithRain } from "./simulation";
+import { herdInTransit, tickTransitRealtime } from "./transit";
 import type { CampState, GameState, HerdState } from "./types";
+
+function finishTransit(state: GameState): void {
+  let guard = 0;
+  while (herdInTransit(state.herd) && guard < 500) {
+    tickTransitRealtime(state, 100, "play", CONFIG);
+    guard += 1;
+  }
+}
 
 function herd(): HerdState {
   return {
@@ -34,6 +43,7 @@ function herd(): HerdState {
     condition: 80,
     campId: 0,
     daysInCamp: 0,
+    transit: null,
   };
 }
 
@@ -181,6 +191,7 @@ describe("grazing rhythm and warnings", () => {
     rested.standingDmKgPerHa = rested.peakDmKgPerHa * 0.9;
     state.herd.condition = 70;
     moveHerd(state, rested.id);
+    finishTransit(state);
     for (let day = 0; day < 12; day += 1) stepDayWithRain(state, 8);
     expect(state.herd.condition).toBeGreaterThan(70);
   });
@@ -310,6 +321,10 @@ describe("the running farm", () => {
     const moved = moveHerd(state, other.id);
     expect(moved.ok).toBe(true);
     if (moved.ok) expect(moved.campName).toBe(other.name);
+    expect(state.herd.campId).toBe(firstId);
+    expect(herdInTransit(state.herd)).toBe(true);
+    finishTransit(state);
+    expect(state.herd.campId).toBe(other.id);
     expect(state.herd.daysInCamp).toBe(0);
     expect(other.restDays).toBe(0);
     const beforeFirst = first.standingDmKgPerHa;

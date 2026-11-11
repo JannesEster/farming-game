@@ -136,9 +136,25 @@ export type ZoomLimitsInput = {
   tileHeight: number;
   fitMargin: number;
   maxTilePx: number;
-  /** Rough cap on tiles that should fit on screen at the widest pinch-out. */
+  /** Rough cap on tiles that should fit on screen at the widest pinch-out (non-chunked maps). */
   maxOnScreenTiles: number;
+  /** When set, terrain chunks cull off-screen tiles so pinch-out can go wider. */
+  terrainChunkTiles?: number;
+  campCount?: number;
+  minCampsVisibleAtMinZoom?: number;
 };
+
+/** Widest pinch-out that still frames several camps (not the entire ranch). */
+export function minZoomForCampOverview(
+  fullMapZoom: number,
+  campCount: number,
+  minCampsVisible = 4,
+): number {
+  const camps = Math.max(1, campCount);
+  const visible = Math.min(Math.max(1, minCampsVisible), camps);
+  const span = Math.sqrt(visible / camps);
+  return fullMapZoom * span * 0.95;
+}
 
 /** Minimum zoom so the viewport does not expose more tiles than the render budget. */
 export function minZoomForTileBudget(
@@ -166,8 +182,8 @@ export function fullMapZoom(
 }
 
 /**
- * Min and max zoom from layout and viewport size. On large maps the tile budget
- * stops pinch-out from showing the entire farm at once; small maps can still fit entirely.
+ * Min and max zoom from layout and viewport size. Chunked maps use camp overview
+ * instead of a tight tile budget; small non-chunked maps can still fit entirely.
  */
 export function computeZoomLimits(input: ZoomLimitsInput): { minZoom: number; maxZoom: number } {
   const fullMap = fullMapZoom(
@@ -177,22 +193,33 @@ export function computeZoomLimits(input: ZoomLimitsInput): { minZoom: number; ma
     input.viewportHeight,
     input.fitMargin,
   );
-  const mapTiles = input.mapWidth * input.mapHeight;
-  const tileBudget = limitsTileBudget(
-    input.mapWidth,
-    input.mapHeight,
-    input.viewportWidth,
-    input.viewportHeight,
-  );
-  const cullFloor = minZoomForTileBudget(
-    input.viewportWidth,
-    input.viewportHeight,
-    input.tileWidth,
-    input.tileHeight,
-    Math.min(tileBudget, input.maxOnScreenTiles),
-  );
   const fullMin = fullMap * 0.92;
-  const minZoom = tileBudget >= mapTiles ? fullMin : Math.max(cullFloor, fullMin);
+  const chunked = (input.terrainChunkTiles ?? 0) > 0;
+  const mapTiles = input.mapWidth * input.mapHeight;
+  let minZoom: number;
+  if (chunked) {
+    const overview = minZoomForCampOverview(
+      fullMin,
+      input.campCount ?? 12,
+      input.minCampsVisibleAtMinZoom ?? 4,
+    );
+    minZoom = Math.min(fullMin, overview);
+  } else {
+    const tileBudget = limitsTileBudget(
+      input.mapWidth,
+      input.mapHeight,
+      input.viewportWidth,
+      input.viewportHeight,
+    );
+    const cullFloor = minZoomForTileBudget(
+      input.viewportWidth,
+      input.viewportHeight,
+      input.tileWidth,
+      input.tileHeight,
+      Math.min(tileBudget, input.maxOnScreenTiles),
+    );
+    minZoom = tileBudget >= mapTiles ? fullMin : Math.max(cullFloor, fullMin);
+  }
   const maxZoom = Math.max(minZoom, input.maxTilePx / input.tileWidth);
   return { minZoom, maxZoom };
 }

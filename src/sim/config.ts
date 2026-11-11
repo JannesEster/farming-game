@@ -64,6 +64,15 @@ export type GameConfig = {
     moistureMmForFullGrowth: number;
     moistureRetention: number;
   };
+  transit: {
+    kmPerTile: number;
+    maxSpanKm: number;
+    playMsMin: number;
+    playMsMax: number;
+    fastMsMin: number;
+    fastMsMax: number;
+    minDistanceKm: number;
+  };
   map: {
     tilesX: number;
     tilesY: number;
@@ -89,6 +98,7 @@ export type GameConfig = {
       windmill: { x: number; y: number };
       reservoir: { x: number; y: number };
       kraal: { x: number; y: number };
+      shed: { x: number; y: number };
     };
   };
   view: {
@@ -111,9 +121,10 @@ export type GameConfig = {
     grassColourMidpoint: number;
     soilMixAtBare: number;
     tileShadeSpread: number;
-    cowCount: number;
     cowBobPx: number;
-    cowOffsets: { x: number; y: number }[];
+    fencePostSpacingPx: number;
+    terrainChunkTiles: number;
+    propCullPadPx: number;
     moveMs: number;
     windmillRadiansPerSecond: number;
     fencePx: number;
@@ -239,20 +250,30 @@ export const CONFIG: GameConfig = {
     moistureRetention: 0.88,
   },
 
+  transit: {
+    // A. One tile is about 75 m. 3300 ha is about 5.7 km across, not 10+ km.
+    kmPerTile: 0.075,
+    maxSpanKm: 5.7,
+    playMsMin: 6000,
+    playMsMax: 15000,
+    fastMsMin: 1500,
+    fastMsMax: 12000,
+    minDistanceKm: 0.15,
+  },
+
   map: {
-    // A. Tile counts for one farm. Pixel size lives under view.
-    tilesX: 34,
-    tilesY: 34,
-    borderTiles: 2,
-    // The blueprint's eight camp example is a sample, not a rule. This farm rolls 6, 7 or 8.
-    campCountMin: 6,
-    campCountMax: 8,
-    centerInset: 3,
-    campCenterMinDistance: 5,
-    minCampTiles: 40,
-    placementAttempts: 30,
-    homesteadTilesX: 6,
-    homesteadTilesY: 5,
+    // A. Large ranch layout, many fenced camps.
+    tilesX: 76,
+    tilesY: 76,
+    borderTiles: 3,
+    campCountMin: 12,
+    campCountMax: 18,
+    centerInset: 4,
+    campCenterMinDistance: 7,
+    minCampTiles: 70,
+    placementAttempts: 48,
+    homesteadTilesX: 7,
+    homesteadTilesY: 6,
     treeChance: 0.04,
     bushChanceOpen: 0.03,
     bushChanceBushy: 0.14,
@@ -267,6 +288,7 @@ export const CONFIG: GameConfig = {
       windmill: { x: 3, y: 1 },
       reservoir: { x: 4, y: 2 },
       kraal: { x: 1, y: 3 },
+      shed: { x: 5, y: 2 },
     },
   },
 
@@ -289,25 +311,18 @@ export const CONFIG: GameConfig = {
     dragSlopPx: 10,
     herdPickTiles: 1.8,
     herdPickMinScreenPx: 56,
-    grassColourMidpoint: 0.5,
-    soilMixAtBare: 0.45,
-    tileShadeSpread: 12,
-    // A. The animals on the map are a marker for the herd, not one sprite per head.
-    cowCount: 6,
-    cowBobPx: 1.5,
-    cowOffsets: [
-      { x: -36, y: -4 },
-      { x: 0, y: -10 },
-      { x: 36, y: -2 },
-      { x: -18, y: 24 },
-      { x: 20, y: 26 },
-      { x: 4, y: -32 },
-    ],
+    grassColourMidpoint: 0.62,
+    soilMixAtBare: 0.55,
+    tileShadeSpread: 14,
+    cowBobPx: 0.8,
+    fencePostSpacingPx: 18,
+    terrainChunkTiles: 16,
+    propCullPadPx: 96,
     moveMs: 480,
     windmillRadiansPerSecond: 0.8,
-    fencePx: 2.5,
-    fenceBoundaryPx: 4,
-    fenceSelectedPx: 4,
+    fencePx: 3,
+    fenceBoundaryPx: 4.5,
+    fenceSelectedPx: 5,
     ringRx: 150,
     ringRy: 78,
     ringLinePx: 3,

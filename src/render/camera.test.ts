@@ -6,6 +6,7 @@ import {
   clampZoom,
   computeZoomLimits,
   fullMapZoom,
+  minZoomForCampOverview,
   homesteadBoundsPad,
   minimapTileFromNormalized,
   pinchCenter,
@@ -124,14 +125,14 @@ describe("zoom limits for map size", () => {
     expect(limits.minZoom).toBeCloseTo(full * 0.92, 4);
   });
 
-  it("raises min zoom on a large layout so pinch-out stays culling friendly", () => {
-    const large = isoLayout(120, 120, TILE_W, TILE_H, PAD);
-    const full = fullMapZoom(large.width, large.height, viewport.w, viewport.h, fitMargin);
+  it("lets a chunked 76 by 76 ranch pinch out far enough for four camps", () => {
+    const ranch = isoLayout(76, 76, TILE_W, TILE_H, PAD);
+    const full = fullMapZoom(ranch.width, ranch.height, viewport.w, viewport.h, fitMargin);
     const limits = computeZoomLimits({
-      layoutWidth: large.width,
-      layoutHeight: large.height,
-      mapWidth: 120,
-      mapHeight: 120,
+      layoutWidth: ranch.width,
+      layoutHeight: ranch.height,
+      mapWidth: 76,
+      mapHeight: 76,
       viewportWidth: viewport.w,
       viewportHeight: viewport.h,
       tileWidth: TILE_W,
@@ -139,9 +140,13 @@ describe("zoom limits for map size", () => {
       fitMargin,
       maxTilePx: 96,
       maxOnScreenTiles: 900,
+      terrainChunkTiles: 16,
+      campCount: 14,
+      minCampsVisibleAtMinZoom: 4,
     });
-    expect(full).toBeLessThan(limits.minZoom);
-    expect(limits.minZoom).toBeGreaterThan(0.2);
+    const overview = minZoomForCampOverview(full * 0.92, 14, 4);
+    expect(limits.minZoom).toBeCloseTo(Math.min(full * 0.92, overview), 5);
+    expect(limits.minZoom).toBeLessThan(full * 0.92);
   });
 });
 

@@ -8,7 +8,7 @@ The game saves in this browser. Refresh should put you back on the same date, ca
 
 ## 1. Open it (about 1 minute)
 
-The top bar shows a date in August 2026, Dry season, N$ 250,000, rainfall in mm, speed buttons, **Home**, and **New farm**. On first load the view should centre on the homestead: you should clearly see the house, kraal, windmill, and water point at a readable size without pinching in. Red sand, gold and green camps, and camelthorn style trees sit around that yard. A small group of cattle stands in a grazing camp elsewhere on the farm. A camp minimap sits in a corner and should not cover the herd card when the herd is selected.
+The top bar shows a date in August 2026, Dry season, N$ 250,000, rainfall in mm, speed buttons, **Home**, and **New farm**. On first load the view should centre on the homestead at a readable zoom: cream house, zinc roof, windmill, round reservoir, trough, wooden kraal, shed, bakkie, and garden without pinching in. Around that yard you should see a **large** red ochre ranch: many fenced camps (12 or more), mostly dry gold grass with red sand showing through, and a few greener rested camps. Camelthorn style trees, pale wire fences with dark posts, and dirt tracks from the homestead to camp gates. **120** small Brahman style cattle should be spread across the opening camp, with a **120 head** label. A camp minimap in a corner shows the whole farm and should not cover the herd card when the herd is selected.
 
 ## 2. Portrait feel, pan, and pinch (about 2 minutes)
 
@@ -16,7 +16,7 @@ Stay in portrait. Drag the land with one finger. When you let go, the map should
 
 Double tap an open part of the map (not on the cattle). The view should jump back to the homestead, same as **Home**.
 
-On a large farm you cannot pinch out to see every camp at once; use the minimap to jump. After a minimap tap the main view should centre on that spot at a readable zoom, not stay zoomed out over the whole ranch.
+Pinch all the way out. You should see **at least four camps** and their fences at once (not the whole 76 by 76 ranch as a tiny map). Use the minimap to jump elsewhere. After a minimap tap the main view should centre on that spot at a readable camp zoom.
 
 ## 3. Landscape (about 1 minute)
 
@@ -28,17 +28,13 @@ Tap the cattle once. A card appears with the head count (120), condition, grass 
 
 ## 5. Move them (about 2 minutes)
 
-Tap a different camp, either on the land or on the minimap. The cattle walk there. The card switches to that camp, and days in this camp goes back to 0.
+Tap a nearby camp. The cattle should tighten into a column, leave through the gate on the shared fence, and walk there in about 6 to 10 seconds on Play. A camp across the farm should take at most about 15 seconds. On Fast, the walk should take at least about 1.5 seconds. Pause should freeze the walk. When they arrive they spread out again. Grazing only resumes after arrival. The card then switches camp and days in this camp goes back to 0.
 
 Tap the homestead. They should stay put, and the hint should say it is not a grazing camp.
 
 ## 6. Time, grass, and move warnings (about 3 minutes)
 
-Tap Fast. After about twenty seconds the grass percent should fall on the camp they occupy. Leave Fast running until the date moves forward two weeks or more in the dry season. The herd card should show a gold **Time to move** line and a short note that a rested camp helps them recover. The camp number on the map where they stand should show **Move** under it.
-
-Pause. Tap Play. Tap **New farm**, confirm the date returns to 1 August 2026 and progress is cleared.
-
-If you have time, move them to a greener camp before grass runs out, or after the warning. Condition should climb again over several rainy days.
+Tap Fast. After they arrive, grass percent should fall on the camp they occupy. Grass colour still follows camp cover (gold to green by grazable fraction). Leave Fast running until the date moves forward two weeks or more in the dry season. The herd card should show a gold **Time to move** line. Pause. Tap Play. Tap **New farm**, confirm the date returns to 1 August 2026.
 
 ## Desktop, if you are at a computer
 
@@ -46,8 +42,8 @@ Scroll to zoom on the pointer, drag to pan (with a short coast on release), clic
 
 ## Automated checks (developers)
 
-`npm test` includes unit tests for pinch centre, pinch zoom clamps, zoom scroll correction, homestead framing zoom, and pan friction.
+`npm test` covers pinch centre, pinch zoom clamps, homestead framing, pan friction, chunked ranch zoom limits, near gate selection, walk duration bounds, single-point transit advance, and seed 3300 camp sizes.
 
 ## If something is wrong
 
-Note the phone, the browser, portrait or landscape, and what you tapped. Say whether a refresh brought the save back or sent you to 1 August 2026. Mention if the opening view was too zoomed out to see the farmhouse, or if pinch zoom drifted off your fingers.
+Note the phone, the browser, portrait or landscape, and what you tapped. Say whether a refresh brought the save back or sent you to 1 August 2026. Mention if the opening view was too zoomed out to see the farmhouse, if pinch zoom drifted off your fingers, or if pinch-out could not show several camps at once.
