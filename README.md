@@ -32,7 +32,7 @@ The animals on the map are a marker for the whole herd, not one picture per head
 
 The farm is the Otjozondjupa cattle ranch from the design notes: about 3,300 ha, split into 6 to 8 camps, with a homestead, windmill, reservoir, and kraal. Camps share the grazing hectares. The herd is 120 head at 450 kg, which is under a savanna guide of 10 ha per large stock unit.
 
-Each day the camp they stand in loses dry matter at 3% of liveweight, down to a litter floor of half the camp's peak. That half is the Kruger forage rule, applied here as a floor so the camp can go from green to gold to brown as the grazable grass is used up. Rested camps regrow when the soil is moist. A camp with cattle in it regrows only a little. No rain, no growth.
+Each day the camp they stand in loses dry matter at 3% of liveweight, down to a litter floor of half the camp's peak. That half is the Kruger forage rule, applied here as a floor so the camp can go from green to gold to brown as the grazable grass is used up. Stocking pressure also tramples the camp while cattle are in it. Grass only regrows in empty resting camps when the soil is moist. No rain, no growth.
 
 The season year runs 1 July to 30 June. Rain is rare in the dry months and common from November to April. The top bar shows the total since 1 July. Cash is a starting float of N$ 250,000 and does not change, because selling and wages are not in this build.
 
@@ -41,7 +41,7 @@ Every gameplay number, and the speeds and zoom, live in `src/sim/config.ts`. Eac
 ## Assumptions worth knowing
 
 - Monthly rainfall is an assumed shape that adds up to about 446 mm, inside the range of Otjozondjupa census seasons. Storms are random, but a given seed always plays the same.
-- Regrowth speed is assumed. The rule that rest without rain does nothing, and that cattle in a camp slow the recovery, follows the grazing notes.
+- Regrowth speed is assumed. Reuben's rule: grass only recovers in empty camps. Rest without rain does nothing.
 - The 50% consumable figure is sourced. Using it as a daily floor under the peak, rather than a once off May budget, is an assumption.
 - Camp colour follows how much grazable grass is left, so a camp at the litter floor reads as brown.
 - The opening date, the 120 head, the cash, and the map dressing (tree spacing, yard layout, speeds) are assumptions.

@@ -101,7 +101,7 @@ export function resolveDroughtChoice(
     }
     case "move_herd":
       story.drought.choicePending = null;
-      return { ok: true, message: "Move the herd to rested camps with grass." };
+      return { ok: true, message: "Move the herd to rested camps with grass. Empty camps recover when rain returns." };
     default:
       return { ok: false, message: "Unknown choice." };
   }

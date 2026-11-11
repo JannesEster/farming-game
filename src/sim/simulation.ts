@@ -1,7 +1,15 @@
 import { CONFIG, type GameConfig } from "./config";
 import { addDays, isSeasonStart } from "./calendar";
 import { generateFarm } from "./generate";
-import { dailyDemandKg, grazeStanding, growthKgPerHa, nextCondition, nextSoil } from "./pasture";
+import {
+  dailyDemandKg,
+  grazeStanding,
+  growthKgPerHa,
+  nextCondition,
+  nextSoil,
+  residualDmKgPerHa,
+  tramplingLossKgPerHa,
+} from "./pasture";
 import { dailyRainMm } from "./rainfall";
 import { rngFromState } from "./rng";
 import { afterFeedDay } from "./story";
@@ -51,6 +59,9 @@ export function stepDayWithRain(state: GameState, rainMm: number, config: GameCo
       );
       camp.standingDmKgPerHa = grazed.standingDmKgPerHa;
       eaten = grazed.eatenKg;
+      const floor = residualDmKgPerHa(camp.peakDmKgPerHa, config);
+      const trample = tramplingLossKgPerHa(camp.hectares, state.herd, config);
+      camp.standingDmKgPerHa = Math.max(floor, camp.standingDmKgPerHa - trample);
       camp.restDays = 0;
     } else {
       camp.restDays += 1;

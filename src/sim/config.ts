@@ -32,7 +32,8 @@ export type GameConfig = {
     bushyPeakFraction: number;
     fullRestDays: number;
     restGrowthFloor: number;
-    occupiedGrowthFactor: number;
+    /** A. TODO gameplay tuning. Extra DM kg/ha/day from trampling at guide stocking (1 LSU per hectaresPerLsu). */
+    tramplingDmKgPerHaPerDayAtNominalStocking: number;
     maxDailyGrowthKgPerHa: number;
     startingCoverMin: number;
     startingCoverMax: number;
@@ -262,10 +263,10 @@ export const CONFIG: GameConfig = {
     fullRestDays: 42,
     // A. A camp that cattle have just left still grows. It reaches full speed after fullRestDays.
     restGrowthFloor: 0.7,
-    // A. Cattle defoliate the camp they stand in, so regrowth there is only this fraction of a rested camp.
-    // The on/off idea follows NAU: rest is what lets the grass recover, and rest without rain does nothing.
-    occupiedGrowthFactor: 0.2,
-    // A. Tuned so a rested camp can refill across a rainy season, while an occupied camp still declines.
+    // S: Reuben (Namibian farmer). Grass only recovers while a camp rests empty. Cattle in camp plough the veld.
+    // A. TODO gameplay tuning. Trampling scales with LSU/ha above this rate at guide stocking (hectaresPerLsu).
+    tramplingDmKgPerHaPerDayAtNominalStocking: 0.65,
+    // A. Tuned so a rested camp can refill across a rainy season.
     maxDailyGrowthKgPerHa: 14,
     // A. Starting cover as a fraction of each camp's own peak, so the map opens with green and gold camps.
     startingCoverMin: 0.58,

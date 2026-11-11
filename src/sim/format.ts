@@ -19,7 +19,7 @@ export const COPY = {
   cashTitle: "Operating cash after sales and farm costs.",
   rainTitle: "Rain since 1 July, the start of the season year.",
   moveRecovery:
-    "Move to a rested camp. Grass and condition recover over the weeks that camp rests and when rain returns.",
+    "Move to a rested camp. Grass only grows back while a camp rests empty. Rain helps the camps you have left behind.",
 };
 
 export function formatDate(date: CalendarDate): string {

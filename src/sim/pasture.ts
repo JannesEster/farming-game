@@ -64,13 +64,31 @@ export function growthKgPerHa(
   occupied: boolean,
   config: GameConfig = CONFIG,
 ): number {
+  if (occupied) return 0;
   const moisture = clamp(moistureMm / config.rain.moistureMmForFullGrowth, 0, 1);
-  let rest = config.pasture.occupiedGrowthFactor;
-  if (!occupied) {
-    const t = clamp(restDays / config.pasture.fullRestDays, 0, 1);
-    rest = config.pasture.restGrowthFloor + (1 - config.pasture.restGrowthFloor) * t;
-  }
+  const t = clamp(restDays / config.pasture.fullRestDays, 0, 1);
+  const rest = config.pasture.restGrowthFloor + (1 - config.pasture.restGrowthFloor) * t;
   return config.pasture.maxDailyGrowthKgPerHa * moisture * rest;
+}
+
+/** LSU per ha at the farm guide rate (1 LSU per hectaresPerLsu). */
+export function nominalLsuPerHa(config: GameConfig = CONFIG): number {
+  return 1 / config.farm.hectaresPerLsu;
+}
+
+/** Extra DM loss from trampling and hoof damage while cattle occupy a camp (Reuben rule). */
+export function tramplingLossKgPerHa(
+  campHectares: number,
+  herd: HerdState,
+  config: GameConfig = CONFIG,
+): number {
+  if (campHectares <= 0) return 0;
+  const lsu = herdLsu(herd, config);
+  const pressure = lsu / campHectares;
+  const nominal = nominalLsuPerHa(config);
+  if (nominal <= 0) return 0;
+  const pressureRatio = pressure / nominal;
+  return config.pasture.tramplingDmKgPerHaPerDayAtNominalStocking * pressureRatio;
 }
 
 export function grazeStanding(

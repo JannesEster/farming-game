@@ -17,7 +17,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: "moveToRestedCamp",
     title: "Move to a rested camp",
-    body: "Tap a greener camp, confirm the move, and let them walk through the gate.",
+    body: "Tap a greener camp and confirm. Grass only grows back in camps that stay empty while the herd is elsewhere.",
   },
   {
     id: "speedUpTime",
@@ -27,7 +27,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: "checkGrass",
     title: "Check grass",
-    body: "Open the herd card and watch camp grass %. Move before it turns gold.",
+    body: "Open the herd card and watch camp grass %. Move before it turns gold. Occupied camps never recover.",
   },
   {
     id: "sellAtMarket",
