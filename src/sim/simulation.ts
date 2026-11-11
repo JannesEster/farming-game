@@ -4,7 +4,7 @@ import { generateFarm } from "./generate";
 import { dailyDemandKg, grazeStanding, growthKgPerHa, nextCondition, nextSoil } from "./pasture";
 import { dailyRainMm } from "./rainfall";
 import { rngFromState } from "./rng";
-import { advanceTransit, herdInTransit, startHerdMove } from "./transit";
+import { herdInTransit, startHerdMove } from "./transit";
 import type { CampState, GameState, MoveResult } from "./types";
 
 export function createGame(seed = CONFIG.worldSeed, config: GameConfig = CONFIG): GameState {
@@ -22,8 +22,7 @@ export function campIdAt(state: GameState, x: number, y: number): number | null 
 
 /**
  * One game day with a known rainfall.
- * Order: season reset, rain into every camp's soil, regrowth, grazing, condition, then the date rolls forward.
- * Regrowth uses rest as it stands at the start of the day. The occupied camp is then marked as not resting.
+ * Herd walk progress is not advanced here; see tickTransitRealtime in transit.ts.
  */
 export function stepDayWithRain(state: GameState, rainMm: number, config: GameConfig = CONFIG): void {
   if (isSeasonStart(state.date, config)) state.seasonRainMm = 0;
@@ -59,7 +58,6 @@ export function stepDayWithRain(state: GameState, rainMm: number, config: GameCo
     state.herd.condition = nextCondition(state.herd.condition, eaten, demand, config);
     state.herd.daysInCamp += 1;
   }
-  advanceTransit(state, 1, config);
 
   state.date = addDays(state.date, 1);
 }
@@ -78,10 +76,4 @@ export function moveHerd(state: GameState, campId: number): MoveResult {
   if (camp.id === state.herd.campId) return { ok: false, reason: "same" };
   startHerdMove(state, camp.id);
   return { ok: true, campName: camp.name };
-}
-
-/** Advance an in-progress herd move by a fraction of a game day (for smooth animation). */
-export function tickHerdTransit(state: GameState, gameDays: number, config: GameConfig = CONFIG): void {
-  if (!herdInTransit(state.herd)) return;
-  advanceTransit(state, gameDays, config);
 }

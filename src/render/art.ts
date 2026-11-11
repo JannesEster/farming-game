@@ -13,6 +13,8 @@ export const ART_ORIGIN = {
   kraal: { x: 0.5, y: 0.78 },
   reservoir: { x: 0.5, y: 0.58 },
   trough: { x: 0.5, y: 0.82 },
+  bakkie: { x: 0.5, y: 0.88 },
+  garden: { x: 0.5, y: 0.9 },
 };
 
 const TOWER_HEIGHT = 128;
@@ -34,6 +36,8 @@ export type ArtSheet = {
   kraal: HTMLCanvasElement;
   reservoir: HTMLCanvasElement;
   trough: HTMLCanvasElement;
+  bakkie: HTMLCanvasElement;
+  garden: HTMLCanvasElement;
 };
 
 export type HerdOffset = { x: number; y: number; flip: boolean; coat: number; scale: number };
@@ -86,6 +90,8 @@ export function buildArt(tileWidth: number, tileHeight: number): ArtSheet {
     kraal: drawKraal(),
     reservoir: drawReservoir(),
     trough: drawTrough(),
+    bakkie: drawBakkie(),
+    garden: drawGarden(),
   };
 }
 
@@ -228,6 +234,10 @@ function drawCow(coat: string, pale: boolean): HTMLCanvasElement {
     ctx.fillStyle = coat;
     ctx.beginPath();
     ctx.ellipse(20, 18, 12, 7.5, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = coat;
+    ctx.beginPath();
+    ctx.ellipse(15, 13, 5, 4, -0.2, 0, Math.PI * 2);
     ctx.fill();
     if (pale) {
       ctx.fillStyle = "#f0e6d4";
@@ -587,6 +597,44 @@ function drawTrough(): HTMLCanvasElement {
     ctx.lineWidth = 1;
     ctx.strokeRect(8, 12, 4, 10);
     ctx.strokeRect(32, 12, 4, 10);
+  });
+}
+
+function drawBakkie(): HTMLCanvasElement {
+  return canvas(64, 40, (ctx) => {
+    dropShadow(ctx, 32, 34, 22, 6);
+    ctx.fillStyle = "#e8ece8";
+    ctx.beginPath();
+    ctx.moveTo(6, 20);
+    ctx.lineTo(32, 28);
+    ctx.lineTo(58, 20);
+    ctx.lineTo(58, 26);
+    ctx.lineTo(6, 22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#d0d4d0";
+    ctx.fillRect(8, 14, 28, 10);
+    ctx.fillStyle = "#88a0b0";
+    ctx.fillRect(10, 15, 10, 6);
+    ctx.fillStyle = "#2a2a2a";
+    ctx.beginPath();
+    ctx.arc(18, 30, 5, 0, Math.PI * 2);
+    ctx.arc(48, 30, 5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function drawGarden(): HTMLCanvasElement {
+  return canvas(52, 36, (ctx) => {
+    dropShadow(ctx, 26, 30, 18, 5);
+    ctx.strokeStyle = "#8a6a48";
+    ctx.strokeRect(8, 12, 36, 18);
+    ctx.fillStyle = "#4a6a32";
+    for (let row = 0; row < 3; row += 1) {
+      for (let col = 0; col < 4; col += 1) {
+        ctx.fillRect(11 + col * 8, 14 + row * 5, 5, 3);
+      }
+    }
   });
 }
 

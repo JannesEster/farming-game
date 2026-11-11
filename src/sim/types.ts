@@ -12,6 +12,7 @@ export type FeatureKind =
   | "windmill"
   | "reservoir"
   | "kraal"
+  | "shed"
   | "trough"
   | "track";
 

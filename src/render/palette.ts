@@ -2,19 +2,19 @@ import { CONFIG } from "../sim/config";
 
 /** Kalahari dry-season colours for camps, sand and fences. */
 export const palette = {
-  sand: 0xb84e28,
-  sandLight: 0xcc6a3a,
-  sandDark: 0x9a3a1e,
-  track: 0x8f4a24,
-  trackRut: 0x6e3518,
-  grassGreen: 0x6a7a2e,
-  grassGold: 0xd4a02e,
-  grassBrown: 0x7a4a20,
-  fence: 0xc4a880,
-  fenceWire: 0x8a6a48,
-  fenceStrong: 0xe8d4b0,
+  sand: 0xc45a30,
+  sandLight: 0xd87a48,
+  sandDark: 0xa84828,
+  track: 0x9a5028,
+  trackRut: 0x7a3818,
+  grassGreen: 0x6a7830,
+  grassGold: 0xc89228,
+  grassBrown: 0x8a4c22,
+  fence: 0xf0e8d8,
+  fenceWire: 0xe8e2d4,
+  fenceStrong: 0xf5eedc,
   fenceSelected: 0xf0c050,
-  fencePost: 0x5c3a1e,
+  fencePost: 0x3a2414,
   water: 0x2a6a6a,
   waterHighlight: 0x6ab8b0,
   shadow: 0x2a1408,
@@ -46,12 +46,17 @@ export function shade(colour: number, x: number, y: number, spread: number): num
   return (r << 16) | (g << 8) | b;
 }
 
-export function grassTint(fraction: number): number {
+export function grassTint(fraction: number, drySeason = true): number {
   const mid = CONFIG.view.grassColourMidpoint;
-  const soil = (1 - fraction) * CONFIG.view.soilMixAtBare;
+  const bareMix = (1 - fraction) * CONFIG.view.soilMixAtBare * (drySeason ? 1.15 : 1);
+  const capped = drySeason ? Math.pow(fraction, 1.12) : fraction;
   const grass =
-    fraction <= mid
-      ? lerpColour(palette.grassBrown, palette.grassGold, mid === 0 ? 0 : fraction / mid)
-      : lerpColour(palette.grassGold, palette.grassGreen, (fraction - mid) / (1 - mid));
-  return lerpColour(grass, palette.sand, soil);
+    capped <= mid
+      ? lerpColour(palette.grassBrown, palette.grassGold, mid === 0 ? 0 : capped / mid)
+      : lerpColour(
+          palette.grassGold,
+          palette.grassGreen,
+          drySeason ? (capped - mid) / (1 - mid) * 0.55 : (capped - mid) / (1 - mid),
+        );
+  return lerpColour(grass, palette.sand, Math.min(1, bareMix));
 }

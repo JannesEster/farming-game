@@ -3,9 +3,8 @@ import { CONFIG } from "../sim/config";
 import { COPY } from "../sim/format";
 import { clamp } from "../sim/math";
 import { clearSavedGame, initialGameState, saveGame } from "../sim/persist";
-import { herdInTransit } from "../sim/transit";
-import { campIdAt, moveHerd, stepDay, tickHerdTransit } from "../sim/simulation";
-import { herdWorldTile } from "../sim/transit";
+import { campIdAt, moveHerd, stepDay } from "../sim/simulation";
+import { herdInTransit, herdWorldTile, pathTangent, tickTransitRealtime } from "../sim/transit";
 import { zoomScrollDelta } from "./camera";
 import { grazeableFraction } from "../sim/pasture";
 import { TILE_HOMESTEAD, TILE_OUTSIDE, type GameState } from "../sim/types";
@@ -13,7 +12,6 @@ import {
   ART_ORIGIN,
   buildArt,
   groundTextureKey,
-  herdLayout,
   maybeTermiteAt,
   treeDeadAt,
   WINDMILL_AXLE_LIFT,
@@ -24,6 +22,7 @@ import { collectFenceSegments, drawFences } from "./fences";
 import { mountHud, type Hud, type SpeedMode } from "./hud";
 import { isoLayout, tileCenter, tileTop, worldToTile, type IsoLayout } from "./iso";
 import { palette } from "./palette";
+import { offsetsForHerd } from "./herdLayout";
 import { boundsVisible, chunkCoordsForTile } from "./terrain";
 
 type PointerRec = { x: number; y: number; sx: number; sy: number; moved: boolean };
@@ -46,6 +45,7 @@ export class FarmScene extends Phaser.Scene {
   private ring!: Phaser.GameObjects.Graphics;
   private cows: Phaser.GameObjects.Image[] = [];
   private herdOffsets: HerdOffset[] = [];
+  private lastHerdCampId = -1;
   private propSprites: Phaser.GameObjects.Image[] = [];
   private blades?: Phaser.GameObjects.Image;
   private reduceMotion = false;
@@ -113,7 +113,8 @@ export class FarmScene extends Phaser.Scene {
 
   update(time: number, delta: number): void {
     const interval = this.msPerDay();
-    if (interval !== null) {
+    const walking = herdInTransit(this.state.herd);
+    if (interval !== null && !walking) {
       this.bank += Math.min(delta, CONFIG.view.maxFrameMs);
       let steps = 0;
       while (this.bank >= interval && steps < CONFIG.view.maxDaysPerFrame) {
@@ -126,9 +127,22 @@ export class FarmScene extends Phaser.Scene {
         this.syncHud();
         this.persist();
       }
-      tickHerdTransit(this.state, delta / interval);
     }
+    if (walking) {
+      const was = this.state.herd.transit?.progress ?? 0;
+      tickTransitRealtime(this.state, delta, this.mode);
+      if (!herdInTransit(this.state.herd)) {
+        this.syncHud();
+        this.persist();
+        this.redrawFences();
+      } else if ((this.state.herd.transit?.progress ?? 0) !== was) {
+        this.syncHerdFromSim();
+      }
+    }
+    const prevCamp = this.state.herd.campId;
     this.syncHerdFromSim();
+    this.refreshHerdOffsets();
+    if (this.state.herd.campId !== prevCamp) this.redrawFences();
     this.placeHerd(time);
     this.cullProps();
     this.cullChunks();
@@ -168,6 +182,8 @@ export class FarmScene extends Phaser.Scene {
     this.addCanvas("kraal", art.kraal);
     this.addCanvas("reservoir", art.reservoir);
     this.addCanvas("trough", art.trough);
+    this.addCanvas("bakkie", art.bakkie);
+    this.addCanvas("garden", art.garden);
   }
 
   private addCanvas(key: string, source: HTMLCanvasElement): void {
@@ -226,6 +242,7 @@ export class FarmScene extends Phaser.Scene {
       let textureKey: string = feature.kind;
       let scale = 1;
       if (feature.kind === "house") scale = 1.55;
+      if (feature.kind === "shed") scale = 1.05;
       if (feature.kind === "kraal") scale = 1.12;
       if (feature.kind === "reservoir") scale = 1.1;
       if (feature.kind === "tree") {
@@ -255,17 +272,12 @@ export class FarmScene extends Phaser.Scene {
       }
     }
 
-    const shedX = this.state.features.find((f) => f.kind === "house");
-    if (shedX) {
-      const shedCenter = tileCenter(
-        shedX.x + 2,
-        shedX.y,
-        this.layout,
-        CONFIG.view.tileWidth,
-        CONFIG.view.tileHeight,
-      );
-      const shed = this.footImage("shed", shedCenter.x, shedCenter.y, 10 + shedX.x + shedX.y, 1);
-      this.propSprites.push(shed);
+    const house = this.state.features.find((f) => f.kind === "house");
+    if (house) {
+      const bakkieCenter = tileCenter(house.x + 2, house.y + 1, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
+      const gardenCenter = tileCenter(house.x, house.y + 2, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
+      this.propSprites.push(this.footImage("bakkie", bakkieCenter.x, bakkieCenter.y, 12 + house.x + house.y, 0.95));
+      this.propSprites.push(this.footImage("garden", gardenCenter.x, gardenCenter.y, 11 + house.x + house.y, 1));
     }
   }
 
@@ -334,19 +346,31 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private spawnCows(): void {
-    const count = Math.min(this.state.herd.headCount, CONFIG.view.herdVisualMax);
-    this.herdOffsets = herdLayout(count, this.state.seed, 58, 42);
-    const keys = ["cow-0", "cow-1", "cow-2", "cow-3", "cow-4", "cow-5"];
+    const count = this.state.herd.headCount;
     for (let i = 0; i < count; i += 1) {
-      const layout = this.herdOffsets[i];
       const cow = this.add
-        .image(0, 0, keys[layout.coat % keys.length])
+        .image(0, 0, "cow-0")
         .setOrigin(ART_ORIGIN.cow.x, ART_ORIGIN.cow.y)
-        .setScale(layout.scale)
-        .setFlipX(layout.flip);
+        .setScale(0.3);
       this.cows.push(cow);
     }
+    this.refreshHerdOffsets();
     this.placeHerd(0);
+  }
+
+  private refreshHerdOffsets(): void {
+    const walking = herdInTransit(this.state.herd);
+    const progress = this.state.herd.transit?.progress ?? 0;
+    this.herdOffsets = offsetsForHerd(
+      this.state,
+      this.layout,
+      CONFIG.view.tileWidth,
+      CONFIG.view.tileHeight,
+      walking,
+      progress,
+      pathTangent(this.state),
+    );
+    if (this.state.herd.campId !== this.lastHerdCampId) this.lastHerdCampId = this.state.herd.campId;
   }
 
   private refreshGrass(): void {
@@ -383,13 +407,7 @@ export class FarmScene extends Phaser.Scene {
 
   private refreshHerdLabel(): void {
     if (!this.herdLabel) return;
-    const moving = herdInTransit(this.state.herd);
-    const dest = moving
-      ? this.state.camps.find((c) => c.id === this.state.herd.transit?.toCampId)?.name
-      : null;
-    this.herdLabel.setText(
-      moving && dest ? `${this.state.herd.headCount} head\n→ ${dest}` : `${this.state.herd.headCount} head`,
-    );
+    this.herdLabel.setText(`${this.state.herd.headCount} head`);
     this.herdLabel.setPosition(this.herdVisual.x, this.herdVisual.y - 48);
     const tile = worldToTile(
       this.herdVisual.x,
@@ -411,12 +429,16 @@ export class FarmScene extends Phaser.Scene {
     );
     const depth = 20 + tile.x + tile.y;
     const bobAmp = this.reduceMotion ? 0 : CONFIG.view.cowBobPx;
+    const keys = ["cow-0", "cow-1", "cow-2", "cow-3", "cow-4", "cow-5"];
     this.cows.forEach((cow, index) => {
       const offset = this.herdOffsets[index] ?? { x: 0, y: 0, flip: false, coat: 0, scale: 0.5 };
       const walk =
         herdInTransit(this.state.herd) && !this.reduceMotion
           ? Math.sin(time / 220 + index * 0.7) * 1.6
           : Math.sin(time / 280 + index) * bobAmp;
+      cow.setTexture(keys[offset.coat % keys.length]);
+      cow.setScale(offset.scale);
+      cow.setFlipX(offset.flip);
       cow.setPosition(this.herdVisual.x + offset.x, this.herdVisual.y + offset.y + walk);
       cow.setDepth(depth + offset.y * 0.01);
       cow.setVisible(true);

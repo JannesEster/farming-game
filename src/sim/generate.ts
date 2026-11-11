@@ -184,6 +184,7 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
     { kind: "windmill", at: yard.windmill },
     { kind: "reservoir", at: yard.reservoir },
     { kind: "kraal", at: yard.kraal },
+    { kind: "shed", at: yard.shed },
   ];
   for (const building of buildings) {
     features.push({

@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { CONFIG } from "../sim/config";
-import { trackTileSet } from "../sim/path";
+import { fenceGateBetweenCamps } from "../sim/path";
 import { TILE_OUTSIDE, type GameState } from "../sim/types";
 import { tileTop } from "./iso";
 import type { IsoLayout } from "./iso";
@@ -15,19 +15,18 @@ export type FenceSegment = {
   gate: boolean;
 };
 
-function isGateTile(state: GameState, x: number, y: number, tracks: Set<string>): boolean {
-  if (!tracks.has(`${x},${y}`)) return false;
-  const width = state.width;
-  const id = state.campIds[y * width + x];
-  if (id < 0 && id !== TILE_OUTSIDE) return false;
-  const neighbors = [
-    state.campIds[y * width + (x + 1)],
-    state.campIds[y * width + (x - 1)],
-    state.campIds[(y + 1) * width + x],
-    state.campIds[(y - 1) * width + x],
-  ];
-  const camps = new Set(neighbors.filter((n) => n >= 0));
-  return camps.size >= 1 || (id >= 0 && neighbors.some((n) => n !== id && n >= 0));
+function edgeHasGate(
+  gate: { a: { x: number; y: number }; b: { x: number; y: number } } | null,
+  x: number,
+  y: number,
+  nx: number,
+  ny: number,
+): boolean {
+  if (!gate) return false;
+  return (
+    (gate.a.x === x && gate.a.y === y && gate.b.x === nx && gate.b.y === ny) ||
+    (gate.b.x === x && gate.b.y === y && gate.a.x === nx && gate.a.y === ny)
+  );
 }
 
 export function collectFenceSegments(
@@ -38,14 +37,6 @@ export function collectFenceSegments(
 ): FenceSegment[] {
   const tileW = CONFIG.view.tileWidth;
   const tileH = CONFIG.view.tileHeight;
-  const tracks = trackTileSet(state);
-  const gateTiles = new Set<string>();
-  for (let y = 0; y < state.height; y += 1) {
-    for (let x = 0; x < state.width; x += 1) {
-      if (isGateTile(state, x, y, tracks)) gateTiles.add(`${x},${y}`);
-    }
-  }
-
   const segments: FenceSegment[] = [];
 
   const fenceKind = (a: number, b: number): FenceSegment["kind"] => {
@@ -65,18 +56,15 @@ export function collectFenceSegments(
       const downId = y + 1 < state.height ? state.campIds[(y + 1) * state.width + x] : null;
 
       if (rightId !== null && rightId !== id) {
-        const gate =
-          gateTiles.has(`${x},${y}`) ||
-          gateTiles.has(`${x + 1},${y}`) ||
-          tracks.has(`${x},${y}`) ||
-          tracks.has(`${x + 1},${y}`);
+        const gatePair = id >= 0 && rightId >= 0 ? fenceGateBetweenCamps(state, id, rightId) : null;
+        const gate = edgeHasGate(gatePair, x, y, x + 1, y);
         segments.push({
           x1: right.x,
           y1: right.y,
           x2: bottom.x,
           y2: bottom.y,
-          kind: rightId === null ? "boundary" : fenceKind(id, rightId),
-          gate: gate && id >= 0 && rightId >= 0,
+          kind: fenceKind(id, rightId),
+          gate,
         });
       } else if (rightId === null && id !== TILE_OUTSIDE) {
         segments.push({
@@ -90,18 +78,15 @@ export function collectFenceSegments(
       }
 
       if (downId !== null && downId !== id) {
-        const gate =
-          gateTiles.has(`${x},${y}`) ||
-          gateTiles.has(`${x},${y + 1}`) ||
-          tracks.has(`${x},${y}`) ||
-          tracks.has(`${x},${y + 1}`);
+        const gatePair = id >= 0 && downId >= 0 ? fenceGateBetweenCamps(state, id, downId) : null;
+        const gate = edgeHasGate(gatePair, x, y, x, y + 1);
         segments.push({
           x1: left.x,
           y1: left.y,
           x2: bottom.x,
           y2: bottom.y,
-          kind: downId === null ? "boundary" : fenceKind(id, downId),
-          gate: gate && id >= 0 && downId >= 0,
+          kind: fenceKind(id, downId),
+          gate,
         });
       } else if (downId === null && id !== TILE_OUTSIDE) {
         segments.push({
@@ -118,6 +103,27 @@ export function collectFenceSegments(
   return segments;
 }
 
+function strokeDoubleWire(
+  graphics: Phaser.GameObjects.Graphics,
+  segment: FenceSegment,
+  colour: number,
+  alpha: number,
+  width: number,
+): void {
+  const dx = segment.x2 - segment.x1;
+  const dy = segment.y2 - segment.y1;
+  const len = Math.hypot(dx, dy) || 1;
+  const ox = (-dy / len) * 2.2;
+  const oy = (dx / len) * 2.2;
+  graphics.lineStyle(width, colour, alpha);
+  for (const sign of [-1, 1]) {
+    graphics.beginPath();
+    graphics.moveTo(segment.x1 + ox * sign, segment.y1 + oy * sign);
+    graphics.lineTo(segment.x2 + ox * sign, segment.y2 + oy * sign);
+    graphics.strokePath();
+  }
+}
+
 export function drawFences(graphics: Phaser.GameObjects.Graphics, segments: FenceSegment[]): void {
   graphics.clear();
   const buckets: Record<FenceSegment["kind"], FenceSegment[]> = {
@@ -127,47 +133,41 @@ export function drawFences(graphics: Phaser.GameObjects.Graphics, segments: Fenc
   };
   for (const segment of segments) buckets[segment.kind].push(segment);
 
-  const strokeWire = (list: FenceSegment[], width: number, colour: number, alpha: number) => {
-    if (list.length === 0) return;
-    graphics.lineStyle(width, colour, alpha);
+  const drawBucket = (list: FenceSegment[], width: number, colour: number, alpha: number) => {
     for (const segment of list) {
       if (segment.gate) continue;
-      graphics.beginPath();
-      graphics.moveTo(segment.x1, segment.y1);
-      graphics.lineTo(segment.x2, segment.y2);
-      graphics.strokePath();
+      strokeDoubleWire(graphics, segment, colour, alpha, width);
     }
   };
 
-  strokeWire(buckets.inner, CONFIG.view.fencePx, palette.fenceWire, 0.85);
-  strokeWire(buckets.boundary, CONFIG.view.fenceBoundaryPx, palette.fenceStrong, 1);
-  strokeWire(buckets.selected, CONFIG.view.fenceSelectedPx, palette.fenceSelected, 1);
+  drawBucket(buckets.inner, CONFIG.view.fencePx, palette.fenceWire, 0.9);
+  drawBucket(buckets.boundary, CONFIG.view.fenceBoundaryPx, palette.fenceStrong, 1);
+  drawBucket(buckets.selected, CONFIG.view.fenceSelectedPx, palette.fenceSelected, 1);
 
   const spacing = CONFIG.view.fencePostSpacingPx;
   for (const segment of segments) {
-    const colour = segment.kind === "selected" ? palette.fencePost : palette.fencePost;
     const dx = segment.x2 - segment.x1;
     const dy = segment.y2 - segment.y1;
     const length = Math.hypot(dx, dy);
     const count = Math.max(2, Math.floor(length / spacing));
     for (let i = 0; i <= count; i += 1) {
+      if (segment.gate && i > 0 && i < count) continue;
       const t = i / count;
       const px = segment.x1 + dx * t;
       const py = segment.y1 + dy * t;
-      if (segment.gate && i > 0 && i < count) continue;
-      graphics.fillStyle(colour, 1);
-      graphics.fillCircle(px, py, segment.gate ? 3.4 : 2.6);
+      graphics.fillStyle(palette.fencePost, 1);
+      graphics.fillCircle(px, py, segment.gate ? 3.6 : 3);
       if (!segment.gate) {
-        graphics.lineStyle(1.2, palette.fence, 0.9);
-        graphics.beginPath();
-        graphics.moveTo(px, py - 4);
-        graphics.lineTo(px, py + 3);
-        graphics.strokePath();
-      } else if (i === 0 || i === count) {
-        graphics.lineStyle(2, palette.fenceStrong, 1);
+        graphics.lineStyle(1.4, palette.fencePost, 1);
         graphics.beginPath();
         graphics.moveTo(px, py - 5);
         graphics.lineTo(px, py + 4);
+        graphics.strokePath();
+      } else if (i === 0 || i === count) {
+        graphics.lineStyle(2.2, palette.fencePost, 1);
+        graphics.beginPath();
+        graphics.moveTo(px, py - 6);
+        graphics.lineTo(px, py + 5);
         graphics.strokePath();
       }
     }

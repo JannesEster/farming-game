@@ -1,3 +1,4 @@
+import { isRainyMonth } from "../sim/calendar";
 import type { GameState } from "../sim/types";
 import { TILE_HOMESTEAD, TILE_OUTSIDE } from "../sim/types";
 import { grazeableFraction } from "../sim/pasture";
@@ -29,7 +30,8 @@ export function tileTint(state: GameState, x: number, y: number, track: Set<stri
   if (kind === "yard") return shade(palette.sandLight, x, y, CONFIG.view.tileShadeSpread);
   const camp = state.camps.find((item) => item.id === state.campIds[y * state.width + x]);
   if (!camp) return palette.sand;
-  return shade(grassTint(grazeableFraction(camp)), x, y, CONFIG.view.tileShadeSpread);
+  const dry = !isRainyMonth(state.date.month, CONFIG);
+  return shade(grassTint(grazeableFraction(camp), dry), x, y, CONFIG.view.tileShadeSpread);
 }
 
 export function terrainVariant(x: number, y: number, kind: GroundTexture): number {

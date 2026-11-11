@@ -24,13 +24,13 @@ import { maxGrazingDaysInCamp, moveAdvice } from "./grazing";
 import { formatMoveWarning } from "./format";
 import { dailyRainMm } from "./rainfall";
 import { createGame, findCamp, moveHerd, stepDay, stepDayWithRain } from "./simulation";
-import { herdInTransit } from "./transit";
+import { herdInTransit, tickTransitRealtime } from "./transit";
 import type { CampState, GameState, HerdState } from "./types";
 
 function finishTransit(state: GameState): void {
   let guard = 0;
-  while (herdInTransit(state.herd) && guard < 200) {
-    stepDayWithRain(state, 0);
+  while (herdInTransit(state.herd) && guard < 500) {
+    tickTransitRealtime(state, 100, "play", CONFIG);
     guard += 1;
   }
 }

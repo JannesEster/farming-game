@@ -1,35 +1,44 @@
+import { clamp } from "./math";
 import { CONFIG, type GameConfig } from "./config";
 import { pointOnPath, planHerdPath, pathLengthKm } from "./path";
 import type { GameState, HerdState, TilePoint } from "./types";
+
+export type TransitSpeed = "pause" | "play" | "fast";
 
 export function herdInTransit(herd: HerdState): boolean {
   return herd.transit !== null && herd.transit.progress < 1;
 }
 
-export function normalizeHerd(herd: HerdState): HerdState {
-  if (!herd.transit) return herd;
-  return herd;
+export function moveDurationMs(
+  distanceKm: number,
+  mode: TransitSpeed,
+  config: GameConfig = CONFIG,
+): number {
+  const span = config.transit.maxSpanKm;
+  const t = clamp(distanceKm / span, 0, 1);
+  if (mode === "fast") {
+    return config.transit.fastMsMin + t * (config.transit.fastMsMax - config.transit.fastMsMin);
+  }
+  return config.transit.playMsMin + t * (config.transit.playMsMax - config.transit.playMsMin);
 }
 
-export function ensureHerdTransit(herd: HerdState): HerdState {
-  if (herd.transit !== undefined) return herd;
-  return { ...herd, transit: null };
-}
-
-export function moveDurationDays(distanceKm: number, config: GameConfig = CONFIG): number {
-  const km = Math.max(config.transit.minDistanceKm, distanceKm);
-  return Math.max(config.transit.minMoveDays, km / config.transit.walkKmPerGameDay);
-}
-
-export function advanceTransit(state: GameState, gameDays: number, config: GameConfig = CONFIG): void {
+/**
+ * The only place herd walk progress advances. Real time by speed mode; pause does nothing.
+ */
+export function tickTransitRealtime(
+  state: GameState,
+  deltaMs: number,
+  mode: TransitSpeed,
+  config: GameConfig = CONFIG,
+): void {
   const transit = state.herd.transit;
-  if (!transit) return;
-  const duration = moveDurationDays(transit.distanceKm, config);
-  transit.progress = Math.min(1, transit.progress + gameDays / duration);
-  if (transit.progress >= 1) finishTransit(state, config);
+  if (!transit || mode === "pause") return;
+  const duration = moveDurationMs(transit.distanceKm, mode, config);
+  transit.progress = Math.min(1, transit.progress + deltaMs / duration);
+  if (transit.progress >= 1) finishTransit(state);
 }
 
-function finishTransit(state: GameState, _config: GameConfig): void {
+function finishTransit(state: GameState): void {
   const transit = state.herd.transit;
   if (!transit) return;
   const dest = state.camps.find((c) => c.id === transit.toCampId);
@@ -59,8 +68,14 @@ export function herdWorldTile(state: GameState): TilePoint {
   return pointOnPath(transit.path, transit.progress);
 }
 
-export function transitProgressLabel(herd: HerdState, campName: string): string | null {
-  if (!herdInTransit(herd)) return null;
-  const pct = Math.round(herd.transit!.progress * 100);
-  return `On the way to ${campName} (${pct}%)`;
+export function pathTangent(state: GameState): { x: number; y: number } {
+  const transit = state.herd.transit;
+  if (!transit || transit.path.length < 2) return { x: 1, y: 0 };
+  const p = Math.min(0.99, Math.max(0.01, transit.progress));
+  const a = pointOnPath(transit.path, p - 0.01);
+  const b = pointOnPath(transit.path, p + 0.01);
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  return { x: dx / len, y: dy / len };
 }

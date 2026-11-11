@@ -66,8 +66,11 @@ export type GameConfig = {
   };
   transit: {
     kmPerTile: number;
-    walkKmPerGameDay: number;
-    minMoveDays: number;
+    maxSpanKm: number;
+    playMsMin: number;
+    playMsMax: number;
+    fastMsMin: number;
+    fastMsMax: number;
     minDistanceKm: number;
   };
   map: {
@@ -95,6 +98,7 @@ export type GameConfig = {
       windmill: { x: number; y: number };
       reservoir: { x: number; y: number };
       kraal: { x: number; y: number };
+      shed: { x: number; y: number };
     };
   };
   view: {
@@ -117,7 +121,6 @@ export type GameConfig = {
     grassColourMidpoint: number;
     soilMixAtBare: number;
     tileShadeSpread: number;
-    herdVisualMax: number;
     cowBobPx: number;
     fencePostSpacingPx: number;
     terrainChunkTiles: number;
@@ -248,12 +251,14 @@ export const CONFIG: GameConfig = {
   },
 
   transit: {
-    // A. One tile is about 0.14 km on this farm (3300 ha over the grazing tile count).
-    kmPerTile: 0.14,
-    // A. Cattle walk a few km per day when moving between camps.
-    walkKmPerGameDay: 16,
-    minMoveDays: 0.08,
-    minDistanceKm: 0.3,
+    // A. One tile is about 75 m. 3300 ha is about 5.7 km across, not 10+ km.
+    kmPerTile: 0.075,
+    maxSpanKm: 5.7,
+    playMsMin: 6000,
+    playMsMax: 15000,
+    fastMsMin: 1500,
+    fastMsMax: 12000,
+    minDistanceKm: 0.15,
   },
 
   map: {
@@ -283,6 +288,7 @@ export const CONFIG: GameConfig = {
       windmill: { x: 3, y: 1 },
       reservoir: { x: 4, y: 2 },
       kraal: { x: 1, y: 3 },
+      shed: { x: 5, y: 2 },
     },
   },
 
@@ -305,11 +311,10 @@ export const CONFIG: GameConfig = {
     dragSlopPx: 10,
     herdPickTiles: 1.8,
     herdPickMinScreenPx: 56,
-    grassColourMidpoint: 0.5,
-    soilMixAtBare: 0.45,
+    grassColourMidpoint: 0.62,
+    soilMixAtBare: 0.55,
     tileShadeSpread: 14,
-    herdVisualMax: 72,
-    cowBobPx: 1.2,
+    cowBobPx: 0.8,
     fencePostSpacingPx: 18,
     terrainChunkTiles: 16,
     propCullPadPx: 96,

@@ -25,10 +25,14 @@ function centroid(tiles: TilePoint[]): TilePoint {
   return { x: x / tiles.length, y: y / tiles.length };
 }
 
-/** Edge tile on a camp that faces toward another point (gate). */
+function tileInCamp(camp: CampState, x: number, y: number): boolean {
+  return camp.tiles.some((t) => t.x === x && t.y === y);
+}
+
+/** Nearest camp edge tile toward another point (exit gate). */
 export function campGateToward(camp: CampState, toward: TilePoint): TilePoint {
   let best = camp.anchor;
-  let bestScore = Number.NEGATIVE_INFINITY;
+  let bestScore = Number.POSITIVE_INFINITY;
   for (const tile of camp.tiles) {
     const neighbors = [
       { x: tile.x + 1, y: tile.y },
@@ -36,17 +40,44 @@ export function campGateToward(camp: CampState, toward: TilePoint): TilePoint {
       { x: tile.x, y: tile.y + 1 },
       { x: tile.x, y: tile.y - 1 },
     ];
-    const isEdge = neighbors.some((n) => !camp.tiles.some((t) => t.x === n.x && t.y === n.y));
+    const isEdge = neighbors.some((n) => !tileInCamp(camp, n.x, n.y));
     if (!isEdge) continue;
     const dx = toward.x - tile.x;
     const dy = toward.y - tile.y;
     const score = dx * dx + dy * dy;
-    if (score > bestScore) {
+    if (score < bestScore) {
       bestScore = score;
       best = tile;
     }
   }
   return best;
+}
+
+/** Gate tiles on the shared edge between two camps, when they touch. */
+export function campGateBetween(
+  from: CampState,
+  to: CampState,
+): { fromGate: TilePoint; toGate: TilePoint } | null {
+  let best: { fromGate: TilePoint; toGate: TilePoint; score: number } | null = null;
+  const toCenter = centroid(to.tiles);
+  for (const tile of from.tiles) {
+    const neighbors = [
+      { x: tile.x + 1, y: tile.y },
+      { x: tile.x - 1, y: tile.y },
+      { x: tile.x, y: tile.y + 1 },
+      { x: tile.x, y: tile.y - 1 },
+    ];
+    for (const n of neighbors) {
+      if (!tileInCamp(to, n.x, n.y)) continue;
+      const dx = toCenter.x - tile.x;
+      const dy = toCenter.y - tile.y;
+      const score = dx * dx + dy * dy;
+      if (!best || score < best.score) {
+        best = { fromGate: tile, toGate: n, score };
+      }
+    }
+  }
+  return best ? { fromGate: best.fromGate, toGate: best.toGate } : null;
 }
 
 function nearestTrack(_state: GameState, from: TilePoint, tracks: Set<string>): TilePoint | null {
@@ -133,27 +164,56 @@ function dedupe(points: TilePoint[]): TilePoint[] {
   return out;
 }
 
+function assemblePath(
+  from: CampState,
+  to: CampState,
+  fromGate: TilePoint,
+  toGate: TilePoint,
+  middle: TilePoint[],
+): TilePoint[] {
+  return dedupe([from.anchor, fromGate, ...middle, toGate, to.anchor]);
+}
+
 export function planHerdPath(state: GameState, fromCampId: number, toCampId: number): TilePoint[] {
   const from = state.camps.find((c) => c.id === fromCampId);
   const to = state.camps.find((c) => c.id === toCampId);
   if (!from || !to) return [];
+
+  const shared = campGateBetween(from, to);
+  let fromGate: TilePoint;
+  let toGate: TilePoint;
+  if (shared) {
+    fromGate = shared.fromGate;
+    toGate = shared.toGate;
+  } else {
+    const toCenter = centroid(to.tiles);
+    const fromCenter = centroid(from.tiles);
+    fromGate = campGateToward(from, toCenter);
+    toGate = campGateToward(to, fromCenter);
+  }
+
+  const directMiddle = straightPath(fromGate, toGate);
+  const directPath = assemblePath(from, to, fromGate, toGate, directMiddle.slice(1, -1));
+
   const tracks = trackTileSet(state);
-  const toCenter = centroid(to.tiles);
-  const fromCenter = centroid(from.tiles);
-  const fromGate = campGateToward(from, toCenter);
-  const toGate = campGateToward(to, fromCenter);
-  const path: TilePoint[] = [from.anchor, fromGate];
   const trackStart = nearestTrack(state, fromGate, tracks);
   const trackEnd = nearestTrack(state, toGate, tracks);
+  let trackPath = directPath;
   if (trackStart && trackEnd) {
     const along = bfsTrackPath(state, trackStart, trackEnd, tracks);
-    if (along && along.length > 0) path.push(...along);
-    else path.push(...straightPath(fromGate, toGate));
-  } else {
-    path.push(...straightPath(fromGate, toGate));
+    if (along && along.length > 0) {
+      trackPath = assemblePath(from, to, fromGate, toGate, [
+        ...straightPath(fromGate, trackStart).slice(1),
+        ...along.slice(1, -1),
+        ...straightPath(trackEnd, toGate).slice(1),
+      ]);
+    }
   }
-  path.push(toGate, to.anchor);
-  return dedupe(path);
+
+  const directKm = pathLengthKm(directPath);
+  const trackKm = pathLengthKm(trackPath);
+  if (directKm <= trackKm) return directPath;
+  return trackPath;
 }
 
 export function pathLengthKm(path: TilePoint[], config: GameConfig = CONFIG): number {
@@ -171,14 +231,40 @@ export function pointOnPath(path: TilePoint[], progress: number): TilePoint {
   if (path.length === 0) return { x: 0, y: 0 };
   if (path.length === 1 || progress <= 0) return path[0];
   if (progress >= 1) return path[path.length - 1];
-  const total = path.length - 1;
-  const scaled = progress * total;
-  const index = Math.floor(scaled);
-  const t = scaled - index;
-  const a = path[index];
-  const b = path[Math.min(index + 1, path.length - 1)];
-  return {
-    x: a.x + (b.x - a.x) * t,
-    y: a.y + (b.y - a.y) * t,
-  };
+  let totalLen = 0;
+  const legs: number[] = [];
+  for (let i = 1; i < path.length; i += 1) {
+    const dx = path[i].x - path[i - 1].x;
+    const dy = path[i].y - path[i - 1].y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    legs.push(len);
+    totalLen += len;
+  }
+  if (totalLen === 0) return path[0];
+  let remaining = progress * totalLen;
+  for (let i = 0; i < legs.length; i += 1) {
+    if (remaining <= legs[i]) {
+      const t = legs[i] === 0 ? 0 : remaining / legs[i];
+      const a = path[i];
+      const b = path[i + 1];
+      return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+    }
+    remaining -= legs[i];
+  }
+  return path[path.length - 1];
+}
+
+/** True when this fence edge should show a gate between two camps. */
+export function fenceGateBetweenCamps(
+  state: GameState,
+  campA: number,
+  campB: number,
+): { a: TilePoint; b: TilePoint } | null {
+  if (campA < 0 || campB < 0) return null;
+  const from = state.camps.find((c) => c.id === campA);
+  const to = state.camps.find((c) => c.id === campB);
+  if (!from || !to) return null;
+  const shared = campGateBetween(from, to);
+  if (!shared) return null;
+  return { a: shared.fromGate, b: shared.toGate };
 }
