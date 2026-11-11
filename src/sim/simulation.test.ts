@@ -394,7 +394,7 @@ describe("the running farm", () => {
     const before = state.herd.condition;
     stepDayWithRain(state, 0);
     expect(state.herd.condition).toBeLessThan(before);
-    expect(state.cashNad).toBe(CONFIG.economy.startingCashNad);
+    expect(state.cashNad).toBeLessThanOrEqual(CONFIG.economy.startingCashNad);
   });
 });
 

@@ -1,0 +1,98 @@
+import { CONFIG, type GameConfig } from "./config";
+import { applyStarvationDay, feedContextForHerd } from "./consequences";
+import { tickDrought, droughtWatchScore } from "./drought";
+import { farmhandWaterBonus, tickFarmhand } from "./workers";
+import {
+  closeMonth,
+  isLastDayOfMonth,
+  tryCalving,
+  tryWeaning,
+  weeklyDigest,
+  cyclePhase,
+  cyclePhaseLabel,
+} from "./seasonCycle";
+import type { GameState } from "./types";
+import type { HerdComposition, StoryState } from "./storyTypes";
+export function defaultComposition(headCount: number, config: GameConfig = CONFIG): HerdComposition {
+  const bulls = Math.max(2, Math.floor(headCount * config.story.bullFraction));
+  const oxen = Math.max(4, Math.floor(headCount * config.story.oxFraction));
+  const weaners = Math.max(8, Math.floor(headCount * config.story.weanerFraction));
+  const calves = Math.max(10, Math.floor(headCount * config.story.calfFraction));
+  const cows = Math.max(0, headCount - bulls - oxen - weaners - calves);
+  return { cow: cows, bull: bulls, calf: calves, weaner: weaners, ox: oxen };
+}
+
+export function createStoryState(headCount: number, config: GameConfig = CONFIG): StoryState {
+  return {
+    composition: defaultComposition(headCount, config),
+    starvation: { consecutivePoorFeedDays: 0, warningLevel: 0, totalDeathsSeason: 0 },
+    drought: { watchActive: false, choicePending: null, warnedAt: null, forageMultiplier: 1 },
+    farmhand: {
+      hired: false,
+      job: null,
+      daysUntilPayroll: config.economy.payrollIntervalDays,
+      wageCashNad: config.economy.farmhandMonthlyCashNad,
+    },
+    breedingPaused: false,
+    supplementDaysLeft: 0,
+    lastMonthKey: "",
+    ledger: { incomeNad: 0, expenseNad: 0, sales: [], deathCount: 0, notes: [] },
+    pendingCards: [],
+    lastDailyNote: null,
+    seasonEventsFired: [],
+    eatenYesterdayKg: 0,
+    demandYesterdayKg: 0,
+  };
+}
+
+export function afterFeedDay(
+  state: GameState,
+  eatenKg: number,
+  demandKg: number,
+  config: GameConfig = CONFIG,
+): void {
+  if (!state.story) state.story = createStoryState(state.herd.headCount, config);
+  state.story.eatenYesterdayKg = eatenKg;
+  state.story.demandYesterdayKg = demandKg;
+
+  if (state.story.supplementDaysLeft > 0) {
+    state.story.supplementDaysLeft -= 1;
+    state.herd.condition = Math.min(
+      config.herd.conditionMax,
+      state.herd.condition + config.story.supplementConditionPerDay,
+    );
+  }
+
+  const bonus = farmhandWaterBonus(state, config);
+  if (bonus > 0) {
+    state.herd.condition = Math.min(config.herd.conditionMax, state.herd.condition + bonus);
+  }
+
+  const notes = applyStarvationDay(state, feedContextForHerd(state, config), config);
+  if (notes.length) state.story.lastDailyNote = notes[notes.length - 1];
+
+  tryCalving(state, config);
+  tryWeaning(state, config);
+  tickDrought(state, config);
+  const farmNote = tickFarmhand(state, config);
+  if (farmNote) state.story.lastDailyNote = farmNote;
+  weeklyDigest(state, config);
+
+  if (isLastDayOfMonth(state.date)) closeMonth(state, config);
+}
+
+export function seasonLabelForHud(state: GameState, config: GameConfig = CONFIG): string {
+  const phase = cyclePhase(state.date, config);
+  let label = cyclePhaseLabel(phase);
+  if (state.story?.drought.watchActive && droughtWatchScore(state, config) > 0.35) {
+    label += " · drought watch";
+  }
+  return label;
+}
+
+export function popNextCard(state: GameState): StoryState["pendingCards"][0] | null {
+  const story = state.story;
+  if (!story || story.pendingCards.length === 0) return null;
+  story.pendingCards.sort((a, b) => b.priority - a.priority);
+  return story.pendingCards.shift() ?? null;
+}

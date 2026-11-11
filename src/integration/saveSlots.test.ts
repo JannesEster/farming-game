@@ -22,9 +22,7 @@ beforeEach(() => {
   Object.defineProperty(globalThis, "localStorage", { value: store, configurable: true });
 });
 
-// Legacy key export from sim/persist
-import { SAVE_KEY } from "../sim/persist";
-const LEGACY = SAVE_KEY;
+import { LEGACY_SAVE_KEY } from "../sim/saveKeys";
 
 describe("save slots and migration", () => {
   it("round-trips slot v2 payload", () => {
@@ -40,12 +38,13 @@ describe("save slots and migration", () => {
   it("migrates legacy single-key save into slot 0", () => {
     const state = createGame(5);
     memory.set(
-      LEGACY,
+      LEGACY_SAVE_KEY,
       JSON.stringify({ version: 1, savedAt: "2026-01-01", state }),
     );
     const slot = readSlot(0);
     expect(slot?.state.seed).toBe(5);
-    expect(memory.has(LEGACY)).toBe(false);
+    expect(memory.has(LEGACY_SAVE_KEY)).toBe(false);
+    expect(memory.get("farming-game-slot-0")).toBeTruthy();
   });
 
   it("clears a slot", () => {

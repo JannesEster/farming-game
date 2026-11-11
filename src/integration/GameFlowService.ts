@@ -4,7 +4,8 @@ import type { GameState } from "../sim/types";
 import type { Hud } from "../render/hud";
 import { NotificationBus } from "./events";
 import { createYearBaseline, detectMilestones } from "./goals";
-import type { FarmOffer, StoryEconomyPort } from "./interfaces";
+import type { StoryEconomyPort } from "./interfaces";
+import { generateFarmOffers } from "../picker/generateOffers";
 import { defaultFlowMeta } from "./metaDefaults";
 import {
   clearSlot,
@@ -13,9 +14,17 @@ import {
   writeSlot,
   type SavedSlotPayload,
 } from "./saveSlots";
-import { stubFarmPicker } from "./stubs/farmOffers";
-import { stubStoryEconomy } from "./stubs/storyEconomy";
-import { stubStoryEvents } from "./stubs/storyEvents";
+import { createStoryEventsAdapter } from "./storyEventsAdapter";
+import { createStoryEconomy } from "./storyEconomyAdapter";
+import { stateFromOfferCard } from "./pickerAdapter";
+import type { FarmOfferCard } from "../picker/types";
+import {
+  closePickerScreen,
+  openOfferPicker,
+  openStartScreen,
+  setPickerFlowHost,
+  installPickerCaptureBridge,
+} from "../picker/flow";
 import { transition, type FlowEvent } from "./stateMachine";
 import {
   activeStep,
@@ -35,10 +44,8 @@ export function getGameFlow(): GameFlowService {
 
 export class GameFlowService {
   readonly bus = new NotificationBus();
-  readonly storyEvents = stubStoryEvents(this.bus);
-  readonly farmPicker = stubFarmPicker;
-
-  private economy: StoryEconomyPort = stubStoryEconomy(defaultFlowMeta());
+  readonly storyEvents = createStoryEventsAdapter(this.bus, this);
+  private economy: StoryEconomyPort = createStoryEconomy(defaultFlowMeta());
   private runtime: FlowRuntime = {
     phase: "boot",
     meta: defaultFlowMeta(),
@@ -54,26 +61,47 @@ export class GameFlowService {
 
   boot(game: Phaser.Game): void {
     this.game = game;
+    setPickerFlowHost({
+      hasSavedGame: () => Boolean(readSlot(getActiveSlotId())),
+      onContinue: () => this.dispatch({ type: "PRESS_CONTINUE", hasSave: true }),
+      onRequestOffers: () => this.dispatch({ type: "PRESS_NEW_GAME" }),
+      onPurchased: (state, offer) => this.pickFarmPurchase(state, offer),
+    });
     this.ui = mountFlowUi({
-      onNewGame: () => this.dispatch({ type: "PRESS_NEW_GAME" }),
-      onContinue: () =>
-        this.dispatch({ type: "PRESS_CONTINUE", hasSave: Boolean(readSlot(this.runtime.slotId)) }),
-      onPickOffer: (offer) => this.pickFarmOffer(offer),
-      onBackToStart: () => this.dispatch({ type: "RETURN_TO_START" }),
       onYearEndContinue: () => this.onYearEndContinue(),
       onGameOverAck: () => this.dispatch({ type: "RETURN_TO_START" }),
       onTutorialSkip: () => this.skipTutorial(),
       onTutorialNext: () => this.dismissTutorialStep(),
-      listOffers: () => this.farmPicker.listOffers(Date.now() % 100_000),
     });
     this.dispatch({ type: "BOOT_DONE" });
     this.applyCaptureOverrides();
+    const capture = new URLSearchParams(window.location.search).get("capture");
+    if (capture === "picker") {
+      openOfferPicker();
+      installPickerCaptureBridge();
+    }
+    this.installFlowCaptureBridge();
+  }
+
+  private installFlowCaptureBridge(): void {
+    if (typeof window === "undefined") return;
+    (window as Window & { __flowCapture?: Record<string, unknown> }).__flowCapture = {
+      ...this.exposeCaptureApi(),
+    };
   }
 
   private applyCaptureOverrides(): void {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const flow = params.get("flowCapture");
+    const offerId = params.get("offer");
+    if (params.get("capture") === "1" && offerId) {
+      const card = generateFarmOffers(88001).find((o) => o.id === offerId);
+      if (card?.playable) {
+        this.pickFarmPurchase(stateFromOfferCard(card), card);
+        return;
+      }
+    }
     if (params.get("capture") === "1" && !flow) {
       this.startStubFarm();
       return;
@@ -140,18 +168,21 @@ export class GameFlowService {
     }
   }
 
-  pickFarmOffer(offer: FarmOffer): void {
-    const state = this.farmPicker.createGameStateFromOffer(offer);
+  pickFarmPurchase(state: GameState, offer: FarmOfferCard): void {
     this.runtime.meta = {
       ...defaultFlowMeta(),
       farmOfferId: offer.id,
       yearBaseline: createYearBaseline(state, 1),
       farmYear: 1,
     };
-    this.economy = stubStoryEconomy(this.runtime.meta);
+    this.economy = createStoryEconomy(this.runtime.meta);
     this.runtime.gameState = state;
     this.pendingState = state;
-    this.dispatch({ type: "OFFER_SELECTED" });
+    closePickerScreen();
+    const next = transition(this.runtime.phase, { type: "OFFER_SELECTED" });
+    this.runtime.phase = next.ok ? next.phase : "playing";
+    this.onPhaseEntered({ type: "OFFER_SELECTED" });
+    this.syncUi();
     this.persist();
     const step = activeStep(this.runtime.meta.tutorial);
     if (step) this.showTutorial(step);
@@ -163,7 +194,7 @@ export class GameFlowService {
     this.runtime.meta = slot.meta;
     this.runtime.gameState = slot.state;
     this.pendingState = slot.state;
-    this.economy = stubStoryEconomy(this.runtime.meta);
+    this.economy = createStoryEconomy(this.runtime.meta);
     this.lastMonthKey = `${slot.state.date.year}-${slot.state.date.month}`;
   }
 
@@ -171,8 +202,9 @@ export class GameFlowService {
     if (this.runtime.phase !== "farmPicker" && this.runtime.phase !== "playing") {
       this.runtime.phase = "farmPicker";
     }
-    const offer = this.farmPicker.listOffers(3300)[0];
-    this.pickFarmOffer(offer);
+    const offers = generateFarmOffers(3300);
+    const card = offers.find((o) => o.playable) ?? offers[0];
+    if (card?.playable) this.pickFarmPurchase(stateFromOfferCard(card), card);
     this.ui?.hideAll();
   }
 
@@ -249,6 +281,7 @@ export class GameFlowService {
     this.runtime.phase = "start";
     this.pauseFarmScene(true);
     this.syncUi();
+    openStartScreen();
   }
 
   notifySim(event: "herdSelected" | "moveConfirmed" | "speedFast" | "grassChecked" | "salePlanned"): void {
@@ -294,13 +327,22 @@ export class GameFlowService {
   }
 
   private syncUi(): void {
+    if (this.runtime.phase === "start" || this.runtime.phase === "farmPicker") {
+      closePickerScreen();
+      if (this.runtime.phase === "start") openStartScreen();
+      else openOfferPicker();
+    } else {
+      closePickerScreen();
+    }
     this.ui?.render({
       phase: this.runtime.phase,
-      offers: this.farmPicker.listOffers(42),
       yearEnd: this.yearEndReport,
       gameOverReason: this.runtime.meta.gameOverReason,
-      slotSummary: readSlot(this.runtime.slotId),
     });
+  }
+
+  showStoryCard(title: string, body: string): void {
+    this.bus.toast(`${title}: ${body}`, "info", 8000);
   }
 
   private startOrResumeFarmScene(): void {
@@ -353,6 +395,7 @@ export class GameFlowService {
         this.syncUi();
       },
       flowPhase: () => this.runtime.phase,
+      goFarmPicker: () => this.dispatch({ type: "PRESS_NEW_GAME" }),
     };
   }
 }

@@ -13,8 +13,8 @@ import {
   formatGrassPercent,
   formatHead,
   formatMoveWarning,
-  formatSeason,
 } from "../sim/format";
+import { seasonLabelForHud } from "../sim/story";
 import { moveAdvice } from "../sim/grazing";
 import { findCamp } from "../sim/simulation";
 import { grazeableFraction, grazingDaysLeft } from "../sim/pasture";
@@ -33,6 +33,7 @@ export type Hud = {
   campBadge(campId: number): string;
   setSpeed(mode: SpeedMode): void;
   setHint(text: string): void;
+  showEventCard(title: string, body: string): void;
   destroy(): void;
 };
 
@@ -54,6 +55,7 @@ export function mountHud(options: {
   onDeselect: () => void;
   onConfirmMove: () => void;
   onCancelMove: () => void;
+  onOpenMarket: () => void;
   onSheetExpanded?: (expanded: boolean) => void;
 }): Hud {
   const root = document.getElementById("hud-root");
@@ -77,10 +79,16 @@ export function mountHud(options: {
       </div>
       <div class="overflow-menu" id="overflow-menu" hidden>
         <button type="button" id="view-home">Home</button>
+        <button type="button" id="market-open">Sell / market</button>
         <button type="button" id="new-farm">${COPY.newFarmLabel}</button>
       </div>
     </header>
     <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
+    <article class="event-card" id="event-card" hidden>
+      <h3 id="event-title"></h3>
+      <p id="event-body"></p>
+      <button type="button" class="pill-btn ghost" id="event-dismiss">OK</button>
+    </article>
     <section class="sheet" id="herd-sheet" hidden data-expanded="false">
       <div class="sheet-summary" id="sheet-summary" role="button" tabindex="0" aria-expanded="false">
         <span class="sheet-line" id="sheet-line"></span>
@@ -135,7 +143,12 @@ export function mountHud(options: {
   const moveConfirmText = required(root, "move-confirm-text");
   const moveConfirmBtn = requiredButton(root, "move-confirm-btn");
   const moveCancelBtn = requiredButton(root, "move-cancel-btn");
+  const marketBtn = requiredButton(root, "market-open");
   const overflowBtn = requiredButton(root, "menu-overflow");
+  const eventCard = required(root, "event-card");
+  const eventTitle = required(root, "event-title");
+  const eventBody = required(root, "event-body");
+  const eventDismiss = requiredButton(root, "event-dismiss");
   const overflowMenu = required(root, "overflow-menu");
   const newFarmBtn = requiredButton(root, "new-farm");
   const homeBtn = requiredButton(root, "view-home");
@@ -149,6 +162,13 @@ export function mountHud(options: {
   };
   (Object.keys(buttons) as SpeedMode[]).forEach((mode) => {
     buttons[mode].addEventListener("click", () => options.onSpeed(mode));
+  });
+  marketBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    options.onOpenMarket();
+  });
+  eventDismiss.addEventListener("click", () => {
+    eventCard.hidden = true;
   });
   newFarmBtn.addEventListener("click", () => {
     overflowMenu.hidden = true;
@@ -235,10 +255,11 @@ export function mountHud(options: {
     },
     update(state, ui) {
       lastState = state;
-      const dry = formatSeason(state.date) === "Dry season";
+      const seasonText = seasonLabelForHud(state);
+      const dry = !seasonText.toLowerCase().includes("rain");
       dateEl.textContent = formatHudDate(state.date);
       seasonEl.innerHTML = dry ? ICONS.dry : ICONS.rain;
-      seasonEl.title = formatSeason(state.date);
+      seasonEl.title = seasonText;
       cashEl.textContent = formatHudMoney(state.cashNad);
       rainEl.textContent = formatHudRain(state.seasonRainMm);
       rainEl.classList.toggle("is-raining", state.todayRainMm > 0);
@@ -323,6 +344,11 @@ export function mountHud(options: {
           toastEl.hidden = true;
         }, 320);
       }, 3000);
+    },
+    showEventCard(title, body) {
+      eventTitle.textContent = title;
+      eventBody.textContent = body;
+      eventCard.hidden = false;
     },
     destroy() {
       if (toastTimer) clearTimeout(toastTimer);

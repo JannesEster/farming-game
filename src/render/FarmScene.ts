@@ -3,7 +3,7 @@ import { CONFIG } from "../sim/config";
 import { COPY } from "../sim/format";
 import { clamp } from "../sim/math";
 import { getGameFlow } from "../integration/GameFlowService";
-import { initialGameState } from "../sim/persist";
+import { popNextCard } from "../sim/story";
 import { campIdAt, moveHerd, stepDay } from "../sim/simulation";
 import { herdInTransit, herdWorldTile, pathTangent, tickTransitRealtime } from "../sim/transit";
 import {
@@ -35,6 +35,7 @@ import { TILE_HOMESTEAD, TILE_OUTSIDE, type GameState } from "../sim/types";
 import {
   ART_ORIGIN,
   buildArt,
+  cowTextureKey,
   groundTextureKey,
   maybeTermiteAt,
   treeDeadAt,
@@ -54,6 +55,7 @@ import {
   type Hud,
   type SpeedMode,
 } from "./hud";
+import { mountMarketSheet, type MarketSheet } from "./marketSheet";
 import { doubleTapGoesHome } from "./tap";
 import { resolveGroundTap, resolveHerdTap } from "./selection";
 import { isoLayout, tileCenter, tileTop, worldToTile, type IsoLayout } from "./iso";
@@ -76,6 +78,7 @@ export class FarmScene extends Phaser.Scene {
   private state!: GameState;
   private layout!: IsoLayout;
   private hud!: Hud;
+  private market!: MarketSheet;
   private mode: SpeedMode = "play";
   private selected = false;
   private pendingCampId: number | null = null;
@@ -117,7 +120,9 @@ export class FarmScene extends Phaser.Scene {
   create(): void {
     const flow = getGameFlow();
     const data = this.sys.settings.data as { flowState?: GameState } | undefined;
-    this.state = data?.flowState ?? flow.consumeGameStateForScene() ?? initialGameState();
+    const loaded = data?.flowState ?? flow.consumeGameStateForScene();
+    if (!loaded) throw new Error("FarmScene requires flow state after farm purchase.");
+    this.state = loaded;
     this.reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const tileW = CONFIG.view.tileWidth;
     const tileH = CONFIG.view.tileHeight;
@@ -149,6 +154,15 @@ export class FarmScene extends Phaser.Scene {
     this.refreshHerdLabel();
     this.layoutCamera(true);
     this.bindInput();
+    this.market = mountMarketSheet({
+      getState: () => this.state,
+      onChange: () => {
+        this.syncHud();
+        this.persist();
+        getGameFlow().notifySim("salePlanned");
+      },
+      onToast: (text) => this.hud.setHint(text),
+    });
     this.hud = mountHud({
       onSpeed: (mode) => this.setSpeed(mode),
       onMinimap: (nx, ny) => this.onMinimap(nx, ny),
@@ -157,15 +171,19 @@ export class FarmScene extends Phaser.Scene {
       onDeselect: () => this.deselectHerd(),
       onConfirmMove: () => this.confirmPendingMove(),
       onCancelMove: () => this.cancelPendingMove(),
+      onOpenMarket: () => this.market.open(),
       onSheetExpanded: () => getGameFlow().notifySim("grassChecked"),
     });
-    this.hud.setSpeed(this.mode);
     flow.attachFarmHud(this.hud);
+    this.hud.setSpeed(this.mode);
     const tutorial = flow.getTutorialStep();
     this.hud.setHint(tutorial ? `${tutorial.title}: ${tutorial.body}` : COPY.hintStart);
     this.syncHud();
     this.scale.on("resize", () => this.layoutCamera(false));
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.hud.destroy());
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.hud.destroy();
+      this.market.destroy();
+    });
     this.game.canvas.style.touchAction = "none";
     this.game.canvas.addEventListener("wheel", (event) => event.preventDefault(), { passive: false });
     this.game.canvas.addEventListener("contextmenu", (event) => event.preventDefault());
@@ -257,6 +275,31 @@ export class FarmScene extends Phaser.Scene {
         const dest = this.state.camps.find((camp) => camp.id >= 0 && camp.id !== from);
         return dest?.id ?? null;
       },
+      openMarket: () => {
+        this.market.open();
+        return true;
+      },
+      showFeedWarning: () => {
+        this.hud.showEventCard(
+          "Feed warning",
+          "12 days on bare veld. Move or sell before condition slips.",
+        );
+        return true;
+      },
+      showMonthSummary: () => {
+        this.hud.showEventCard(
+          "Month in review",
+          "Dry season ended. Income N$0 · Expenses N$8,500. Net N$-8,500. Rain season-to-date 42 mm.",
+        );
+        return true;
+      },
+      showDroughtChoice: () => {
+        if (this.state.story) {
+          this.state.story.drought.choicePending = "sell_down";
+        }
+        this.market.open();
+        return true;
+      },
     };
     const flowBridge = getGameFlow().exposeCaptureApi();
     (window as Window & { __farmCapture?: typeof bridge & Record<string, unknown> }).__farmCapture = {
@@ -278,7 +321,9 @@ export class FarmScene extends Phaser.Scene {
       }
       if (steps > 0) {
         this.refreshGrass();
+        this.flushStoryCards();
         this.syncHud();
+        this.market.refresh(this.state);
         this.persist();
         getGameFlow().onSimDayAdvanced(this.state);
       }
@@ -308,6 +353,21 @@ export class FarmScene extends Phaser.Scene {
     this.drawRing();
   }
 
+  private flushStoryCards(): void {
+    const flow = getGameFlow();
+    for (let i = 0; i < 2; i += 1) {
+      const card = popNextCard(this.state);
+      if (!card) break;
+      if (card.kind === "summary" || card.kind === "drought" || card.kind === "warning") {
+        this.hud.showEventCard(card.title, card.body);
+        flow.showStoryCard(card.title, card.body);
+      } else {
+        this.hud.setHint(`${card.title}: ${card.body}`);
+        flow.storyEvents.publish({ kind: "toast", message: `${card.title}: ${card.body}` });
+      }
+    }
+  }
+
   private setSpeed(mode: SpeedMode): void {
     this.mode = mode;
     if (mode === "pause") this.bank = 0;
@@ -326,7 +386,10 @@ export class FarmScene extends Phaser.Scene {
     (Object.keys(art.grounds) as (keyof typeof art.grounds)[]).forEach((kind) => {
       art.grounds[kind].forEach((sheet, variant) => this.addCanvas(groundTextureKey(kind, variant), sheet));
     });
-    art.cows.forEach((cow, index) => this.addCanvas(`cow-${index}`, cow));
+    art.cows.forEach((breed, coat) => {
+      breed.walk.forEach((sheet, frame) => this.addCanvas(cowTextureKey(coat, true, frame), sheet));
+      breed.graze.forEach((sheet, frame) => this.addCanvas(cowTextureKey(coat, false, frame), sheet));
+    });
     this.addCanvas("tree", art.tree);
     this.addCanvas("tree-dead", art.treeDead);
     this.addCanvas("bush", art.bush);
@@ -506,9 +569,9 @@ export class FarmScene extends Phaser.Scene {
     const count = this.state.herd.headCount;
     for (let i = 0; i < count; i += 1) {
       const cow = this.add
-        .image(0, 0, "cow-0")
+        .image(0, 0, cowTextureKey(0, false, 0))
         .setOrigin(ART_ORIGIN.cow.x, ART_ORIGIN.cow.y)
-        .setScale(0.3);
+        .setScale(0.36);
       this.cows.push(cow);
     }
     this.refreshHerdOffsets(0);
@@ -588,14 +651,17 @@ export class FarmScene extends Phaser.Scene {
     );
     const depth = 20 + tile.x + tile.y;
     const bobAmp = this.reduceMotion ? 0 : CONFIG.view.cowBobPx;
-    const keys = ["cow-0", "cow-1", "cow-2", "cow-3", "cow-4", "cow-5"];
+    const walking = herdInTransit(this.state.herd);
     this.cows.forEach((cow, index) => {
       const offset = this.herdOffsets[index] ?? { x: 0, y: 0, flip: false, coat: 0, scale: 0.5 };
       const walk =
-        herdInTransit(this.state.herd) && !this.reduceMotion
+        walking && !this.reduceMotion
           ? Math.sin(time / 220 + index * 0.7) * 1.6
           : Math.sin(time / 280 + index) * bobAmp;
-      cow.setTexture(keys[offset.coat % keys.length]);
+      const animFrame = walking
+        ? Math.floor(time / 160 + index * 0.15) % 3
+        : Math.floor(time / 420 + index * 0.2) % 2;
+      cow.setTexture(cowTextureKey(offset.coat, walking, animFrame));
       cow.setScale(offset.scale);
       cow.setFlipX(offset.flip);
       cow.setPosition(this.herdVisual.x + offset.x, this.herdVisual.y + offset.y + walk);

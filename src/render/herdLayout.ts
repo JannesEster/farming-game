@@ -15,6 +15,10 @@ function cowPhase(seed: number, index: number): number {
   return ((seed + index * 7919) % 1000) / 1000;
 }
 
+const GATE_PROGRESS = 0.5;
+const GATE_ALONG_PX = 32;
+const GATE_APPROACH_PX = 110;
+
 /** Spread cattle across camp tiles for grazing (August dry season mob). */
 export function spreadInCamp(
   camp: CampState,
@@ -45,8 +49,8 @@ export function spreadInCamp(
 }
 
 /**
- * Loose trekking mob along the path tangent: leaders and stragglers, lateral drift,
- * slight speed variation, and brief nibbles. Bunches a little at the gate without a rigid column.
+ * Trekking mob: loose spread in camps, stretched queue approaching the gate,
+ * and a tight single/double file while each animal crosses the gate opening.
  */
 export function organicTrekOffsets(
   count: number,
@@ -63,28 +67,54 @@ export function organicTrekOffsets(
   const py = ux;
   const next = rng(seed + 4049);
   const herdScale = Math.max(1, Math.sqrt(count / 24));
-  const stringOut = (36 + progress * 260) * herdScale;
-  const gatePinch = Math.exp(-((progress - 0.48) ** 2) / 0.012);
+  const pathStretchPx = 320 * herdScale;
+  const herdAtGate = Math.abs(progress - GATE_PROGRESS) < 0.1;
   const offsets: HerdOffset[] = [];
+
   for (let i = 0; i < count; i += 1) {
     const phase = cowPhase(seed, i);
     const rank = count <= 1 ? 0.5 : i / (count - 1);
-    const speedMul = 0.85 + phase * 0.3;
-    const alongCompress = 1 - gatePinch * 0.28;
-    const leaderLag = (rank - 0.42) * stringOut * speedMul * alongCompress;
-    const wobbleAlong = Math.sin(timeMs / 820 + phase * 8.4) * (5.5 * herdScale);
-    const baseAcross = (next() - 0.5) * 52 * herdScale;
-    const drift =
+
+    const alongBase = (0.5 - rank) * pathStretchPx;
+    const wobbleAlong = Math.sin(timeMs / 820 + phase * 8.4) * (4.5 * herdScale);
+
+    const looseAcross =
+      (next() - 0.5) * 54 * herdScale +
       Math.sin(timeMs / 640 + phase * 14.2) * (22 * herdScale) +
-      Math.cos(timeMs / 930 + phase * 6.1) * (16 * herdScale) +
-      baseAcross;
-    const gateTight = gatePinch * 0.55;
-    const across = drift * (1 - gateTight);
-    const nibble = Math.sin(timeMs / 380 + i * 1.65 + phase * 4) > 0.965;
-    const nibbleBack = nibble ? -5.5 : 0;
+      Math.cos(timeMs / 930 + phase * 6.1) * (14 * herdScale);
+    const looseAlong = alongBase + wobbleAlong;
+
+    let across = looseAcross;
+    let along = looseAlong;
+
+    if (herdAtGate) {
+      const distAlong = Math.abs(looseAlong);
+      if (distAlong < GATE_APPROACH_PX) {
+        const approachT = 1 - distAlong / GATE_APPROACH_PX;
+        const funnel = approachT * approachT;
+        const lane = (i % 2 === 0 ? -1 : 1) * (8 + (i % 3));
+        const slotJitter = (phase - 0.5) * 4;
+        across = looseAcross * (1 - funnel) + (lane + slotJitter) * funnel;
+
+        if (distAlong < GATE_ALONG_PX) {
+          const gateT = 1 - distAlong / GATE_ALONG_PX;
+          const queueSlot = Math.floor(rank * count);
+          const fileLane = (queueSlot % 2 === 0 ? -1 : 1) * 10;
+          across = fileLane + slotJitter * 0.25;
+          along =
+            alongBase * (1 - gateT * 0.92) +
+            ((queueSlot % 3) - 1) * 9 * gateT +
+            Math.sin(timeMs / 520 + phase * 11) * gateT * 1.2;
+        }
+      }
+    }
+
+    const nibble = Math.sin(timeMs / 380 + i * 1.65 + phase * 4) > 0.97;
+    const nibbleBack = nibble ? -5 : 0;
+
     offsets.push({
-      x: ux * (leaderLag + wobbleAlong + nibbleBack) + px * across,
-      y: uy * (leaderLag + wobbleAlong + nibbleBack) + py * across,
+      x: ux * (along + nibbleBack) + px * across,
+      y: uy * (along + nibbleBack) + py * across,
       flip: ux + across * 0.02 > 0,
       coat: Math.floor(phase * 6) % 6,
       scale: (0.64 + (phase % 0.12)) * (nibble ? 0.92 : 1),
@@ -120,15 +150,41 @@ export function mobSpanPx(offsets: HerdOffset[]): { width: number; height: numbe
   return { width: maxX - minX, height: maxY - minY };
 }
 
+/** Perpendicular spread for animals currently squeezed through the gate opening. */
+export function gateFileWidthPx(
+  offsets: HerdOffset[],
+  dirX: number,
+  dirY: number,
+  progress: number,
+  count: number,
+  seed: number,
+  timeMs: number,
+): number {
+  const herdScale = Math.max(1, Math.sqrt(count / 24));
+  const pathStretchPx = 320 * herdScale;
+  const subset: HerdOffset[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const rank = count <= 1 ? 0.5 : i / (count - 1);
+    const phase = cowPhase(seed, i);
+    const alongBase = (0.5 - rank) * pathStretchPx;
+    const wobbleAlong = Math.sin(timeMs / 820 + phase * 8.4) * (4.5 * herdScale);
+    const along = alongBase + wobbleAlong;
+    if (Math.abs(progress - GATE_PROGRESS) < 0.1 && Math.abs(along) < GATE_ALONG_PX) {
+      subset.push(offsets[i]);
+    }
+  }
+  return mobWidthPx(subset.length > 1 ? subset : offsets.slice(0, 2), dirX, dirY);
+}
+
 export function mobWidthPx(offsets: HerdOffset[], dirX: number, dirY: number): number {
   if (offsets.length < 2) return 0;
-  const len = Math.hypot(dirX, dirY) || 1;
-  const px = -dirY / len;
-  const py = dirX / len;
+  const pathLen = Math.hypot(dirX, dirY) || 1;
+  const perpX = -dirY / pathLen;
+  const perpY = dirX / pathLen;
   let minP = Number.POSITIVE_INFINITY;
   let maxP = Number.NEGATIVE_INFINITY;
   for (const o of offsets) {
-    const perp = o.x * px + o.y * py;
+    const perp = o.x * perpX + o.y * perpY;
     minP = Math.min(minP, perp);
     maxP = Math.max(maxP, perp);
   }

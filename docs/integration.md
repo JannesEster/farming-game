@@ -28,11 +28,11 @@ listOffers(rollSeed: number): FarmOffer[];
 createGameStateFromOffer(offer: FarmOffer): GameState;
 ```
 
-**Picker branch TODO**
+**Picker (wired in vslice)**
 
-1. Implement `FarmPickerPort` with your generator and UI; call `getGameFlow().pickFarmOffer(offer)` when the player confirms a purchase (do not start `FarmScene` yourself).
-2. Populate `FarmOffer.infrastructure`, `blurb`, and `worldSeed` from real generator output.
-3. Optional: replace the DOM picker in `mountFlowUi.ts` with your screen; keep calling `pickFarmOffer`.
+- Start + offer UI: `src/picker/flow.ts` (“Dust & Hooves”).
+- On buy: `getGameFlow().pickFarmPurchase(state, offer)` via `PickerFlowHost`.
+- `integration/pickerAdapter.ts` remains the typed port for tests/stubs.
 
 ### STORY — `StoryEconomyPort` + `StoryEventsPort`
 

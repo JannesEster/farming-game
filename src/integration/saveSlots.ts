@@ -1,5 +1,6 @@
 import type { GameState } from "../sim/types";
-import { parseSaved as parseLegacyV1, SAVE_KEY as LEGACY_KEY } from "../sim/persist";
+import { LEGACY_SAVE_KEY, LEGACY_SINGLE_V2_KEY } from "../sim/saveKeys";
+import { migrateState, parseLegacySaved } from "../sim/stateMigrate";
 import type { FlowMeta } from "./types";
 import { defaultFlowMeta } from "./metaDefaults";
 
@@ -42,20 +43,33 @@ export function setActiveSlotId(slotId: number): void {
 
 function migrateLegacySave(): SavedSlotPayload | null {
   if (typeof localStorage === "undefined") return null;
-  const raw = localStorage.getItem(LEGACY_KEY);
-  if (!raw) return null;
-  const state = parseLegacyV1(raw);
-  if (!state) return null;
-  const payload: SavedSlotPayload = {
-    version: SAVE_FORMAT_VERSION,
-    savedAt: new Date().toISOString(),
-    slotId: 0,
-    meta: defaultFlowMeta(),
-    state,
-  };
-  writeSlot(0, payload);
-  localStorage.removeItem(LEGACY_KEY);
-  return payload;
+  const keys = [LEGACY_SINGLE_V2_KEY, LEGACY_SAVE_KEY];
+  for (const key of keys) {
+    const raw = localStorage.getItem(key);
+    if (!raw) continue;
+    const state = parseLegacySaved(raw);
+    if (!state) continue;
+    const payload: SavedSlotPayload = {
+      version: SAVE_FORMAT_VERSION,
+      savedAt: new Date().toISOString(),
+      slotId: 0,
+      meta: defaultFlowMeta(),
+      state,
+    };
+    writeSlot(0, payload);
+    localStorage.removeItem(key);
+    if (key === LEGACY_SAVE_KEY) localStorage.removeItem(LEGACY_SINGLE_V2_KEY);
+    return payload;
+  }
+  return null;
+}
+
+export function anySlotOccupied(): boolean {
+  for (let i = 0; i < SLOT_COUNT; i += 1) {
+    if (typeof localStorage !== "undefined" && localStorage.getItem(slotKey(i))) return true;
+  }
+  if (typeof localStorage === "undefined") return false;
+  return Boolean(localStorage.getItem(LEGACY_SINGLE_V2_KEY) || localStorage.getItem(LEGACY_SAVE_KEY));
 }
 
 export function parseSlotPayload(raw: string): SavedSlotPayload | null {
@@ -74,6 +88,7 @@ export function parseSlotPayload(raw: string): SavedSlotPayload | null {
     }
     if (data.version !== SAVE_FORMAT_VERSION || !data.state || !data.meta) return null;
     if (!data.meta.tutorial || !data.meta.milestones) return null;
+    data.state = migrateState(data.state);
     return data as SavedSlotPayload;
   } catch {
     return null;

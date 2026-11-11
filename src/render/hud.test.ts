@@ -31,6 +31,7 @@ describe("compact phone HUD", () => {
       onDeselect: () => {},
       onConfirmMove: () => {},
       onCancelMove: () => {},
+      onOpenMarket: () => {},
     });
     hud.update(state, { selected: true, pendingCampId: null, pendingCampName: "" });
 
