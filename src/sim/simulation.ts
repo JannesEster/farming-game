@@ -4,6 +4,7 @@ import { generateFarm } from "./generate";
 import { dailyDemandKg, grazeStanding, growthKgPerHa, nextCondition, nextSoil } from "./pasture";
 import { dailyRainMm } from "./rainfall";
 import { rngFromState } from "./rng";
+import { herdInTransit, startHerdMove } from "./transit";
 import type { CampState, GameState, MoveResult } from "./types";
 
 export function createGame(seed = CONFIG.worldSeed, config: GameConfig = CONFIG): GameState {
@@ -21,8 +22,7 @@ export function campIdAt(state: GameState, x: number, y: number): number | null 
 
 /**
  * One game day with a known rainfall.
- * Order: season reset, rain into every camp's soil, regrowth, grazing, condition, then the date rolls forward.
- * Regrowth uses rest as it stands at the start of the day. The occupied camp is then marked as not resting.
+ * Herd walk progress is not advanced here; see tickTransitRealtime in transit.ts.
  */
 export function stepDayWithRain(state: GameState, rainMm: number, config: GameConfig = CONFIG): void {
   if (isSeasonStart(state.date, config)) state.seasonRainMm = 0;
@@ -30,9 +30,10 @@ export function stepDayWithRain(state: GameState, rainMm: number, config: GameCo
   state.seasonRainMm += rainMm;
 
   const demand = dailyDemandKg(state.herd, config);
+  const walking = herdInTransit(state.herd);
   let eaten = 0;
   for (const camp of state.camps) {
-    const occupied = camp.id === state.herd.campId;
+    const occupied = !walking && camp.id === state.herd.campId;
     const soil = nextSoil(camp.soilMoistureMm, rainMm, config);
     const growth = growthKgPerHa(soil.soilForGrowth, camp.restDays, occupied, config);
     camp.soilMoistureMm = soil.soilAfter;
@@ -53,8 +54,11 @@ export function stepDayWithRain(state: GameState, rainMm: number, config: GameCo
     }
   }
 
-  state.herd.condition = nextCondition(state.herd.condition, eaten, demand, config);
-  state.herd.daysInCamp += 1;
+  if (!walking) {
+    state.herd.condition = nextCondition(state.herd.condition, eaten, demand, config);
+    state.herd.daysInCamp += 1;
+  }
+
   state.date = addDays(state.date, 1);
 }
 
@@ -66,11 +70,10 @@ export function stepDay(state: GameState, config: GameConfig = CONFIG): void {
 }
 
 export function moveHerd(state: GameState, campId: number): MoveResult {
+  if (herdInTransit(state.herd)) return { ok: false, reason: "moving" };
   const camp = findCamp(state, campId);
   if (!camp) return { ok: false, reason: "missing" };
   if (camp.id === state.herd.campId) return { ok: false, reason: "same" };
-  state.herd.campId = camp.id;
-  state.herd.daysInCamp = 0;
-  camp.restDays = 0;
+  startHerdMove(state, camp.id);
   return { ok: true, campName: camp.name };
 }

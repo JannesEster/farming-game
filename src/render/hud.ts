@@ -43,6 +43,7 @@ export function mountHud(options: {
   onSpeed: (mode: SpeedMode) => void;
   onMinimap: (nx: number, ny: number) => void;
   onNewFarm: () => void;
+  onHome: () => void;
 }): Hud {
   const root = document.getElementById("hud-root");
   if (!root) throw new Error("Missing the HUD root.");
@@ -61,6 +62,7 @@ export function mountHud(options: {
         <button type="button" id="speed-play" aria-label="Play">${ICONS.play}</button>
         <button type="button" id="speed-fast" aria-label="Fast">${ICONS.fast}</button>
       </div>
+      <button type="button" class="pill-btn" id="view-home" title="Centre on the homestead">Home</button>
       <button type="button" class="pill-btn" id="new-farm">${COPY.newFarmLabel}</button>
       <p class="hint" id="hint"></p>
     </header>
@@ -98,6 +100,7 @@ export function mountHud(options: {
   const leftEl = required(root, "herd-left");
   const statusEl = required(root, "herd-status");
   const newFarmBtn = requiredButton(root, "new-farm");
+  const homeBtn = requiredButton(root, "view-home");
   const minimap = root.querySelector<HTMLCanvasElement>("#minimap");
   if (!minimap) throw new Error("Missing the minimap.");
 
@@ -110,6 +113,7 @@ export function mountHud(options: {
     buttons[mode].addEventListener("click", () => options.onSpeed(mode));
   });
   newFarmBtn.addEventListener("click", () => options.onNewFarm());
+  homeBtn.addEventListener("click", () => options.onHome());
   minimap.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     event.stopPropagation();

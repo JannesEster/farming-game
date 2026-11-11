@@ -25,6 +25,16 @@ export function parseSaved(raw: string): GameState | null {
     if (data.version !== 1 || !data.state) return null;
     const state = data.state;
     if (!Array.isArray(state.camps) || !state.herd || !state.date) return null;
+    if (state.herd.transit === undefined) state.herd.transit = null;
+    if (state.date.hour === undefined) state.date.hour = CONFIG.calendar.startHour;
+    if (state.herd.transit) {
+      if (state.herd.transit.walkGameHours === undefined) {
+        state.herd.transit.walkGameHours = 0;
+      }
+      if (state.herd.transit.hoursApplied === undefined) {
+        state.herd.transit.hoursApplied = 0;
+      }
+    }
     return state;
   } catch {
     return null;

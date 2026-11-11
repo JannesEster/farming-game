@@ -14,7 +14,12 @@ const game = new Phaser.Game({
     height: window.innerHeight,
   },
   input: {
-    activePointers: 2,
+    activePointers: 3,
+    smoothFactor: 0,
+  },
+  fps: {
+    target: 60,
+    forceSetTimeOut: false,
   },
   render: {
     antialias: true,

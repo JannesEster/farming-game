@@ -12,8 +12,22 @@ export function daysInMonth(year: number, month: number): number {
   return MONTH_DAYS[month] ?? 30;
 }
 
+export function addHours(date: CalendarDate, hours: number): CalendarDate {
+  if (hours <= 0) return date;
+  let { year, month, day, hour } = date;
+  let carry = hour + hours;
+  while (carry >= 24) {
+    const next = addDays({ year, month, day, hour: 0 }, 1);
+    year = next.year;
+    month = next.month;
+    day = next.day;
+    carry -= 24;
+  }
+  return { year, month, day, hour: carry };
+}
+
 export function addDays(date: CalendarDate, days: number): CalendarDate {
-  let { year, month, day } = date;
+  let { year, month, day, hour } = date;
   let left = days;
   while (left > 0) {
     const span = daysInMonth(year, month) - day;
@@ -30,7 +44,7 @@ export function addDays(date: CalendarDate, days: number): CalendarDate {
       }
     }
   }
-  return { year, month, day };
+  return { year, month, day, hour };
 }
 
 export function isSeasonStart(date: CalendarDate, config: GameConfig = CONFIG): boolean {

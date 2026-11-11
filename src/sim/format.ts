@@ -10,6 +10,7 @@ export const COPY = {
   hintSelected: "Tap a camp to move the herd.",
   hintMoved: (name: string) => `Moved to ${name}. Tap another camp to move again.`,
   hintSame: "The herd is already in this camp.",
+  hintMoving: "The herd is on the road. Wait until they reach the camp.",
   hintHomestead: "The homestead is not a grazing camp.",
   hintOutside: "That is outside the farm fence.",
   hintNeedHerd: "Tap the herd first.",
@@ -23,7 +24,9 @@ export const COPY = {
 
 export function formatDate(date: CalendarDate): string {
   const month = MONTHS[date.month - 1] ?? "";
-  return `${date.day} ${month} ${date.year}`;
+  const hour = date.hour ?? 0;
+  const hh = String(Math.floor(hour)).padStart(2, "0");
+  return `${date.day} ${month} ${date.year}, ${hh}:00`;
 }
 
 export function formatSeason(date: CalendarDate, config: GameConfig = CONFIG): string {

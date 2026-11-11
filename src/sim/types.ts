@@ -3,7 +3,7 @@ export const TILE_OUTSIDE = -2;
 
 export type TilePoint = { x: number; y: number };
 
-export type CalendarDate = { year: number; month: number; day: number };
+export type CalendarDate = { year: number; month: number; day: number; hour: number };
 
 export type FeatureKind =
   | "tree"
@@ -12,6 +12,7 @@ export type FeatureKind =
   | "windmill"
   | "reservoir"
   | "kraal"
+  | "shed"
   | "trough"
   | "track";
 
@@ -20,6 +21,18 @@ export type Feature = {
   x: number;
   y: number;
   scale: number;
+};
+
+export type HerdTransit = {
+  toCampId: number;
+  progress: number;
+  distanceKm: number;
+  /** Game hours this walk should cost on the ranch clock. */
+  walkGameHours: number;
+  /** Hours already applied to state.date during the walk. */
+  hoursApplied: number;
+  /** Whole path as tile points, including anchors. */
+  path: TilePoint[];
 };
 
 export type CampState = {
@@ -41,6 +54,7 @@ export type HerdState = {
   condition: number;
   campId: number;
   daysInCamp: number;
+  transit: HerdTransit | null;
 };
 
 export type GameState = {
@@ -60,4 +74,4 @@ export type GameState = {
 
 export type MoveResult =
   | { ok: true; campName: string }
-  | { ok: false; reason: "same" | "missing" };
+  | { ok: false; reason: "same" | "missing" | "moving" };

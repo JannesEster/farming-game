@@ -1,6 +1,7 @@
 import { CONFIG, type GameConfig } from "./config";
 import { clamp, lerp } from "./math";
 import { grazeableFraction } from "./pasture";
+import { campGateToward } from "./path";
 import { createRng, type Rng } from "./rng";
 import {
   TILE_HOMESTEAD,
@@ -183,6 +184,7 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
     { kind: "windmill", at: yard.windmill },
     { kind: "reservoir", at: yard.reservoir },
     { kind: "kraal", at: yard.kraal },
+    { kind: "shed", at: yard.shed },
   ];
   for (const building of buildings) {
     features.push({
@@ -204,6 +206,25 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
   }
   for (const tile of track) features.push({ kind: "track", x: tile.x, y: tile.y, scale: 1 });
   const trackKeys = new Set(track.map((tile) => `${tile.x},${tile.y}`));
+  const homesteadDoor = { x: doorX, y: spaceDown >= spaceUp ? hy + blockH : hy - 1 };
+
+  for (const camp of camps) {
+    const gate = campGateToward(camp, homesteadDoor);
+    const dx = homesteadDoor.x - gate.x;
+    const dy = homesteadDoor.y - gate.y;
+    const steps = Math.max(Math.abs(dx), Math.abs(dy), 1);
+    for (let i = 0; i <= steps; i += 1) {
+      const t = i / steps;
+      const x = Math.round(gate.x + dx * t);
+      const y = Math.round(gate.y + dy * t);
+      const key = `${x},${y}`;
+      if (trackKeys.has(key)) continue;
+      const id = finalGrid[idx(x, y, width)];
+      if (id >= 0 || id === TILE_HOMESTEAD) continue;
+      trackKeys.add(key);
+      features.push({ kind: "track", x, y, scale: 1 });
+    }
+  }
 
   for (const camp of camps) {
     const pool = camp.tiles.filter((tile) => !isEdge(finalGrid, width, height, tile.x, tile.y));
@@ -268,6 +289,7 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
       year: config.calendar.startYear,
       month: config.calendar.startMonth,
       day: config.calendar.startDay,
+      hour: config.calendar.startHour,
     },
     seasonRainMm: 0,
     todayRainMm: 0,
@@ -283,6 +305,7 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
       condition: config.herd.startingCondition,
       campId: start.id,
       daysInCamp: config.herd.startingDaysInCamp,
+      transit: null,
     },
     features,
   };
