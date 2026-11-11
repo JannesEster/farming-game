@@ -51,6 +51,25 @@ async function main() {
     const portrait = await browser.newPage({ viewport: { width: 390, height: 844 } });
     await ready(portrait);
     await shot(portrait, "hud-portrait-none-selected.png");
+
+    const tutorialPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await tutorialPage.goto("http://127.0.0.1:4173/?capture=1&flowCapture=tutorial", {
+      waitUntil: "networkidle",
+    });
+    await tutorialPage.waitForFunction(() => window.__farmCapture?.showTutorialStep1);
+    await tutorialPage.evaluate(() => window.__farmCapture.showTutorialStep1());
+    await tutorialPage.waitForTimeout(400);
+    await shot(tutorialPage, "flow-tutorial-step-1.png");
+    await tutorialPage.close();
+
+    const yearEndPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await yearEndPage.goto("http://127.0.0.1:4173/?capture=1&flowCapture=yearend", {
+      waitUntil: "networkidle",
+    });
+    await yearEndPage.waitForFunction(() => window.__farmCapture?.showYearEndReview);
+    await yearEndPage.waitForTimeout(450);
+    await shot(yearEndPage, "flow-year-end-review.png");
+    await yearEndPage.close();
     await portrait.evaluate(() => window.__farmCapture.selectHerd());
     await portrait.waitForTimeout(200);
     await shot(portrait, "hud-portrait-herd-collapsed.png");

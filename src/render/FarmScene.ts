@@ -2,7 +2,8 @@ import Phaser from "phaser";
 import { CONFIG } from "../sim/config";
 import { COPY } from "../sim/format";
 import { clamp } from "../sim/math";
-import { clearSavedGame, initialGameState, saveGame } from "../sim/persist";
+import { getGameFlow } from "../integration/GameFlowService";
+import { initialGameState } from "../sim/persist";
 import { campIdAt, moveHerd, stepDay } from "../sim/simulation";
 import { herdInTransit, herdWorldTile, pathTangent, tickTransitRealtime } from "../sim/transit";
 import {
@@ -114,7 +115,9 @@ export class FarmScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.state = initialGameState();
+    const flow = getGameFlow();
+    const data = this.sys.settings.data as { flowState?: GameState } | undefined;
+    this.state = data?.flowState ?? flow.consumeGameStateForScene() ?? initialGameState();
     this.reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const tileW = CONFIG.view.tileWidth;
     const tileH = CONFIG.view.tileHeight;
@@ -154,9 +157,12 @@ export class FarmScene extends Phaser.Scene {
       onDeselect: () => this.deselectHerd(),
       onConfirmMove: () => this.confirmPendingMove(),
       onCancelMove: () => this.cancelPendingMove(),
+      onSheetExpanded: () => getGameFlow().notifySim("grassChecked"),
     });
     this.hud.setSpeed(this.mode);
-    this.hud.setHint(COPY.hintStart);
+    flow.attachFarmHud(this.hud);
+    const tutorial = flow.getTutorialStep();
+    this.hud.setHint(tutorial ? `${tutorial.title}: ${tutorial.body}` : COPY.hintStart);
     this.syncHud();
     this.scale.on("resize", () => this.layoutCamera(false));
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.hud.destroy());
@@ -252,7 +258,11 @@ export class FarmScene extends Phaser.Scene {
         return dest?.id ?? null;
       },
     };
-    (window as Window & { __farmCapture?: typeof bridge }).__farmCapture = bridge;
+    const flowBridge = getGameFlow().exposeCaptureApi();
+    (window as Window & { __farmCapture?: typeof bridge & Record<string, unknown> }).__farmCapture = {
+      ...bridge,
+      ...flowBridge,
+    };
   }
 
   update(time: number, delta: number): void {
@@ -270,6 +280,7 @@ export class FarmScene extends Phaser.Scene {
         this.refreshGrass();
         this.syncHud();
         this.persist();
+        getGameFlow().onSimDayAdvanced(this.state);
       }
     }
     if (walking) {
@@ -301,6 +312,7 @@ export class FarmScene extends Phaser.Scene {
     this.mode = mode;
     if (mode === "pause") this.bank = 0;
     this.hud.setSpeed(mode);
+    if (mode === "fast") getGameFlow().notifySim("speedFast");
   }
 
   private msPerDay(): number | null {
@@ -481,12 +493,13 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private startNewFarm(): void {
-    clearSavedGame();
-    this.scene.restart();
+    getGameFlow().clearActiveSlot();
   }
 
   private persist(): void {
-    saveGame(this.state);
+    const flow = getGameFlow();
+    flow.runtimePatchState(this.state);
+    flow.persist();
   }
 
   private spawnCows(): void {
@@ -911,6 +924,7 @@ export class FarmScene extends Phaser.Scene {
       this.pendingCampId = null;
       this.pendingCampName = "";
       this.hud.setHint(COPY.hintSelected);
+      getGameFlow().notifySim("herdSelected");
       this.redrawFences();
       this.syncHud();
       return;
@@ -989,6 +1003,7 @@ export class FarmScene extends Phaser.Scene {
     this.pendingCampId = null;
     this.pendingCampName = "";
     this.hud.setHint(`Walking to ${result.campName}. They graze again when they arrive.`);
+    getGameFlow().notifySim("moveConfirmed");
     this.redrawFences();
     this.syncHud();
     this.persist();

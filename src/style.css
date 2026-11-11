@@ -421,3 +421,196 @@ body {
     right: calc(98px + env(safe-area-inset-right));
   }
 }
+
+/* Integration flow overlays (start, picker, year-end, tutorial coach) */
+.flow-root {
+  position: fixed;
+  inset: 0;
+  z-index: 50000;
+  pointer-events: none;
+  font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+}
+
+.flow-screen,
+.flow-tutorial {
+  pointer-events: auto;
+}
+
+.flow-screen {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  background: rgba(24, 16, 10, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.flow-card {
+  width: min(420px, 100%);
+  background: linear-gradient(180deg, #3a2618 0%, #2a1c12 100%);
+  border: 1px solid rgba(247, 240, 226, 0.12);
+  border-radius: 14px;
+  padding: 20px 18px 18px;
+  color: #f7f0e2;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.flow-card-wide {
+  width: min(520px, 100%);
+}
+
+.flow-kicker {
+  margin: 0 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #c9a66b;
+}
+
+.flow-title {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.flow-lede,
+.flow-note {
+  margin: 0 0 14px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #e8dcc8;
+}
+
+.flow-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.flow-btn {
+  border: 1px solid rgba(247, 240, 226, 0.2);
+  background: #4a3424;
+  color: #f7f0e2;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.flow-btn-primary {
+  background: #c56a32;
+  border-color: #e08a4a;
+}
+
+.flow-btn-ghost {
+  background: transparent;
+}
+
+.flow-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.flow-offers {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.flow-offer {
+  text-align: left;
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(247, 240, 226, 0.15);
+  background: #352418;
+  color: #f7f0e2;
+  cursor: pointer;
+}
+
+.flow-offer-name {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.flow-offer-meta,
+.flow-offer-infra,
+.flow-offer-blurb {
+  font-size: 13px;
+  color: #e0d4c0;
+}
+
+.flow-label {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 4px;
+  color: #c9a66b;
+}
+
+.flow-select {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(247, 240, 226, 0.2);
+  background: #2a1c12;
+  color: #f7f0e2;
+}
+
+.flow-score {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 12px;
+}
+
+.flow-list {
+  margin: 0 0 14px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.flow-list-muted {
+  color: #d8ccb8;
+}
+
+.flow-tutorial {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(108px + env(safe-area-inset-bottom));
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.flow-tutorial-inner {
+  background: rgba(42, 28, 18, 0.94);
+  border: 1px solid rgba(247, 240, 226, 0.18);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: #f7f0e2;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.flow-tutorial-title {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.flow-tutorial-body {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.flow-tutorial-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

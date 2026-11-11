@@ -54,6 +54,7 @@ export function mountHud(options: {
   onDeselect: () => void;
   onConfirmMove: () => void;
   onCancelMove: () => void;
+  onSheetExpanded?: (expanded: boolean) => void;
 }): Hud {
   const root = document.getElementById("hud-root");
   if (!root) throw new Error("Missing the HUD root.");
@@ -220,6 +221,7 @@ export function mountHud(options: {
     sheet.dataset.expanded = expanded ? "true" : "false";
     summary.setAttribute("aria-expanded", expanded ? "true" : "false");
     sheetDetail.hidden = !expanded;
+    if (expanded) options.onSheetExpanded?.(true);
     syncChromeInsets();
   }
 

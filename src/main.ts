@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { BootScene } from "./integration/BootScene";
 import { FarmScene } from "./render/FarmScene";
 import "./style.css";
 
@@ -26,7 +27,7 @@ const game = new Phaser.Game({
     roundPixels: false,
     pixelArt: false,
   },
-  scene: [FarmScene],
+  scene: [BootScene, FarmScene],
 });
 
 window.addEventListener("resize", () => {
