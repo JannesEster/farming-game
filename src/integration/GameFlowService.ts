@@ -111,6 +111,14 @@ export class GameFlowService {
       const card = generateFarmOffers(88001).find((o) => o.id === offerId);
       if (card?.playable) {
         this.pickFarmPurchase(stateFromOfferCard(card), card);
+        this.runtime.meta.tutorial = {
+          completed: true,
+          skipped: true,
+          currentStepId: null,
+          finishedStepIds: [],
+        };
+        this.ui?.hideTutorial();
+        this.persist();
         return;
       }
     }
@@ -431,6 +439,16 @@ export class GameFlowService {
       },
       flowPhase: () => this.runtime.phase,
       goFarmPicker: () => this.dispatch({ type: "PRESS_NEW_GAME" }),
+      skipTutorialForCapture: () => {
+        this.runtime.meta.tutorial = {
+          ...this.runtime.meta.tutorial,
+          completed: true,
+          skipped: true,
+          currentStepId: null,
+        };
+        this.ui?.hideTutorial();
+        return true;
+      },
     };
   }
 }

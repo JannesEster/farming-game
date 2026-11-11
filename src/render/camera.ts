@@ -262,6 +262,42 @@ export function boundsCenter(bounds: WorldBounds): { x: number; y: number } {
   return { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
 }
 
+/** World rectangle visible inside HUD insets (Phaser 4 scroll coordinates). */
+export function visibleContentBounds(
+  scrollX: number,
+  scrollY: number,
+  screenW: number,
+  screenH: number,
+  zoom: number,
+  insets: ViewInsets,
+  margin = CAMERA_CLEAR_MARGIN_PX,
+): WorldBounds {
+  const top = insets.top + margin;
+  const bottom = insets.bottom + margin;
+  const left = insets.left + margin;
+  const right = insets.right + margin;
+  return {
+    minX: worldXAtScreenX(scrollX, screenW, zoom, left),
+    minY: worldYAtScreenY(scrollY, screenH, zoom, top),
+    maxX: worldXAtScreenX(scrollX, screenW, zoom, screenW - right),
+    maxY: worldYAtScreenY(scrollY, screenH, zoom, screenH - bottom),
+  };
+}
+
+export function boundsContainsPoint(
+  bounds: WorldBounds,
+  x: number,
+  y: number,
+  marginPx = 0,
+): boolean {
+  return (
+    x >= bounds.minX - marginPx &&
+    x <= bounds.maxX + marginPx &&
+    y >= bounds.minY - marginPx &&
+    y <= bounds.maxY + marginPx
+  );
+}
+
 /** Zoom so a world rectangle fills the given fraction of the viewport (0 to 1). */
 export function zoomToFrameBounds(
   bounds: WorldBounds,

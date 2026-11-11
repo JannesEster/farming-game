@@ -160,11 +160,12 @@ export function propSpriteForKind(kind: string, x: number, y: number, featureSca
 /** Readable cattle scale (~1.8 m animal on 75 m tile, boosted for phone). */
 export function cattleDisplayScale(multiplier = 1): number {
   const tileW = CONFIG.view.tileWidth;
-  const readable = (tileW * 0.34) / 138;
+  const readable = (tileW * 0.56) / 138;
   return readable * multiplier;
 }
 
-export const COW_LOD_ZOOM = 0.44;
+/** Dots only at full pinch-out (same band as min zoom). */
+export const COW_LOD_ZOOM = 0.26;
 
 export function ensureCowDotTexture(scene: Phaser.Scene): void {
   const key = SPRITE_KEYS.cowDot;

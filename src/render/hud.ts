@@ -33,11 +33,14 @@ export type Hud = {
   campBadge(campId: number): string;
   setSpeed(mode: SpeedMode): void;
   setHint(text: string): void;
+  clearHint(): void;
   showEventCard(title: string, body: string): void;
+  hideEventCard(): void;
   /** Hide the hint toast while a tutorial or story card is on screen. */
   holdToasts(): void;
   /** Show the newest queued hint once every card is closed. */
   releaseToasts(): void;
+  setHerdLocator(visible: boolean, label: string, edge: "left" | "right" | "top" | "bottom"): void;
   destroy(): void;
 };
 
@@ -61,6 +64,7 @@ export function mountHud(options: {
   onCancelMove: () => void;
   onOpenMarket: () => void;
   onSheetExpanded?: (expanded: boolean) => void;
+  onHerdLocator?: () => void;
 }): Hud {
   const root = document.getElementById("hud-root");
   if (!root) throw new Error("Missing the HUD root.");
@@ -118,6 +122,7 @@ export function mountHud(options: {
       </div>
     </section>
     <canvas class="minimap" id="minimap" width="232" height="232" aria-label="Camp minimap. Tap to look there. With the herd selected, tap a camp to move it."></canvas>
+    <button type="button" class="chip herd-locator" id="herd-locator" hidden>→ Herd</button>
   `;
 
   const dateEl = required(root, "stat-date");
@@ -158,6 +163,8 @@ export function mountHud(options: {
   const homeBtn = requiredButton(root, "view-home");
   const minimap = root.querySelector<HTMLCanvasElement>("#minimap");
   if (!minimap) throw new Error("Missing the minimap.");
+  const herdLocator = requiredButton(root, "herd-locator");
+  herdLocator.addEventListener("click", () => options.onHerdLocator?.());
 
   const buttons: Record<SpeedMode, HTMLButtonElement> = {
     pause: requiredButton(root, "speed-pause"),
@@ -394,6 +401,13 @@ export function mountHud(options: {
         buttons[key].setAttribute("aria-pressed", key === mode ? "true" : "false");
       });
     },
+    clearHint() {
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = null;
+      toastEl.classList.remove("is-visible");
+      toastEl.hidden = true;
+      toastEl.textContent = "";
+    },
     setHint(text) {
       if (!text) return;
       if (cardBlocksToast()) {
@@ -426,6 +440,15 @@ export function mountHud(options: {
     releaseToasts() {
       toastHeld = false;
       flushQueuedToast();
+    },
+    hideEventCard() {
+      eventCard.hidden = true;
+    },
+    setHerdLocator(visible, label, edge) {
+      herdLocator.hidden = !visible;
+      if (!visible) return;
+      herdLocator.textContent = label;
+      herdLocator.dataset.edge = edge;
     },
     destroy() {
       if (toastTimer) clearTimeout(toastTimer);

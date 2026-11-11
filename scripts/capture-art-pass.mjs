@@ -1,4 +1,5 @@
-import { copyFile, mkdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { PNG } from "pngjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
@@ -33,7 +34,52 @@ async function ready(page) {
     waitUntil: "networkidle",
   });
   await page.waitForFunction(() => window.__farmCapture?.sampleFps);
+  await page.evaluate(() => {
+    window.__farmCapture?.prepareForScreenshot?.();
+    window.__flowCapture?.skipTutorialForCapture?.();
+    const tutorial = document.getElementById("flow-tutorial");
+    if (tutorial) tutorial.hidden = true;
+    const toast = document.getElementById("flow-toast");
+    if (toast) toast.hidden = true;
+    const eventCard = document.getElementById("event-card");
+    if (eventCard) eventCard.hidden = true;
+    const hudToast = document.getElementById("toast");
+    if (hudToast) hudToast.hidden = true;
+    const sheet = document.getElementById("sheet-summary");
+    if (sheet?.closest(".sheet")) sheet.closest(".sheet").classList.remove("is-expanded");
+  });
   await page.waitForTimeout(400);
+}
+
+async function sampleGroundPixelsFromPng(pngPath) {
+  const buf = await readFile(pngPath);
+  const png = PNG.sync.read(buf);
+  const { width, height, data } = png;
+  const samples = [];
+  for (let i = 0; i < 50; i += 1) {
+    const x = Math.floor((0.1 + ((i * 19) % 72) / 100) * width);
+    const y = Math.floor((0.15 + ((i * 29) % 55) / 100) * height);
+    const idx = (width * y + x) * 4;
+    samples.push({ r: data[idx], g: data[idx + 1], b: data[idx + 2] });
+  }
+  let maxDist = 0;
+  const ref = samples[0];
+  for (const s of samples) {
+    const dist = Math.hypot(s.r - ref.r, s.g - ref.g, s.b - ref.b);
+    if (dist > maxDist) maxDist = dist;
+  }
+  const orangeDominated =
+    maxDist < 12 &&
+    samples.filter((s) => s.r > 150 && s.g > 60 && s.g < 130 && s.b < 90).length > 40;
+  return {
+    sampleCount: samples.length,
+    first: ref,
+    last: samples[49],
+    maxRgbSpread: Math.round(maxDist * 10) / 10,
+    allWithin10OfFirst: maxDist < 10,
+    orangeFlat: orangeDominated,
+    pass: maxDist >= 10 && !orangeDominated,
+  };
 }
 
 async function main() {
@@ -51,7 +97,7 @@ async function main() {
   try {
     await waitForServer("http://127.0.0.1:4173/?capture=1&offer=otjozondjupa-ranch");
     const browser = await chromium.launch();
-    const report = { capturedAt: new Date().toISOString(), shots: [], fps: null };
+    const report = { capturedAt: new Date().toISOString(), shots: [], fps: null, ground: null, frames: {} };
 
     async function shot(page, name) {
       const file = path.join(outDir, name);
@@ -61,11 +107,19 @@ async function main() {
 
     const portrait = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3 });
     await ready(portrait);
-    await portrait.evaluate(() => window.__farmCapture.frameHomestead(false));
-    await portrait.waitForTimeout(250);
-    await shot(portrait, "art-portrait-opening-390x844.png");
-    await portrait.evaluate(() => window.__farmCapture.frameHomestead(true));
-    await portrait.waitForTimeout(200);
+    report.ground = {
+      diagnose: await portrait.evaluate(() => window.__farmCapture.diagnoseGround()),
+    };
+    const openingFrame = await portrait.evaluate(() => window.__farmCapture.frameHomestead(false));
+    report.frames.opening = openingFrame;
+    await portrait.waitForTimeout(350);
+    const openingPath = path.join(outDir, "art-portrait-opening-390x844.png");
+    await portrait.screenshot({ path: openingPath, fullPage: false });
+    report.shots.push("art-portrait-opening-390x844.png");
+    report.ground.pixels = await sampleGroundPixelsFromPng(openingPath);
+    const homesteadFrame = await portrait.evaluate(() => window.__farmCapture.frameHomestead(true));
+    report.frames.homestead = homesteadFrame;
+    await portrait.waitForTimeout(300);
     await shot(portrait, "art-portrait-homestead-zoom-390x844.png");
     report.fps = await portrait.evaluate(() => window.__farmCapture.sampleFps(120));
     await portrait.close();
@@ -75,16 +129,6 @@ async function main() {
     await landscape.evaluate(() => window.__farmCapture.frameHomestead(false));
     await landscape.waitForTimeout(200);
     await shot(landscape, "art-landscape-opening-844x390.png");
-    await landscape.evaluate(() => window.__farmCapture.frameHomestead(true));
-    await landscape.waitForTimeout(200);
-    await shot(landscape, "art-landscape-homestead-zoom-844x390.png");
-    const farZoom = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3 });
-    await ready(farZoom);
-    await farZoom.evaluate(() => window.__farmCapture.zoomFar());
-    await farZoom.waitForTimeout(250);
-    await shot(farZoom, "art-portrait-far-zoom-390x844.png");
-    await farZoom.close();
-
     await landscape.close();
 
     const gate = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3 });
@@ -104,8 +148,22 @@ async function main() {
     await gate.close();
     await browser.close();
 
+    if (!report.ground?.pixels?.pass) {
+      console.error("Ground pixel check FAILED", report.ground);
+      process.exitCode = 1;
+    }
+    if (!report.frames?.opening?.farmhouseInView || !report.frames?.opening?.herdInView) {
+      console.error("Opening frame missing farmhouse or herd", report.frames?.opening);
+      process.exitCode = 1;
+    }
+    if (!report.frames?.homestead?.farmhouseInView) {
+      console.error("Farmhouse not in view for homestead frame", report.frames?.homestead);
+      process.exitCode = 1;
+    }
+
     await writeFile(path.join(outDir, "art-pass-report.json"), `${JSON.stringify(report, null, 2)}\n`);
     console.log(JSON.stringify(report, null, 2));
+    if (process.exitCode) process.exit(process.exitCode);
   } finally {
     preview.kill("SIGTERM");
   }
