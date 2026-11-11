@@ -90,7 +90,7 @@ body {
   border: 1px solid rgba(226, 177, 90, 0.4);
   border-radius: 999px;
   padding: 2px 6px;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.25;
   white-space: nowrap;
 }
@@ -403,8 +403,7 @@ body {
 
 @media (max-width: 380px) {
   .topbar.compact {
-    gap: 1px;
-    padding: env(safe-area-inset-top) max(2px, env(safe-area-inset-left)) 0 max(2px, env(safe-area-inset-right));
+    padding: env(safe-area-inset-top) max(4px, env(safe-area-inset-left)) 0 max(4px, env(safe-area-inset-right));
   }
 
   .chips {
@@ -412,47 +411,7 @@ body {
   }
 
   .chip {
-    padding: 1px 4px;
-    font-size: 9.5px;
-    letter-spacing: -0.02em;
-  }
-
-  .chip-icon {
-    width: 24px;
-    height: 24px;
-  }
-
-  .chip-icon svg {
-    width: 13px;
-    height: 13px;
-  }
-
-  .top-actions {
-    gap: 1px;
-  }
-
-  .speeds.compact {
-    gap: 1px;
-  }
-
-  .speeds.compact button {
-    width: 36px;
-    height: 36px;
-    min-width: 36px;
-    min-height: 36px;
-    border-radius: 7px;
-  }
-
-  .speeds.compact button svg {
-    width: 16px;
-    height: 16px;
-  }
-
-  #menu-overflow.icon-btn {
-    width: 36px;
-    height: 36px;
-    min-width: 36px;
-    min-height: 36px;
+    padding: 2px 4px;
   }
 }
 

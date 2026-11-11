@@ -379,6 +379,30 @@ export function measureChipWidths(root: HTMLElement = document.getElementById("h
   };
 }
 
+export function measureTopbarMetrics(root: HTMLElement = document.getElementById("hud-root")!): {
+  chipFontPx: number;
+  chipLetterSpacing: string;
+  speedButtonPx: number;
+  menuButtonPx: number;
+  sparePx: number;
+  chipsRight: number;
+  actionsLeft: number;
+  chips: ReturnType<typeof measureChipWidths>;
+} {
+  const spare = measureTopbarSpare(root);
+  const dateChip = root.querySelector<HTMLElement>("#stat-date");
+  const speedBtn = root.querySelector<HTMLElement>("#speed-pause");
+  const menuBtn = root.querySelector<HTMLElement>("#menu-overflow");
+  return {
+    chipFontPx: dateChip ? Number.parseFloat(getComputedStyle(dateChip).fontSize) : 0,
+    chipLetterSpacing: dateChip ? getComputedStyle(dateChip).letterSpacing : "",
+    speedButtonPx: speedBtn?.getBoundingClientRect().width ?? 0,
+    menuButtonPx: menuBtn?.getBoundingClientRect().width ?? 0,
+    ...spare,
+    chips: measureChipWidths(root),
+  };
+}
+
 export function measureTopbarSpare(root: HTMLElement = document.getElementById("hud-root")!): {
   sparePx: number;
   chipsRight: number;

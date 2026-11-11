@@ -46,6 +46,7 @@ import {
   measureChipWidths,
   measureHudHeights,
   measureToastClearance,
+  measureTopbarMetrics,
   measureTopbarSpare,
   mountHud,
   viewportCameraInsets,
@@ -173,6 +174,7 @@ export class FarmScene extends Phaser.Scene {
       measureHud: () => measureHudHeights(),
       measureChips: () => measureChipWidths(),
       measureTopbarSpare: () => measureTopbarSpare(),
+      measureTopbarMetrics: () => measureTopbarMetrics(),
       measureToast: () => measureToastClearance(),
       showHint: (text: string) => this.hud.setHint(text),
       expandSheet: () => {

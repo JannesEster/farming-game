@@ -71,19 +71,18 @@ async function main() {
     const narrow360 = await browser.newPage({ viewport: { width: 360, height: 780 } });
     await ready(narrow360);
     await shot(narrow360, "hud-360x780-topbar.png");
-    report.narrow360 = {
-      chips: await narrow360.evaluate(() => window.__farmCapture.measureChips()),
-      spare: await narrow360.evaluate(() => window.__farmCapture.measureTopbarSpare()),
-    };
+    report.narrow360 = await narrow360.evaluate(() => window.__farmCapture.measureTopbarMetrics());
     await narrow360.close();
 
     const narrow375 = await browser.newPage({ viewport: { width: 375, height: 667 } });
     await ready(narrow375);
-    report.narrow375 = {
-      chips: await narrow375.evaluate(() => window.__farmCapture.measureChips()),
-      spare: await narrow375.evaluate(() => window.__farmCapture.measureTopbarSpare()),
-    };
+    report.narrow375 = await narrow375.evaluate(() => window.__farmCapture.measureTopbarMetrics());
     await narrow375.close();
+
+    const ref390 = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await ready(ref390);
+    report.ref390 = await ref390.evaluate(() => window.__farmCapture.measureTopbarMetrics());
+    await ref390.close();
 
     const landscape = await browser.newPage({ viewport: { width: 844, height: 390 } });
     await ready(landscape);
