@@ -1,7 +1,6 @@
 import { CONFIG, type GameConfig } from "./config";
 import { daysInMonth, isRainyMonth } from "./calendar";
-import { syncHeadFromComposition } from "./economy";
-import { chargeMonthlyCosts } from "./economy";
+import { chargeMonthlyCosts, syncHeadFromComposition } from "./economy";
 import type { CalendarDate } from "./types";
 import type { GameState } from "./types";
 
@@ -101,16 +100,22 @@ export function closeMonth(state: GameState, config: GameConfig = CONFIG): void 
   const costs = chargeMonthlyCosts(state, config);
   const phase = cyclePhase(state.date, config);
   const net = story.ledger.incomeNad - story.ledger.expenseNad;
+  const money = (amount: number) => {
+    const rounded = Math.round(amount);
+    const sign = rounded < 0 ? "-" : "";
+    const body = Math.abs(rounded).toLocaleString("en-NA");
+    return `N$${sign}${body}`;
+  };
   const body = [
     `${cyclePhaseLabel(phase)} ended.`,
-    `Income N$${Math.round(story.ledger.incomeNad)} · Expenses N$${Math.round(story.ledger.expenseNad)}.`,
-    `Costs: labour N$${Math.round(costs.labour)}, lick N$${Math.round(costs.lick)}, diesel N$${Math.round(costs.diesel)}, repairs N$${Math.round(costs.repairs)}, other N$${Math.round(costs.other)}.`,
-    `Net N$${Math.round(net)}. Rain season-to-date ${Math.round(state.seasonRainMm)} mm.`,
+    `Income ${money(story.ledger.incomeNad)}. Expenses ${money(story.ledger.expenseNad)}.`,
+    `Costs: labour ${money(costs.labour)}, lick ${money(costs.lick)}, diesel ${money(costs.diesel)}, repairs ${money(costs.repairs)}, other ${money(costs.other)}.`,
+    `Net ${money(net)}. Rain season-to-date ${Math.round(state.seasonRainMm)} mm.`,
     story.ledger.deathCount > 0 ? `${story.ledger.deathCount} deaths logged.` : "No deaths logged.",
     story.composition.weaner > 0 ? `${story.composition.weaner} weaners in herd.` : "",
   ]
     .filter(Boolean)
-    .join(" ");
+    .join("\n");
 
   story.pendingCards.push({
     id: `month-${key}`,

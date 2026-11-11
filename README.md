@@ -20,7 +20,7 @@ Open http://localhost:5173/farming-game/
 
 `npm run build` then `npm run preview` serves the production build at http://localhost:4173/farming-game/
 
-There is no save. Refreshing starts the same seeded farm again, on 1 August 2026.
+The game saves in this browser, in three slots. A new game replaces the highlighted slot.
 
 ## How to play
 
@@ -30,11 +30,11 @@ The animals on the map are a marker for the whole herd, not one picture per head
 
 ## What is simulated
 
-The farm is the Otjozondjupa cattle ranch from the design notes: about 3,300 ha, split into 6 to 8 camps, with a homestead, windmill, reservoir, and kraal. Camps share the grazing hectares. The herd is 120 head at 450 kg, which is under a savanna guide of 10 ha per large stock unit.
+You buy a farm from the menu, then run one cattle herd. The classic offer is an Otjozondjupa ranch of about 3,300 ha, split into 12 or more camps, with a homestead, windmill, reservoir, and kraal. The herd is 120 head at 450 kg, under a savanna guide of 10 ha per large stock unit.
 
-Each day the camp they stand in loses dry matter at 3% of liveweight, down to a litter floor of half the camp's peak. That half is the Kruger forage rule, applied here as a floor so the camp can go from green to gold to brown as the grazable grass is used up. Stocking pressure also tramples the camp while cattle are in it. Grass only regrows in empty resting camps when the soil is moist. No rain, no growth.
+Each day the camp they stand in loses dry matter at 3% of liveweight, down to a litter floor. Stocking pressure also tramples that camp. Grass does not regrow while cattle are in it. Empty camps recover only when they rest and the soil is moist. No rain, no growth.
 
-The season year runs 1 July to 30 June. Rain is rare in the dry months and common from November to April. The top bar shows the total since 1 July. Cash is a starting float of N$ 250,000 and does not change, because selling and wages are not in this build.
+The season year runs 1 July to 30 June. Rain is rare in the dry months and common from November to April. The top bar shows the total since 1 July. Sales, lick, diesel, and other running costs move the cash. Costs scale with farm size and herd size from a Reuben benchmark of about N$90,000 a month on 13,000 ha with 500 head.
 
 Every gameplay number, and the speeds and zoom, live in `src/sim/config.ts`. Each one is marked S (sourced) or A (an assumption for play). The simulation code in `src/sim` does not import Phaser.
 
@@ -44,9 +44,9 @@ Every gameplay number, and the speeds and zoom, live in `src/sim/config.ts`. Eac
 - Regrowth speed is assumed. Reuben's rule: grass only recovers in empty camps. Rest without rain does nothing.
 - The 50% consumable figure is sourced. Using it as a daily floor under the peak, rather than a once off May budget, is an assumption.
 - Camp colour follows how much grazable grass is left, so a camp at the litter floor reads as brown.
-- The opening date, the 120 head, the cash, and the map dressing (tree spacing, yard layout, speeds) are assumptions.
+- The opening date, the 120 head, the purchase purse, and the map dressing (tree spacing, yard layout, speeds) are assumptions.
 
-Buying farms, selling, workers, events, crops, and saving are out of scope.
+Time pauses while a tutorial tip, story card, market sheet, or year end screen is open, then continues at the speed you had selected.
 
 ## Tests and deploy
 

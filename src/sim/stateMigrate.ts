@@ -14,6 +14,10 @@ export function migrateState(state: GameState): GameState {
     state.story.composition = defaultComposition(state.herd.headCount, CONFIG);
   }
   if (state.herd.transit === undefined) state.herd.transit = null;
+  if (state.story) {
+    if (state.story.moveWarnCampId === undefined) state.story.moveWarnCampId = null;
+    if (state.story.thirstWarnCampId === undefined) state.story.thirstWarnCampId = null;
+  }
   if (state.date.hour === undefined) state.date.hour = CONFIG.calendar.startHour;
   if (state.herd.transit) {
     if (state.herd.transit.walkGameHours === undefined) state.herd.transit.walkGameHours = 0;

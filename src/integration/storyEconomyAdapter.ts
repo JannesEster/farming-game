@@ -7,8 +7,7 @@ import type { GameState } from "../sim/types";
 export function createStoryEconomy(meta: FlowMeta): StoryEconomyPort {
   return {
     isBankrupt(state: GameState) {
-      const floor = -20_000;
-      if (state.cashNad <= floor) return true;
+      if (state.cashNad <= CONFIG.economy.bankruptFloorNad) return true;
       const story = state.story;
       if (!story) return false;
       return story.farmhand.hired && state.cashNad < 0 && story.farmhand.daysUntilPayroll <= 3;
@@ -30,8 +29,13 @@ export function createStoryEconomy(meta: FlowMeta): StoryEconomyPort {
       const ledger = state.story?.ledger;
       if (ledger) {
         const net = Math.round(ledger.incomeNad - ledger.expenseNad);
+        const money = (amount: number) => {
+          const rounded = Math.round(amount);
+          const sign = rounded < 0 ? "-" : "";
+          return `N$${sign}${Math.abs(rounded).toLocaleString("en-NA")}`;
+        };
         report.summaryLines.unshift(
-          `Season ledger (open month) income N$${Math.round(ledger.incomeNad)} · spend N$${Math.round(ledger.expenseNad)} · net N$${net}`,
+          `Season ledger (open month) income ${money(ledger.incomeNad)}. Spend ${money(ledger.expenseNad)}. Net ${money(net)}.`,
         );
       }
       if (state.story?.starvation.totalDeathsSeason && state.story.starvation.totalDeathsSeason > 0) {

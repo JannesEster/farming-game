@@ -14,7 +14,6 @@ export const COPY = {
   hintHomestead: "The homestead is not a grazing camp.",
   hintOutside: "That is outside the farm fence.",
   hintNeedHerd: "Tap the herd first.",
-  hintNewFarm: "Starting a new farm. Your last save is cleared.",
   newFarmLabel: "Main menu",
   cashTitle: "Operating cash after sales and farm costs.",
   rainTitle: "Rain since 1 July, the start of the season year.",

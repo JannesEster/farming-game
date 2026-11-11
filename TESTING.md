@@ -34,11 +34,11 @@ Tap the homestead. They should stay put, and the hint should say it is not a gra
 
 ## 6. Time, grass, and move warnings (about 3 minutes)
 
-Tap Fast. After they arrive, grass percent should fall on the camp they occupy. Grass colour still follows camp cover (gold to green by grazable fraction). Leave Fast running until the date moves forward two weeks or more in the dry season. The herd card should show a gold **Time to move** line. Pause. Tap Play. Tap **New farm**, confirm the date returns to 1 August 2026.
+Tap Fast. After they arrive, grass percent should fall on the camp they occupy. Grass colour still follows camp cover (gold to green by grazable fraction). Leave Fast running until the date moves forward two weeks or more in the dry season. The herd card should show a gold **Time to move** line, and a card should pause the clock until you tap OK. Pause. Tap Play. Tap **Main menu**. The start screen comes back and the slot still has the save.
 
 ## Desktop, if you are at a computer
 
-Scroll to zoom on the pointer, drag to pan (with a short coast on release), click the cattle, then click a camp. **Home** and double click on open map recentre on the homestead. Space pauses. F is fast. Keys 1, 2, and 3 are pause, play, and fast. Refresh should restore your save. **New farm** clears it.
+Scroll to zoom on the pointer, drag to pan (with a short coast on release), click the cattle, then click a camp. **Home** and double click on open map recentre on the homestead. Space pauses. F is fast. Keys 1, 2, and 3 are pause, play, and fast. Refresh should restore your save. **Main menu** keeps it. **New game** on the start screen replaces the highlighted slot.
 
 ## Automated checks (developers)
 

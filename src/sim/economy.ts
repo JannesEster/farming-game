@@ -84,26 +84,26 @@ export function droughtSupplementCostNad(state: GameState, config: GameConfig = 
 export function baseLivePrice(stockClass: StockClass, _config: GameConfig = CONFIG): PriceQuote {
   switch (stockClass) {
     case "weaner":
-      // S: NAU Ox Production 2025 weaner/tollies auction N$32.81/kg live (mid of 32.81–34.83 band).
+      // S: NAU Ox Production 2025 weaner/tollies auction N$32.81/kg live (mid of 32.81 to 34.83 band).
       return { baseNadPerKgLive: 33.32, source: "sourced", note: "NAU 2025 weaner auction band" };
     case "ox":
-      // S: NAU live oxen 401–600 kg class N$40.17/kg live.
-      return { baseNadPerKgLive: 40.17, source: "sourced", note: "NAU 2025 ox 401–600 kg auction" };
+      // S: NAU live oxen 401 to 600 kg class N$40.17/kg live.
+      return { baseNadPerKgLive: 40.17, source: "sourced", note: "NAU 2025 ox 401 to 600 kg auction" };
     case "cow":
-      // S: NAU lean cows 301–500 kg N$27.90/kg live.
+      // S: NAU lean cows 301 to 500 kg N$27.90/kg live.
       return { baseNadPerKgLive: 27.9, source: "sourced", note: "NAU 2025 lean cows live" };
     case "calf":
       return {
         baseNadPerKgLive: 33.5,
         source: "sourced",
-        note: "NAU 2025 calves 1–350 kg N$33.50/kg live",
+        note: "NAU 2025 calves 1 to 350 kg N$33.50/kg live",
       };
     case "bull":
-      // S: NAU Bulls 501–600 kg N$33.93/kg live at auction.
+      // S: NAU Bulls 501 to 600 kg N$33.93/kg live at auction.
       return {
         baseNadPerKgLive: 33.93,
         source: "sourced",
-        note: "NAU 2025 bulls 501–600 kg auction",
+        note: "NAU 2025 bulls 501 to 600 kg auction",
       };
     default:
       return { baseNadPerKgLive: 25, source: "placeholder", note: "TODO" };

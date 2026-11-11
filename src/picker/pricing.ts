@@ -27,7 +27,7 @@ export type HerdPrice = {
  * Land line uses sourced N$/ha; bundle discount is A (TODO) so asking totals fit PURCHASE_BUDGET.
  */
 export function landListingDiscountFactor(): number {
-  // TODO(A): tune with owner — represents bundled sale / partial bond, not a published rate.
+  // TODO(A): tune with owner. Represents bundled sale / partial bond, not a published rate.
   return 0.22;
 }
 

@@ -12,32 +12,32 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: "selectHerd",
     title: "Select the herd",
-    body: "Tap the cattle once. The bottom strip shows camp, head count, and grass.",
+    body: "Tap the cattle once. The strip shows camp, head count, and grass. Time stays paused while this tip is open.",
   },
   {
     id: "moveToRestedCamp",
     title: "Move to a rested camp",
-    body: "Tap a greener camp and confirm. Grass only grows back in camps that stay empty while the herd is elsewhere.",
+    body: "Tap a greener camp and confirm. Close this tip and they walk. Grass grows back only in empty camps, after rain.",
   },
   {
     id: "speedUpTime",
     title: "Speed up time",
-    body: "Tap Fast on the top bar to advance days while you watch grass change.",
+    body: "Tap Fast on the top bar. After you close the tips, days move quicker.",
   },
   {
     id: "checkGrass",
     title: "Check grass",
-    body: "Open the herd card and watch camp grass %. Move before it turns gold. Occupied camps never recover.",
+    body: "Open the herd card and watch the grass. Move when it warns you. A camp does not regrow while the herd stands in it.",
   },
   {
     id: "sellAtMarket",
     title: "Plan a sale",
-    body: "Open the menu on the top right and tap Sell / market. Auction or a private buyer, then confirm.",
+    body: "Open the top right menu and tap Sell / market. Choose auction, out of hand, or a feedlot buyer, then tap Sell.",
   },
   {
     id: "dismissDone",
     title: "You are set",
-    body: "Skip any time from the toast. We remember your choice on this browser.",
+    body: "Tap Got it and the days start. Skip closes these tips for good. This browser remembers that choice.",
   },
 ];
 
@@ -84,6 +84,7 @@ export function advanceTutorial(
   action: TutorialStepId | "skip",
 ): TutorialProgress {
   if (progress.completed || progress.skipped) return progress;
+  if (action !== "skip" && progress.currentStepId !== action) return progress;
   if (action === "skip") {
     const next = { ...progress, skipped: true, completed: true, currentStepId: null };
     saveTutorialProgress(next);

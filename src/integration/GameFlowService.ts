@@ -62,6 +62,8 @@ export class GameFlowService {
   private yearEndReport: YearEndReport | null = null;
   private hudUnsub: (() => void) | null = null;
   private farmHud: Hud | null = null;
+  /** Player closed the current tip. The step stays until they do it. The clock may run. */
+  private tutorialCardClosed = false;
 
   boot(game: Phaser.Game): void {
     this.game = game;
@@ -198,6 +200,7 @@ export class GameFlowService {
     this.economy = createStoryEconomy(this.runtime.meta);
     this.runtime.gameState = state;
     this.pendingState = state;
+    this.tutorialCardClosed = false;
     closePickerScreen();
     const next = transition(this.runtime.phase, { type: "OFFER_SELECTED" });
     this.runtime.phase = next.ok ? next.phase : "playing";
@@ -320,7 +323,10 @@ export class GameFlowService {
   notifySim(event: "herdSelected" | "moveConfirmed" | "speedFast" | "grassChecked" | "salePlanned"): void {
     const action = tutorialActionForSimEvent(event);
     if (!action) return;
+    const before = this.runtime.meta.tutorial.currentStepId;
     this.runtime.meta.tutorial = advanceTutorial(this.runtime.meta.tutorial, action);
+    if (this.runtime.meta.tutorial.currentStepId === before && !this.runtime.meta.tutorial.completed) return;
+    this.tutorialCardClosed = false;
     const step = activeStep(this.runtime.meta.tutorial);
     if (step) this.showTutorial(step);
     else this.closeTutorial();
@@ -328,6 +334,7 @@ export class GameFlowService {
   }
 
   private skipTutorial(): void {
+    this.tutorialCardClosed = false;
     this.runtime.meta.tutorial = advanceTutorial(this.runtime.meta.tutorial, "skip");
     this.closeTutorial();
     this.persist();
@@ -335,15 +342,27 @@ export class GameFlowService {
 
   private dismissTutorialStep(): void {
     const current = this.runtime.meta.tutorial.currentStepId;
-    if (current) {
-      this.runtime.meta.tutorial = advanceTutorial(this.runtime.meta.tutorial, current);
+    if (!current || current === "dismissDone") {
+      if (current) this.runtime.meta.tutorial = advanceTutorial(this.runtime.meta.tutorial, current);
+      this.tutorialCardClosed = false;
+      this.closeTutorial();
+      this.persist();
+      return;
     }
-    const step = activeStep(this.runtime.meta.tutorial);
-    if (step) this.showTutorial(step);
-    else this.closeTutorial();
+    this.tutorialCardClosed = true;
+    this.ui?.hideTutorial();
+    this.farmHud?.releaseToasts();
+  }
+
+  /** True from the moment a tip is due until the player closes it. */
+  isTutorialHoldingSim(): boolean {
+    if (this.runtime.phase !== "playing") return false;
+    if (this.tutorialCardClosed) return false;
+    return activeStep(this.runtime.meta.tutorial) !== null;
   }
 
   private showTutorial(step: TutorialStep): void {
+    if (this.tutorialCardClosed) return;
     this.ui?.showTutorial(step);
     this.farmHud?.holdToasts();
   }
@@ -418,6 +437,7 @@ export class GameFlowService {
     return {
       showTutorialStep1: () => {
         this.runtime.phase = "playing";
+        this.tutorialCardClosed = false;
         this.runtime.meta.tutorial = {
           completed: false,
           skipped: false,

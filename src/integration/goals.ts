@@ -11,14 +11,14 @@ import type {
 } from "./types";
 
 export const FIRST_YEAR_GOALS: { id: FirstYearGoalId; label: string }[] = [
-  { id: "herdCondition", label: "Keep herd condition at 3.5 or better" },
+  { id: "herdCondition", label: "Keep herd condition at 55 or better" },
   { id: "cashOrHead", label: "End the year with more cash or more cattle than you started" },
 ];
 
 export const MILESTONE_LABELS: Record<MilestoneId, string> = {
   restCamp: "Rest a camp empty until grass recovers",
   sellBeforeDrought: "Sell stock before the dry pinch",
-  keepWaterRunning: "Keep water points running through the year",
+  keepWaterRunning: "Windmill and troughs are on the farm",
 };
 
 export function createYearBaseline(state: GameState, farmYear: number): YearBaseline {
@@ -31,7 +31,7 @@ export function createYearBaseline(state: GameState, farmYear: number): YearBase
 }
 
 export function evaluateFirstYearGoals(state: GameState, baseline: YearBaseline): GoalCheckResult[] {
-  const conditionMet = state.herd.condition >= 3.5;
+  const conditionMet = state.herd.condition >= CONFIG.story.breedingResumeCondition;
   const cashMet = state.cashNad > baseline.cashNad;
   const headMet = state.herd.headCount > baseline.headCount;
   return [
@@ -67,7 +67,7 @@ export function scoreFarm(
   score += milestoneCount * 10;
   const worstGrazable = worstCampGrazablePct(state);
   if (worstGrazable < CONFIG.pasture.moveWarnGrazeableFraction) score -= 10;
-  if (state.herd.condition >= 4) score += 5;
+  if (state.herd.condition >= CONFIG.story.breedingResumeCondition) score += 5;
   score = Math.max(0, Math.min(100, score));
   const rating: FarmRating = score >= 75 ? "Thriving" : score >= 50 ? "Steady" : "Struggling";
   return { score, rating };
@@ -94,9 +94,14 @@ export function buildYearEndReport(
   const cashDelta = state.cashNad - baseline.cashNad;
   const headDelta = state.herd.headCount - baseline.headCount;
   const conditionDelta = state.herd.condition - baseline.herdCondition;
-  const seasonLabel = `Year ${farmYear} (${CONFIG.calendar.seasonStartMonth === 7 ? "Jul–Jun" : "season"})`;
+  const seasonLabel = `Year ${farmYear} (${CONFIG.calendar.seasonStartMonth === 7 ? "Jul to Jun" : "season"})`;
+  const signedMoney = (amount: number) => {
+    const rounded = Math.round(amount);
+    const sign = rounded < 0 ? "-" : rounded > 0 ? "+" : "";
+    return `N$${sign}${Math.abs(rounded).toLocaleString("en-NA")}`;
+  };
   const summaryLines = [
-    `Cash ${cashDelta >= 0 ? "+" : ""}N$ ${cashDelta.toLocaleString("en-NA")}`,
+    `Cash ${signedMoney(cashDelta)}`,
     `Herd ${headDelta >= 0 ? "+" : ""}${headDelta} head, condition ${conditionDelta >= 0 ? "+" : ""}${conditionDelta.toFixed(1)}`,
     `${goalResults.filter((g) => g.met).length}/${goalResults.length} first-year goals met`,
   ];

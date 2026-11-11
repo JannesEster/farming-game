@@ -68,6 +68,10 @@ export type StoryState = {
   seasonEventsFired: string[];
   eatenYesterdayKg: number;
   demandYesterdayKg: number;
+  /** Camp that already showed the move warning for this stay. */
+  moveWarnCampId: number | null;
+  /** Camp that already showed the water warning for this stay. */
+  thirstWarnCampId: number | null;
 };
 
 export type SellRequest = {

@@ -21,7 +21,7 @@ function hash01(x: number, y: number, salt = 0): number {
   return Math.abs(Math.sin(x * 12.9898 + y * 78.233 + salt) * 43758.5453) % 1;
 }
 
-/** Low-frequency organic field (0–1), smooth across neighbouring tiles. */
+/** Low-frequency organic field (0 to 1), smooth across neighbouring tiles. */
 export function veldCoverField(x: number, y: number, salt: number): number {
   const s = 0.092;
   const v =
@@ -97,7 +97,7 @@ export function paintedTileRotation(x: number, y: number): number {
   return (hash01(x, y, 2.5) - 0.5) * 0.05;
 }
 
-/** Golden dry-grass base with soft olive overlays — no per-tile colour flips. */
+/** Golden dry-grass base with soft olive overlays. No per-tile colour flips. */
 export function paintedGroundStamps(
   state: GameState,
   x: number,
