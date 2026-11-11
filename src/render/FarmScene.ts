@@ -63,6 +63,19 @@ import { isoLayout, tileCenter, tileTop, worldToTile, type IsoLayout } from "./i
 import { palette } from "./palette";
 import { offsetsForHerd } from "./herdLayout";
 import { boundsVisible, chunkCoordsForTile } from "./terrain";
+import { bakeTerrainChunk } from "./groundLayer";
+import { placeGateSprites } from "./fenceDecor";
+import {
+  COW_LOD_ZOOM,
+  cattleDisplayScale,
+  cattleSpriteForCoat,
+  ensureCowDotTexture,
+  maybeRockAt,
+  paintedSpritesReady,
+  preloadPaintedSprites,
+  propSpriteForKind,
+  SPRITE_KEYS,
+} from "./sprites";
 
 type PointerRec = {
   x: number;
@@ -90,6 +103,9 @@ export class FarmScene extends Phaser.Scene {
   private track = new Set<string>();
   private tileSprites: Phaser.GameObjects.Image[] = [];
   private chunkRoots = new Map<string, Phaser.GameObjects.Container>();
+  private chunkRenderTextures = new Map<string, Phaser.GameObjects.RenderTexture>();
+  private paintedSprites = false;
+  private fenceGates: Phaser.GameObjects.Image[] = [];
   private shownPct = new Map<number, number>();
   private fences!: Phaser.GameObjects.Graphics;
   private rain!: Phaser.GameObjects.Graphics;
@@ -118,6 +134,10 @@ export class FarmScene extends Phaser.Scene {
     super("farm");
   }
 
+  preload(): void {
+    preloadPaintedSprites(this.load);
+  }
+
   create(): void {
     const flow = getGameFlow();
     const data = this.sys.settings.data as { flowState?: GameState } | undefined;
@@ -129,8 +149,14 @@ export class FarmScene extends Phaser.Scene {
     const tileH = CONFIG.view.tileHeight;
     this.layout = isoLayout(this.state.width, this.state.height, tileW, tileH, CONFIG.view.boundsPadPx);
     this.track = trackKeys(this.state);
-    this.paintTextures();
-    this.paintGround();
+    this.paintedSprites = paintedSpritesReady(this.textures);
+    ensureCowDotTexture(this);
+    this.buildProceduralFallback();
+    if (this.paintedSprites) {
+      this.bakeAllTerrain();
+    } else {
+      this.paintGroundProcedural();
+    }
     this.paintProps();
     this.paintLabels();
     this.fences = this.add.graphics().setDepth(2);
@@ -275,6 +301,42 @@ export class FarmScene extends Phaser.Scene {
         const dest = this.state.camps.find((camp) => camp.id >= 0 && camp.id !== from);
         return dest?.id ?? null;
       },
+      frameHomestead: (close = false) => {
+        this.goHome();
+        const camera = this.cameras.main;
+        if (close) {
+          camera.setZoom(clampZoom(1.12, this.minZoom, this.maxZoom));
+          if (this.homesteadBounds) {
+            const center = boundsCenter(this.homesteadBounds);
+            camera.centerOn(center.x, center.y);
+          }
+        } else {
+          this.layoutCamera(true);
+        }
+        this.clampScroll();
+        return { zoom: camera.zoom, scrollX: camera.scrollX, scrollY: camera.scrollY };
+      },
+      zoomFar: () => {
+        const camera = this.cameras.main;
+        camera.setZoom(clampZoom(this.minZoom, this.minZoom, this.maxZoom));
+        this.layoutCamera(false);
+        this.clampScroll();
+        return camera.zoom;
+      },
+      sampleFps: async (frames = 90) => {
+        const samples: number[] = [];
+        for (let i = 0; i < frames; i += 1) {
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          samples.push(this.game.loop.actualFps);
+        }
+        const sum = samples.reduce((acc, value) => acc + value, 0);
+        return {
+          avg: Math.round((sum / samples.length) * 10) / 10,
+          min: Math.round(Math.min(...samples) * 10) / 10,
+          max: Math.round(Math.max(...samples) * 10) / 10,
+          frames: samples.length,
+        };
+      },
       openMarket: () => {
         this.market.open();
         return true;
@@ -345,7 +407,7 @@ export class FarmScene extends Phaser.Scene {
     this.placeHerd(time);
     this.cullProps();
     this.cullChunks();
-    if (this.blades && !this.reduceMotion) {
+    if (this.blades && !this.reduceMotion && !this.paintedSprites) {
       this.blades.rotation += (delta / 1000) * CONFIG.view.windmillRadiansPerSecond;
     }
     this.applyPanInertia(delta);
@@ -374,7 +436,7 @@ export class FarmScene extends Phaser.Scene {
     return seconds * 1000;
   }
 
-  private paintTextures(): void {
+  private buildProceduralFallback(): void {
     const art = buildArt(CONFIG.view.tileWidth, CONFIG.view.tileHeight);
     (Object.keys(art.grounds) as (keyof typeof art.grounds)[]).forEach((kind) => {
       art.grounds[kind].forEach((sheet, variant) => this.addCanvas(groundTextureKey(kind, variant), sheet));
@@ -403,7 +465,39 @@ export class FarmScene extends Phaser.Scene {
     this.textures.addCanvas(key, source);
   }
 
-  private paintGround(): void {
+  private bakeAllTerrain(): void {
+    for (const rt of this.chunkRenderTextures.values()) rt.destroy();
+    this.chunkRenderTextures.clear();
+  this.chunkRoots.forEach((root) => root.destroy());
+    this.chunkRoots.clear();
+    const size = CONFIG.view.terrainChunkTiles;
+    for (let cy = 0; cy * size < this.state.height; cy += 1) {
+      for (let cx = 0; cx * size < this.state.width; cx += 1) {
+        this.rebakeChunk(cx, cy);
+      }
+    }
+    for (const camp of this.state.camps) {
+      this.shownPct.set(camp.id, Math.round(grazeableFraction(camp) * 100));
+    }
+  }
+
+  private rebakeChunk(cx: number, cy: number): void {
+    const chunkKey = `${cx},${cy}`;
+    const existing = this.chunkRenderTextures.get(chunkKey);
+    existing?.destroy();
+    const baked = bakeTerrainChunk(
+      this,
+      this.state,
+      this.layout,
+      cx,
+      cy,
+      this.track,
+      this.paintedSprites,
+    );
+    this.chunkRenderTextures.set(chunkKey, baked.rt);
+  }
+
+  private paintGroundProcedural(): void {
     const tileW = CONFIG.view.tileWidth;
     const tileH = CONFIG.view.tileHeight;
     this.tileSprites = [];
@@ -437,6 +531,64 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private paintProps(): void {
+    if (this.paintedSprites) {
+      for (const feature of this.state.features) {
+        if (feature.kind === "track" || feature.kind === "reservoir") continue;
+        const def = propSpriteForKind(feature.kind, feature.x, feature.y, feature.scale);
+        if (!this.textures.exists(def.key)) continue;
+        const center = tileCenter(feature.x, feature.y, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
+        const depth = 10 + feature.x + feature.y;
+        const image = this.add
+          .image(center.x, center.y, def.key)
+          .setOrigin(def.originX, def.originY)
+          .setScale(def.scale)
+          .setDepth(depth + (feature.kind === "trough" ? 0 : 0.4));
+        this.propSprites.push(image);
+      }
+      for (let y = 0; y < this.state.height; y += 1) {
+        for (let x = 0; x < this.state.width; x += 1) {
+          const id = this.state.campIds[y * this.state.width + x];
+          if (id === TILE_HOMESTEAD || id === TILE_OUTSIDE || this.track.has(`${x},${y}`)) continue;
+          const center = tileCenter(x, y, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
+          const depth = 8 + x + y;
+          if (maybeTermiteAt(x, y)) {
+            const termite = this.add
+              .image(center.x, center.y, SPRITE_KEYS.termiteMound)
+              .setOrigin(0.5, 0.9)
+              .setScale((CONFIG.view.tileWidth * 0.55) / 171)
+              .setDepth(depth);
+            this.propSprites.push(termite);
+          } else if (maybeRockAt(x, y)) {
+            const rock = this.add
+              .image(center.x, center.y, SPRITE_KEYS.rockCluster)
+              .setOrigin(0.5, 0.88)
+              .setScale((CONFIG.view.tileWidth * 0.5) / 160)
+              .setDepth(depth);
+            this.propSprites.push(rock);
+          }
+        }
+      }
+      const house = this.state.features.find((f) => f.kind === "house");
+      if (house) {
+        const bakkieCenter = tileCenter(
+          house.x + 2,
+          house.y + 1,
+          this.layout,
+          CONFIG.view.tileWidth,
+          CONFIG.view.tileHeight,
+        );
+        const def = propSpriteForKind("bakkie", house.x, house.y, 1);
+        this.propSprites.push(
+          this.add
+            .image(bakkieCenter.x, bakkieCenter.y, def.key)
+            .setOrigin(0.5, 0.88)
+            .setScale((CONFIG.view.tileWidth * 1.1) / 320)
+            .setDepth(12 + house.x + house.y),
+        );
+      }
+      return;
+    }
+
     for (const feature of this.state.features) {
       if (feature.kind === "track") continue;
       const center = tileCenter(feature.x, feature.y, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
@@ -562,10 +714,11 @@ export class FarmScene extends Phaser.Scene {
   private spawnCows(): void {
     const count = this.state.herd.headCount;
     for (let i = 0; i < count; i += 1) {
+      const tex = this.paintedSprites ? cattleSpriteForCoat(0) : cowTextureKey(0, false, 0);
       const cow = this.add
-        .image(0, 0, cowTextureKey(0, false, 0))
+        .image(0, 0, tex)
         .setOrigin(ART_ORIGIN.cow.x, ART_ORIGIN.cow.y)
-        .setScale(0.36);
+        .setScale(this.paintedSprites ? cattleDisplayScale() : 0.36);
       this.cows.push(cow);
     }
     this.refreshHerdOffsets(0);
@@ -589,14 +742,26 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private refreshGrass(): void {
+    const dirtyChunks = new Set<string>();
     for (const camp of this.state.camps) {
       const pct = Math.round(grazeableFraction(camp) * 100);
       if (this.shownPct.get(camp.id) === pct) continue;
       this.shownPct.set(camp.id, pct);
       for (const tile of camp.tiles) {
         if (this.track.has(`${tile.x},${tile.y}`)) continue;
-        const sprite = this.tileSprites[tile.y * this.state.width + tile.x];
-        sprite.setTint(tileTint(this.state, tile.x, tile.y, this.track));
+        if (this.paintedSprites) {
+          const { cx, cy } = chunkCoordsForTile(tile.x, tile.y);
+          dirtyChunks.add(`${cx},${cy}`);
+        } else {
+          const sprite = this.tileSprites[tile.y * this.state.width + tile.x];
+          sprite.setTint(tileTint(this.state, tile.x, tile.y, this.track));
+        }
+      }
+    }
+    if (this.paintedSprites) {
+      for (const key of dirtyChunks) {
+        const [cx, cy] = key.split(",").map(Number);
+        this.rebakeChunk(cx, cy);
       }
     }
   }
@@ -606,10 +771,11 @@ export class FarmScene extends Phaser.Scene {
       this.state.herd.transit?.toCampId !== undefined && herdInTransit(this.state.herd)
         ? this.state.herd.campId
         : this.state.herd.campId;
-    drawFences(
-      this.fences,
-      collectFenceSegments(this.state, this.layout, herdCamp, this.selected),
-    );
+    this.fenceGates.forEach((gate) => gate.destroy());
+    this.fenceGates = [];
+    const segments = collectFenceSegments(this.state, this.layout, herdCamp, this.selected);
+    drawFences(this.fences, segments);
+    this.fenceGates = placeGateSprites(this, segments, this.paintedSprites);
   }
 
   private syncHerdFromSim(): void {
@@ -646,18 +812,35 @@ export class FarmScene extends Phaser.Scene {
     const depth = 20 + tile.x + tile.y;
     const bobAmp = this.reduceMotion ? 0 : CONFIG.view.cowBobPx;
     const walking = herdInTransit(this.state.herd);
+    const zoom = this.cameras.main.zoom;
+    const cowLod = this.paintedSprites && zoom < COW_LOD_ZOOM;
     this.cows.forEach((cow, index) => {
       const offset = this.herdOffsets[index] ?? { x: 0, y: 0, flip: false, coat: 0, scale: 0.5 };
       const walk =
         walking && !this.reduceMotion
           ? Math.sin(time / 220 + index * 0.7) * 1.6
           : Math.sin(time / 280 + index) * bobAmp;
-      const animFrame = walking
-        ? Math.floor(time / 160 + index * 0.15) % 3
-        : Math.floor(time / 420 + index * 0.2) % 2;
-      cow.setTexture(cowTextureKey(offset.coat, walking, animFrame));
-      cow.setScale(offset.scale);
-      cow.setFlipX(offset.flip);
+      if (cowLod) {
+        cow.setTexture(SPRITE_KEYS.cowDot);
+        cow.setScale(1.15);
+        cow.setRotation(0);
+        cow.setFlipX(false);
+      } else if (this.paintedSprites) {
+        cow.setTexture(cattleSpriteForCoat(offset.coat));
+        const base = cattleDisplayScale(offset.scale / 0.62);
+        const squash = walking && !this.reduceMotion ? 1 + Math.sin(time / 170 + index * 0.9) * 0.04 : 1;
+        cow.setScale(base, base * squash);
+        cow.setFlipX(offset.flip);
+        cow.setRotation(walking || this.reduceMotion ? 0 : 0.12);
+      } else {
+        const animFrame = walking
+          ? Math.floor(time / 160 + index * 0.15) % 3
+          : Math.floor(time / 420 + index * 0.2) % 2;
+        cow.setTexture(cowTextureKey(offset.coat, walking, animFrame));
+        cow.setScale(offset.scale);
+        cow.setFlipX(offset.flip);
+        cow.setRotation(0);
+      }
       cow.setPosition(this.herdVisual.x + offset.x, this.herdVisual.y + offset.y + walk);
       cow.setDepth(depth + offset.y * 0.01);
       cow.setVisible(true);
@@ -690,11 +873,14 @@ export class FarmScene extends Phaser.Scene {
     const pad = CONFIG.view.propCullPadPx;
     const tileW = CONFIG.view.tileWidth;
     const tileH = CONFIG.view.tileHeight;
-    for (const [key, root] of this.chunkRoots) {
+    const source = this.paintedSprites ? this.chunkRenderTextures : this.chunkRoots;
+    for (const [key, root] of source) {
       const [cx, cy] = key.split(",").map(Number);
       const sample = tileTop(cx * CONFIG.view.terrainChunkTiles, cy * CONFIG.view.terrainChunkTiles, this.layout, tileW, tileH);
       const bounds = new Phaser.Geom.Rectangle(sample.x - tileW * 8, sample.y - tileH * 2, tileW * 16, tileH * 16);
-      root.setVisible(boundsVisible(camera, bounds, pad));
+      const visible = boundsVisible(camera, bounds, pad);
+      if (root instanceof Phaser.GameObjects.Container) root.setVisible(visible);
+      else root.setVisible(visible);
     }
   }
 

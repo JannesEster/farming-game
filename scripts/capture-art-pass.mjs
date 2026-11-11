@@ -29,7 +29,9 @@ function waitForServer(url, timeoutMs = 45000) {
 }
 
 async function ready(page) {
-  await page.goto("http://127.0.0.1:4173/?capture=1", { waitUntil: "networkidle" });
+  await page.goto("http://127.0.0.1:4173/?capture=1&offer=otjozondjupa-ranch", {
+    waitUntil: "networkidle",
+  });
   await page.waitForFunction(() => window.__farmCapture?.sampleFps);
   await page.waitForTimeout(400);
 }
@@ -47,7 +49,7 @@ async function main() {
     stdio: "ignore",
   });
   try {
-    await waitForServer("http://127.0.0.1:4173/?capture=1");
+    await waitForServer("http://127.0.0.1:4173/?capture=1&offer=otjozondjupa-ranch");
     const browser = await chromium.launch();
     const report = { capturedAt: new Date().toISOString(), shots: [], fps: null };
 
@@ -76,6 +78,13 @@ async function main() {
     await landscape.evaluate(() => window.__farmCapture.frameHomestead(true));
     await landscape.waitForTimeout(200);
     await shot(landscape, "art-landscape-homestead-zoom-844x390.png");
+    const farZoom = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3 });
+    await ready(farZoom);
+    await farZoom.evaluate(() => window.__farmCapture.zoomFar());
+    await farZoom.waitForTimeout(250);
+    await shot(farZoom, "art-portrait-far-zoom-390x844.png");
+    await farZoom.close();
+
     await landscape.close();
 
     const gate = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3 });

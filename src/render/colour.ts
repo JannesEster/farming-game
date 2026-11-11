@@ -5,7 +5,13 @@ import { grazeableFraction } from "../sim/pasture";
 import { CONFIG } from "../sim/config";
 import { grassTint, palette, shade, toCss } from "./palette";
 
+import { SPRITE_KEYS } from "./sprites";
+
 export type GroundTexture = "grass" | "sand" | "yard" | "track";
+
+function hash01(x: number, y: number, salt = 0): number {
+  return Math.abs(Math.sin(x * 12.9898 + y * 78.233 + salt) * 43758.5453) % 1;
+}
 
 export function trackKeys(state: GameState): Set<string> {
   const keys = new Set<string>();
@@ -32,6 +38,47 @@ export function tileTint(state: GameState, x: number, y: number, track: Set<stri
   if (!camp) return palette.sand;
   const dry = !isRainyMonth(state.date.month, CONFIG);
   return shade(grassTint(grazeableFraction(camp), dry), x, y, CONFIG.view.tileShadeSpread);
+}
+
+export function paintedTileKey(state: GameState, x: number, y: number, track: Set<string>): string {
+  if (track.has(`${x},${y}`)) return SPRITE_KEYS.tileTrack;
+  const id = state.campIds[y * state.width + x];
+  if (id === TILE_OUTSIDE || id === TILE_HOMESTEAD) return SPRITE_KEYS.tileSand;
+  const camp = state.camps.find((item) => item.id === id);
+  if (!camp) return SPRITE_KEYS.tileSand;
+  const frac = grazeableFraction(camp);
+  if (frac < CONFIG.pasture.moveWarnGrazeableFraction) return SPRITE_KEYS.tileOvergrazed;
+  const dry = !isRainyMonth(state.date.month, CONFIG);
+  if (dry && frac < 0.68) return SPRITE_KEYS.tileDryGrass;
+  if (!dry && frac > 0.42) return SPRITE_KEYS.tileGreenGrass;
+  if (!dry) return SPRITE_KEYS.tileGreenGrass;
+  return frac > 0.55 ? SPRITE_KEYS.tileDryGrass : SPRITE_KEYS.tileOvergrazed;
+}
+
+export function paintedTileAlpha(state: GameState, x: number, y: number, track: Set<string>): number {
+  const base = paintedTileKey(state, x, y, track);
+  let alpha = 0.94 + hash01(x, y, 1.1) * 0.06;
+  const neighbors = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ] as const;
+  for (const [dx, dy] of neighbors) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= state.width || ny >= state.height) continue;
+    if (paintedTileKey(state, nx, ny, track) !== base) alpha -= 0.045;
+  }
+  return Math.max(0.82, Math.min(1, alpha));
+}
+
+export function paintedTileRotation(x: number, y: number): number {
+  return (hash01(x, y, 2.5) - 0.5) * 0.06;
+}
+
+export function paintedTileTint(_state: GameState, x: number, y: number, _track: Set<string>): number {
+  return shade(0xffffff, x, y, 10);
 }
 
 export function terrainVariant(x: number, y: number, kind: GroundTexture): number {
