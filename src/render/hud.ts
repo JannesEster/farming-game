@@ -379,6 +379,47 @@ export function measureChipWidths(root: HTMLElement = document.getElementById("h
   };
 }
 
+export function measureTopbarSpare(root: HTMLElement = document.getElementById("hud-root")!): {
+  sparePx: number;
+  chipsRight: number;
+  actionsLeft: number;
+} {
+  const actions = root.querySelector<HTMLElement>(".top-actions");
+  if (!actions) return { sparePx: 0, chipsRight: 0, actionsLeft: 0 };
+  const actionsRect = actions.getBoundingClientRect();
+  let chipsRight = 0;
+  root.querySelectorAll<HTMLElement>(".chips .chip, .chips .chip-icon").forEach((el) => {
+    chipsRight = Math.max(chipsRight, el.getBoundingClientRect().right);
+  });
+  const sparePx = actionsRect.left - chipsRight;
+  return { sparePx, chipsRight, actionsLeft: actionsRect.left };
+}
+
+export function measureToastClearance(root: HTMLElement = document.getElementById("hud-root")!): {
+  toastTop: number;
+  toastBottom: number;
+  sheetTop: number | null;
+  clearancePx: number | null;
+  toastBottomCss: string;
+} {
+  const toast = root.querySelector<HTMLElement>("#toast");
+  const sheet = root.querySelector<HTMLElement>("#herd-sheet");
+  const toastRect = toast?.getBoundingClientRect();
+  const sheetHidden = sheet?.hasAttribute("hidden");
+  const sheetRect = sheet && !sheetHidden ? sheet.getBoundingClientRect() : null;
+  const toastTop = toastRect?.top ?? 0;
+  const toastBottom = toastRect?.bottom ?? 0;
+  const sheetTop = sheetRect?.top ?? null;
+  const clearancePx = sheetTop !== null && toastRect ? sheetTop - toastBottom : null;
+  return {
+    toastTop,
+    toastBottom,
+    sheetTop,
+    clearancePx,
+    toastBottomCss: toast ? getComputedStyle(toast).bottom : "",
+  };
+}
+
 export function viewportCameraInsets(root: HTMLElement = document.getElementById("hud-root")!): ViewInsets {
   const topbar = root.querySelector<HTMLElement>(".topbar");
   const top = topbar?.getBoundingClientRect().height ?? 44;

@@ -45,6 +45,8 @@ import { collectFenceSegments, drawFences } from "./fences";
 import {
   measureChipWidths,
   measureHudHeights,
+  measureToastClearance,
+  measureTopbarSpare,
   mountHud,
   viewportCameraInsets,
   type Hud,
@@ -170,6 +172,13 @@ export class FarmScene extends Phaser.Scene {
     const bridge = {
       measureHud: () => measureHudHeights(),
       measureChips: () => measureChipWidths(),
+      measureTopbarSpare: () => measureTopbarSpare(),
+      measureToast: () => measureToastClearance(),
+      showHint: (text: string) => this.hud.setHint(text),
+      expandSheet: () => {
+        const summary = document.getElementById("sheet-summary");
+        summary?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      },
       viewportInsets: () => viewportCameraInsets(),
       deselect: () => this.deselectHerd(),
       selectHerd: () => {

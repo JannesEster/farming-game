@@ -401,13 +401,64 @@ body {
   }
 }
 
+@media (max-width: 380px) {
+  .topbar.compact {
+    gap: 1px;
+    padding: env(safe-area-inset-top) max(2px, env(safe-area-inset-left)) 0 max(2px, env(safe-area-inset-right));
+  }
+
+  .chips {
+    gap: 1px;
+  }
+
+  .chip {
+    padding: 1px 4px;
+    font-size: 9.5px;
+    letter-spacing: -0.02em;
+  }
+
+  .chip-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .chip-icon svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  .top-actions {
+    gap: 1px;
+  }
+
+  .speeds.compact {
+    gap: 1px;
+  }
+
+  .speeds.compact button {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+    border-radius: 7px;
+  }
+
+  .speeds.compact button svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  #menu-overflow.icon-btn {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+  }
+}
+
 @media (orientation: landscape) and (max-height: 520px) {
   .sheet {
     max-height: min(40vh, calc(100vh - 52px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
     right: calc(98px + env(safe-area-inset-right));
-  }
-
-  .toast {
-    bottom: calc(48px + env(safe-area-inset-bottom));
   }
 }
