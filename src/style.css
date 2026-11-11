@@ -1,0 +1,235 @@
+:root {
+  color-scheme: dark;
+  --panel: rgba(36, 26, 18, 0.94);
+  --gold: #e2b15a;
+  --paper: #f6efe2;
+  --muted: #d9c7ae;
+  --ink: #2a1c12;
+  --bar: #4a3828;
+  --sand: #c56a32;
+  font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
+  background: var(--sand);
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+#game {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+
+#game canvas {
+  touch-action: none;
+}
+
+#hud-root {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.topbar,
+.card,
+.minimap {
+  pointer-events: auto;
+}
+
+.topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: calc(8px + env(safe-area-inset-top)) 10px 8px;
+  background: var(--panel);
+  color: var(--paper);
+  border-bottom: 2px solid var(--gold);
+}
+
+.brand {
+  margin: 0;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+}
+
+.pill {
+  background: rgba(255, 244, 220, 0.08);
+  border: 1px solid rgba(226, 177, 90, 0.45);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.pill.is-raining {
+  background: rgba(90, 150, 160, 0.35);
+  border-color: #9fd0d4;
+}
+
+.speeds {
+  display: flex;
+  gap: 4px;
+}
+
+.speeds button {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--gold);
+  background: #3a2c20;
+  color: var(--paper);
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+
+.speeds button svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
+.speeds button[aria-pressed="true"] {
+  background: var(--gold);
+  color: var(--ink);
+}
+
+.speeds button:focus-visible,
+.minimap:focus-visible {
+  outline: 2px solid #fff6e0;
+  outline-offset: 2px;
+}
+
+.hint {
+  flex: 1 0 100%;
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.card {
+  position: absolute;
+  left: 8px;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  width: min(280px, calc(100vw - 148px));
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: var(--panel);
+  color: var(--paper);
+  border: 1px solid var(--gold);
+  border-radius: 12px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+}
+
+.card[hidden] {
+  display: none;
+}
+
+.card h2,
+.card p {
+  margin: 0;
+}
+
+.card h2 {
+  font-size: 16px;
+}
+
+.card p,
+.meter {
+  font-size: 13px;
+}
+
+.meter {
+  display: grid;
+  grid-template-columns: 72px 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.bar {
+  height: 8px;
+  background: var(--bar);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.bar > span {
+  display: block;
+  height: 100%;
+  width: 0;
+}
+
+.warn {
+  color: #f0c27a;
+}
+
+.minimap {
+  position: absolute;
+  right: 8px;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  width: 116px;
+  height: 116px;
+  border: 2px solid var(--gold);
+  border-radius: 10px;
+  background: #6a3818;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  touch-action: none;
+}
+
+@media (max-width: 720px) {
+  .brand {
+    display: none;
+  }
+}
+
+@media (max-height: 340px) {
+  .minimap {
+    width: 84px;
+    height: 84px;
+  }
+
+  .card {
+    width: min(240px, calc(100vw - 112px));
+    padding: 6px 8px;
+    gap: 2px;
+  }
+
+  .extra {
+    display: none;
+  }
+
+  .speeds button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .hint {
+    display: none;
+  }
+}
