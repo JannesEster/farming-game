@@ -67,22 +67,18 @@ export function bakeTerrainChunk(
     }
   }
 
-  const pad = 4;
+  const pad = 12;
   const w = Math.ceil(maxX - minX + pad * 2);
   const h = Math.ceil(maxY - minY + pad * 2);
   const rt = scene.add.renderTexture(minX - pad, minY - pad, w, h).setOrigin(0, 0).setDepth(0);
-  const backdrop = scene.add.graphics();
-  backdrop.fillStyle(0x3b2a1e, 1);
-  backdrop.fillRect(0, 0, w, h);
-  rt.draw(backdrop, 0, 0);
-  backdrop.destroy();
+  if (typeof rt.fill === "function") rt.fill(0x000000, 0);
 
   for (const stamp of stamps) {
     const localX = stamp.x - minX + pad;
     const localY = stamp.y - minY + pad;
     const { target } = stamp;
     if (target.mode === "painted") {
-      const scale = (tileW + 10) / PAINTED_TILE_NATIVE_W;
+      const scale = (tileW + 18) / PAINTED_TILE_NATIVE_W;
       for (const layer of target.stamps) {
         if (!scene.textures.exists(layer.key)) continue;
         rt.stamp(layer.key, undefined, localX, localY, {

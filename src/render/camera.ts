@@ -258,6 +258,37 @@ export function openingFrameBounds(
   return mergeViewBounds(homestead, herdBox, padPx);
 }
 
+/**
+ * Zoom and scroll that fit a world rectangle inside the clear band
+ * (below the top bar, above the sheet and minimap).
+ */
+export function frameWorldRectInClearBand(
+  bounds: WorldBounds,
+  screenW: number,
+  screenH: number,
+  insets: ViewInsets,
+  minZoom: number,
+  maxZoom: number,
+  margin = CAMERA_CLEAR_MARGIN_PX,
+): { zoom: number; scrollX: number; scrollY: number } {
+  const top = insets.top + margin;
+  const bottom = insets.bottom + margin;
+  const left = insets.left + margin;
+  const right = insets.right + margin;
+  const contentW = Math.max(1, screenW - left - right);
+  const contentH = Math.max(1, screenH - top - bottom);
+  const worldW = Math.max(1, bounds.maxX - bounds.minX);
+  const worldH = Math.max(1, bounds.maxY - bounds.minY);
+  const zoom = clamp(Math.min(contentW / worldW, contentH / worldH), minZoom, maxZoom);
+  const screenCx = left + contentW / 2;
+  const screenCy = top + contentH / 2;
+  return {
+    zoom,
+    scrollX: scrollXForWorldAtScreenX((bounds.minX + bounds.maxX) / 2, screenW, zoom, screenCx),
+    scrollY: scrollYForWorldAtScreenY((bounds.minY + bounds.maxY) / 2, screenH, zoom, screenCy),
+  };
+}
+
 export function boundsCenter(bounds: WorldBounds): { x: number; y: number } {
   return { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
 }

@@ -157,12 +157,17 @@ export function propSpriteForKind(kind: string, x: number, y: number, featureSca
   }
 }
 
-/** ~1/5 farmhouse width at yard zoom (2 m beast vs ~15 m house). */
+/**
+ * Visible cow width over the painted farmhouse width.
+ * House footprint is 2.05 tiles (homesteadLayout). Cattle body fills ~131 of the 138px texture.
+ * Target is the middle of 1/5 and 1/6.
+ */
 export function cattleDisplayScale(multiplier = 1): number {
   const tileW = CONFIG.view.tileWidth;
-  const houseSpanTiles = 2.05;
-  const readable = (tileW * houseSpanTiles) / 5.5 / 138;
-  return readable * multiplier;
+  const houseWidthPx = tileW * 2.05;
+  const cowBodyPx = 131;
+  const targetBody = houseWidthPx / 5.4;
+  return (targetBody / cowBodyPx) * multiplier;
 }
 
 /** Dots only at full pinch-out (same band as min zoom). */

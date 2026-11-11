@@ -108,10 +108,16 @@ export function paintedGroundStamps(
   if (track.has(`${x},${y}`)) {
     return [
       {
+        key: SPRITE_KEYS.tileDryGrass,
+        alpha: 1,
+        rotation: 0,
+        tint: dryGoldenTint(x, y),
+      },
+      {
         key: SPRITE_KEYS.tileTrack,
-        alpha: 0.96,
-        rotation,
-        tint: 0xf4ebe0,
+        alpha: 0.55,
+        rotation: 0,
+        tint: 0xd7c4a4,
       },
     ];
   }
@@ -120,7 +126,7 @@ export function paintedGroundStamps(
   const dryBase: PaintedGroundStamp = {
     key: SPRITE_KEYS.tileDryGrass,
     alpha: 0.98,
-    rotation,
+    rotation: 0,
     tint: dryGoldenTint(x, y),
   };
 
@@ -132,8 +138,8 @@ export function paintedGroundStamps(
       {
         key: SPRITE_KEYS.tileSand,
         alpha: 0.9,
-        rotation,
-        tint: 0xefe4d4,
+        rotation: 0,
+        tint: 0xeadfce,
       },
     ];
   }
