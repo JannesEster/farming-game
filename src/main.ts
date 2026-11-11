@@ -12,14 +12,21 @@ const game = new Phaser.Game({
     mode: Phaser.Scale.RESIZE,
     width: window.innerWidth,
     height: window.innerHeight,
+    autoRound: true,
   },
   input: {
-    activePointers: 2,
+    activePointers: 3,
+    smoothFactor: 0,
   },
   render: {
     antialias: true,
-    roundPixels: false,
+    roundPixels: true,
     pixelArt: false,
+    powerPreference: "high-performance",
+  },
+  fps: {
+    limit: 0,
+    smoothStep: false,
   },
   scene: [FarmScene],
 });

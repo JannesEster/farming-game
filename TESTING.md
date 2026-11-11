@@ -8,15 +8,15 @@ The game saves in this browser. Refresh should put you back on the same date, ca
 
 ## 1. Open it (about 1 minute)
 
-The top bar shows a date in August 2026, Dry season, N$ 250,000, rainfall in mm, speed buttons, and **New farm**. You should see red sand, gold and green camps, camelthorn style trees, a dirt track, and a homestead with a house, a windmill, a round reservoir, and a kraal. A small group of cattle stands in one camp. A camp minimap sits in a corner.
+The top bar shows a date in August 2026, Dry season, N$ 250,000, rainfall in mm, speed buttons, and **New farm**. On first load you should see the homestead (house, windmill, reservoir, kraal) and the cattle marker without pinching to zoom. Red sand, camps, trees, and a dirt track should read around them. A camp minimap sits in a corner.
 
-## 2. Portrait feel and pinch zoom (about 2 minutes)
+## 2. Portrait feel, pan, and pinch zoom (about 2 minutes)
 
-Stay in portrait. Drag the land around. Pinch out and back in on one spot on the map. The farm should stay under your fingers and not drift up or down. The top bar, the hint, and the minimap should stay usable.
+Stay in portrait. Drag the land with one finger. It should follow your finger and coast a little when you let go. Pinch on the homestead. Zoom should stay anchored under the pinch, not slide away. Pinch out to see the whole farm, then pinch back in. The top bar, the hint, and the minimap should stay usable. After a long drag, lifting your finger should not select the herd or a camp.
 
 ## 3. Landscape (about 1 minute)
 
-Turn the phone sideways. Pan and pinch once. The buttons should still be easy to tap. Turn it back to portrait when you are done.
+Turn the phone sideways. The homestead and herd should still be readable without zooming. Pan and pinch once. Speed and **New farm** buttons should be at least finger width (44 px). Turn it back to portrait when you are done.
 
 ## 4. Select the herd (about 1 minute)
 
@@ -24,7 +24,7 @@ Tap the cattle. A card appears with the head count (120), condition, grass in th
 
 ## 5. Move them (about 2 minutes)
 
-Tap a different camp, either on the land or on the minimap. The cattle walk there. The card switches to that camp, and days in this camp goes back to 0.
+Tap a different camp on the land, or tap a spot on the minimap to jump the view there and move the herd if it is selected. The cattle walk there. The card switches to that camp, and days in this camp goes back to 0.
 
 Tap the homestead. They should stay put, and the hint should say it is not a grazing camp.
 

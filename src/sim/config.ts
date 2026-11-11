@@ -106,6 +106,18 @@ export type GameConfig = {
     maxTilePx: number;
     wheelZoomStep: number;
     dragSlopPx: number;
+    tapSlopPx: number;
+    homesteadFramePadPx: number;
+    framingMargin: number;
+    hudInsetTopPx: number;
+    hudInsetBottomPx: number;
+    inertiaFriction: number;
+    inertiaStopWorldPerMs: number;
+    inertiaGain: number;
+    cowBaseWorldPx: number;
+    cowMinScreenPx: number;
+    buildingBaseWorldPx: number;
+    buildingMinScreenPx: number;
     herdPickTiles: number;
     herdPickMinScreenPx: number;
     grassColourMidpoint: number;
@@ -281,12 +293,24 @@ export const CONFIG: GameConfig = {
     secondsPerDayFast: 0.12,
     maxFrameMs: 200,
     maxDaysPerFrame: 3,
-    phoneTilePx: 34,
+    phoneTilePx: 42,
     desktopTilePx: 48,
     desktopMinWidthPx: 900,
     maxTilePx: 96,
     wheelZoomStep: 1.12,
-    dragSlopPx: 10,
+    dragSlopPx: 8,
+    tapSlopPx: 14,
+    homesteadFramePadPx: 48,
+    framingMargin: 0.9,
+    hudInsetTopPx: 58,
+    hudInsetBottomPx: 128,
+    inertiaFriction: 0.9,
+    inertiaStopWorldPerMs: 0.004,
+    inertiaGain: 14,
+    cowBaseWorldPx: 52,
+    cowMinScreenPx: 40,
+    buildingBaseWorldPx: 56,
+    buildingMinScreenPx: 32,
     herdPickTiles: 1.8,
     herdPickMinScreenPx: 56,
     grassColourMidpoint: 0.5,

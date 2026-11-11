@@ -235,8 +235,8 @@ body {
 
 @media (max-height: 340px) {
   .minimap {
-    width: 84px;
-    height: 84px;
+    width: 96px;
+    height: 96px;
   }
 
   .card {
@@ -247,11 +247,6 @@ body {
 
   .extra {
     display: none;
-  }
-
-  .speeds button {
-    width: 40px;
-    height: 40px;
   }
 
   .hint {
