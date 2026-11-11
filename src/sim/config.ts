@@ -18,6 +18,12 @@ export type GameConfig = {
     lsuLiveweightKg: number;
     dailyIntakeFractionOfLiveweight: number;
     consumableFractionOfStandingDm: number;
+    residualDmKgPerHaMin: number;
+    residualFractionOfPeak: number;
+    activeGrazingFractionOfCamp: number;
+    maxGrazingDaysRainySeason: number;
+    maxGrazingDaysDrySeason: number;
+    moveWarnGrazeableFraction: number;
     peakDmKgPerHa: number;
     forageDmKgPerHaMin: number;
     forageDmKgPerHaMax: number;
@@ -142,9 +148,21 @@ export const CONFIG: GameConfig = {
     lsuLiveweightKg: 450,
     // S: Kruger forage budget. Daily demand is 3% of liveweight.
     dailyIntakeFractionOfLiveweight: 0.03,
-    // S: Kruger counts half of standing dry matter as consumable. The rest stays as litter.
-    // A: here that half is a floor under the camp peak. Cattle can eat the grass above the floor and no further.
+    // S: Kruger counts half of standing dry matter as consumable in the May forage budget. The rest stays as litter.
     consumableFractionOfStandingDm: 0.5,
+    // S: photo guide low end. Ungrazable litter is at least this much dry matter per ha.
+    residualDmKgPerHaMin: 30,
+    // A: typical litter left after a graze, as a fraction of that camp's own peak. Tuned for this map, not a measured litter curve.
+    residualFractionOfPeak: 0.125,
+    // A: share of camp hectares actively defoliated before you move the herd. NAU warns that use concentrates near water.
+    // Tuned so 120 head on a typical camp needs a move within about two weeks in the dry season.
+    activeGrazingFractionOfCamp: 0.22,
+    // S: NAU growing season rule, one to two weeks grazing. This build uses fourteen days.
+    maxGrazingDaysRainySeason: 14,
+    // S: NAU dormant season rule, two weeks to one month. This build uses twenty eight days.
+    maxGrazingDaysDrySeason: 28,
+    // A: warn when grazable grass in the camp falls below this fraction of the peak band.
+    moveWarnGrazeableFraction: 0.35,
     // S: the Namibian photo guide shows thornbush savanna from about 30 to 2,200 kg DM/ha.
     // A: 1,600 is an open-camp peak inside that range, for a fair year.
     peakDmKgPerHa: 1600,

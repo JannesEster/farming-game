@@ -1,6 +1,7 @@
 import { CONFIG, type GameConfig } from "./config";
 import { isRainyMonth } from "./calendar";
-import type { CalendarDate } from "./types";
+import { moveAdvice, type MoveAdvice } from "./grazing";
+import type { CalendarDate, CampState, HerdState } from "./types";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -12,8 +13,12 @@ export const COPY = {
   hintHomestead: "The homestead is not a grazing camp.",
   hintOutside: "That is outside the farm fence.",
   hintNeedHerd: "Tap the herd first.",
+  hintNewFarm: "Starting a new farm. Your last save is cleared.",
+  newFarmLabel: "New farm",
   cashTitle: "Operating cash. Sales are not in this prototype, so it stays put.",
   rainTitle: "Rain since 1 July, the start of the season year.",
+  moveRecovery:
+    "Move to a rested camp. Grass and condition recover over the weeks that camp rests and when rain returns.",
 };
 
 export function formatDate(date: CalendarDate): string {
@@ -61,6 +66,28 @@ export function formatGrassLeft(daysLeft: number, fraction: number): string {
 export function formatFeedStatus(daysLeft: number): string {
   if (daysLeft < 1) return "Condition is falling.";
   return "";
+}
+
+export function formatMoveWarning(
+  herd: HerdState,
+  camp: CampState,
+  date: CalendarDate,
+  config: GameConfig = CONFIG,
+): string {
+  const advice = moveAdvice(herd, camp, date, config);
+  if (!advice.shouldWarn) return "";
+  if (advice.reason === "time") {
+    return "Time to move. This camp has had its graze spell.";
+  }
+  if (advice.reason === "forage") {
+    return "Time to move. Grass here is running low.";
+  }
+  return "Time to move. This camp is worn and due for rest.";
+}
+
+export function formatCampBadge(advice: MoveAdvice, herdCamp: boolean): string {
+  if (!herdCamp || !advice.shouldWarn) return "";
+  return "Move";
 }
 
 export function formatCondition(condition: number): string {

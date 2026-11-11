@@ -7,3 +7,5 @@ export * from "./format";
 export * from "./rng";
 export { generateFarm } from "./generate";
 export { campIdAt, createGame, findCamp, moveHerd, stepDay, stepDayWithRain } from "./simulation";
+export * from "./grazing";
+export * from "./persist";
