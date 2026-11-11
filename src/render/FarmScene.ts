@@ -3,7 +3,7 @@ import { CONFIG } from "../sim/config";
 import { COPY } from "../sim/format";
 import { clamp } from "../sim/math";
 import { clearSavedGame, initialGameState, saveGame } from "../sim/persist";
-import { campIdAt, createGame, moveHerd, stepDay } from "../sim/simulation";
+import { campIdAt, moveHerd, stepDay } from "../sim/simulation";
 import { zoomScrollDelta } from "./camera";
 import { grazeableFraction } from "../sim/pasture";
 import { TILE_HOMESTEAD, TILE_OUTSIDE, type GameState } from "../sim/types";
