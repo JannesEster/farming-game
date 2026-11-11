@@ -175,6 +175,16 @@ export function drawFences(graphics: Phaser.GameObjects.Graphics, segments: Fenc
         graphics.moveTo(px, py - 5);
         graphics.lineTo(px, py + 4);
         graphics.strokePath();
+        if (i > 0 && i < count) {
+          const dropT = i / count;
+          const dpx = segment.x1 + dx * (dropT - 0.5 / count);
+          const dpy = segment.y1 + dy * (dropT - 0.5 / count);
+          graphics.lineStyle(1, palette.fenceWire, 0.75);
+          graphics.beginPath();
+          graphics.moveTo(dpx, dpy - 4);
+          graphics.lineTo(dpx, dpy + 3);
+          graphics.strokePath();
+        }
       } else if (i === 0 || i === count) {
         graphics.lineStyle(2.2, palette.fencePost, 1);
         graphics.beginPath();

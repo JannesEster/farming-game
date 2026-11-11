@@ -34,6 +34,7 @@ import { TILE_HOMESTEAD, TILE_OUTSIDE, type GameState } from "../sim/types";
 import {
   ART_ORIGIN,
   buildArt,
+  cowTextureKey,
   groundTextureKey,
   maybeTermiteAt,
   treeDeadAt,
@@ -251,6 +252,35 @@ export class FarmScene extends Phaser.Scene {
         const dest = this.state.camps.find((camp) => camp.id >= 0 && camp.id !== from);
         return dest?.id ?? null;
       },
+      frameHomestead: (close = false) => {
+        this.goHome();
+        const camera = this.cameras.main;
+        if (close) {
+          camera.setZoom(clampZoom(1.12, this.minZoom, this.maxZoom));
+          if (this.homesteadBounds) {
+            const center = boundsCenter(this.homesteadBounds);
+            camera.centerOn(center.x, center.y);
+          }
+        } else {
+          this.layoutCamera(true);
+        }
+        this.clampScroll();
+        return { zoom: camera.zoom, scrollX: camera.scrollX, scrollY: camera.scrollY };
+      },
+      sampleFps: async (frames = 90) => {
+        const samples: number[] = [];
+        for (let i = 0; i < frames; i += 1) {
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          samples.push(this.game.loop.actualFps);
+        }
+        const sum = samples.reduce((acc, value) => acc + value, 0);
+        return {
+          avg: Math.round((sum / samples.length) * 10) / 10,
+          min: Math.round(Math.min(...samples) * 10) / 10,
+          max: Math.round(Math.max(...samples) * 10) / 10,
+          frames: samples.length,
+        };
+      },
     };
     (window as Window & { __farmCapture?: typeof bridge }).__farmCapture = bridge;
   }
@@ -314,7 +344,10 @@ export class FarmScene extends Phaser.Scene {
     (Object.keys(art.grounds) as (keyof typeof art.grounds)[]).forEach((kind) => {
       art.grounds[kind].forEach((sheet, variant) => this.addCanvas(groundTextureKey(kind, variant), sheet));
     });
-    art.cows.forEach((cow, index) => this.addCanvas(`cow-${index}`, cow));
+    art.cows.forEach((breed, coat) => {
+      breed.walk.forEach((sheet, frame) => this.addCanvas(cowTextureKey(coat, true, frame), sheet));
+      breed.graze.forEach((sheet, frame) => this.addCanvas(cowTextureKey(coat, false, frame), sheet));
+    });
     this.addCanvas("tree", art.tree);
     this.addCanvas("tree-dead", art.treeDead);
     this.addCanvas("bush", art.bush);
@@ -493,9 +526,9 @@ export class FarmScene extends Phaser.Scene {
     const count = this.state.herd.headCount;
     for (let i = 0; i < count; i += 1) {
       const cow = this.add
-        .image(0, 0, "cow-0")
+        .image(0, 0, cowTextureKey(0, false, 0))
         .setOrigin(ART_ORIGIN.cow.x, ART_ORIGIN.cow.y)
-        .setScale(0.3);
+        .setScale(0.36);
       this.cows.push(cow);
     }
     this.refreshHerdOffsets(0);
@@ -575,14 +608,17 @@ export class FarmScene extends Phaser.Scene {
     );
     const depth = 20 + tile.x + tile.y;
     const bobAmp = this.reduceMotion ? 0 : CONFIG.view.cowBobPx;
-    const keys = ["cow-0", "cow-1", "cow-2", "cow-3", "cow-4", "cow-5"];
+    const walking = herdInTransit(this.state.herd);
     this.cows.forEach((cow, index) => {
       const offset = this.herdOffsets[index] ?? { x: 0, y: 0, flip: false, coat: 0, scale: 0.5 };
       const walk =
-        herdInTransit(this.state.herd) && !this.reduceMotion
+        walking && !this.reduceMotion
           ? Math.sin(time / 220 + index * 0.7) * 1.6
           : Math.sin(time / 280 + index) * bobAmp;
-      cow.setTexture(keys[offset.coat % keys.length]);
+      const animFrame = walking
+        ? Math.floor(time / 160 + index * 0.15) % 3
+        : Math.floor(time / 420 + index * 0.2) % 2;
+      cow.setTexture(cowTextureKey(offset.coat, walking, animFrame));
       cow.setScale(offset.scale);
       cow.setFlipX(offset.flip);
       cow.setPosition(this.herdVisual.x + offset.x, this.herdVisual.y + offset.y + walk);

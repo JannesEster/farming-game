@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mobSpanPx, mobWidthPx, organicTrekOffsets } from "./herdLayout";
+import { gateFileWidthPx, mobSpanPx, mobWidthPx, organicTrekOffsets } from "./herdLayout";
 
 const HERD = 120;
 
@@ -12,12 +12,13 @@ describe("organicTrekOffsets", () => {
     expect(mobWidthPx(mid, 1, 0)).toBeGreaterThan(120);
   });
 
-  it("pinches slightly at the gate but keeps animals separated", () => {
-    const gate = organicTrekOffsets(HERD, 42, 1, 0, 0.48, 5000);
+  it("funnels through the gate in a narrow single or double file", () => {
+    const gate = organicTrekOffsets(HERD, 42, 1, 0, 0.5, 5000);
     const open = organicTrekOffsets(HERD, 42, 1, 0, 0.2, 5000);
-    expect(mobWidthPx(gate, 1, 0)).toBeLessThan(mobWidthPx(open, 1, 0));
-    expect(mobWidthPx(gate, 1, 0)).toBeGreaterThan(100);
-    expect(mobSpanPx(gate).width).toBeGreaterThan(160);
+    expect(gateFileWidthPx(gate, 1, 0, 0.5, HERD, 42, 5000)).toBeLessThan(mobWidthPx(open, 1, 0));
+    expect(gateFileWidthPx(gate, 1, 0, 0.5, HERD, 42, 5000)).toBeLessThan(36);
+    expect(mobSpanPx(open).width).toBeGreaterThan(200);
+    expect(mobSpanPx(gate).width).toBeGreaterThan(140);
   });
 
   it("drifts over time so the mob is not frozen", () => {
