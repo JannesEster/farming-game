@@ -4,6 +4,7 @@ import { generateFarm } from "./generate";
 import { dailyDemandKg, grazeStanding, growthKgPerHa, nextCondition, nextSoil } from "./pasture";
 import { dailyRainMm } from "./rainfall";
 import { rngFromState } from "./rng";
+import { afterFeedDay } from "./story";
 import { herdInTransit, startHerdMove } from "./transit";
 import type { CampState, GameState, MoveResult } from "./types";
 
@@ -35,7 +36,9 @@ export function stepDayWithRain(state: GameState, rainMm: number, config: GameCo
   for (const camp of state.camps) {
     const occupied = !walking && camp.id === state.herd.campId;
     const soil = nextSoil(camp.soilMoistureMm, rainMm, config);
-    const growth = growthKgPerHa(soil.soilForGrowth, camp.restDays, occupied, config);
+    let growth = growthKgPerHa(soil.soilForGrowth, camp.restDays, occupied, config);
+    const droughtMul = state.story?.drought.forageMultiplier ?? 1;
+    growth *= droughtMul;
     camp.soilMoistureMm = soil.soilAfter;
     camp.standingDmKgPerHa = Math.min(camp.peakDmKgPerHa, camp.standingDmKgPerHa + growth);
     if (occupied) {
@@ -57,6 +60,7 @@ export function stepDayWithRain(state: GameState, rainMm: number, config: GameCo
   if (!walking) {
     state.herd.condition = nextCondition(state.herd.condition, eaten, demand, config);
     state.herd.daysInCamp += 1;
+    afterFeedDay(state, eaten, demand, config);
   }
 
   state.date = addDays(state.date, 1);

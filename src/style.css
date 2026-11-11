@@ -52,8 +52,67 @@ body {
 .sheet,
 .minimap,
 .toast,
-.overflow-menu {
+.overflow-menu,
+.event-card {
   pointer-events: auto;
+}
+
+.market-btn {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 8px;
+  min-width: 40px;
+  color: var(--paper);
+  border: 1px solid var(--gold);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.event-card {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: var(--toast-bottom, 108px);
+  max-width: 360px;
+  margin: 0 auto;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--gold);
+  border-radius: 10px;
+  color: var(--paper);
+  z-index: 6;
+}
+
+.event-card h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.event-card p {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.market-sheet .market-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.market-divider {
+  border: none;
+  border-top: 1px solid var(--bar);
+  margin: 12px 0;
+}
+
+.market-jobs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .topbar.compact {

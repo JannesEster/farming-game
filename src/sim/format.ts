@@ -16,7 +16,7 @@ export const COPY = {
   hintNeedHerd: "Tap the herd first.",
   hintNewFarm: "Starting a new farm. Your last save is cleared.",
   newFarmLabel: "New farm",
-  cashTitle: "Operating cash. Sales are not in this prototype, so it stays put.",
+  cashTitle: "Operating cash after sales and farm costs.",
   rainTitle: "Rain since 1 July, the start of the season year.",
   moveRecovery:
     "Move to a rested camp. Grass and condition recover over the weeks that camp rests and when rain returns.",

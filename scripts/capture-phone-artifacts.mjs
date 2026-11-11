@@ -121,6 +121,23 @@ async function main() {
       await shot(walk, `herd-gate-walk-${i + 1}.png`);
     }
     report.herdWalk = { openingZoom: zoom, progresses };
+
+    const story = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await ready(story);
+    await story.evaluate(() => window.__farmCapture.showFeedWarning());
+    await story.waitForTimeout(250);
+    await shot(story, "story-phone-feed-warning.png");
+    await story.evaluate(() => window.__farmCapture.openMarket());
+    await story.waitForTimeout(250);
+    await shot(story, "story-phone-market-sale.png");
+    await story.evaluate(() => window.__farmCapture.showMonthSummary());
+    await story.waitForTimeout(250);
+    await shot(story, "story-phone-month-summary.png");
+    await story.evaluate(() => window.__farmCapture.showDroughtChoice());
+    await story.waitForTimeout(250);
+    await shot(story, "story-phone-drought-choice.png");
+    await story.close();
+
     await walk.close();
     await browser.close();
 

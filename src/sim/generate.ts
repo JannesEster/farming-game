@@ -1,6 +1,7 @@
 import { CONFIG, type GameConfig } from "./config";
 import { clamp, lerp } from "./math";
 import { grazeableFraction } from "./pasture";
+import { createStoryState } from "./story";
 import { campGateToward } from "./path";
 import { createRng, type Rng } from "./rng";
 import {
@@ -308,6 +309,7 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
       transit: null,
     },
     features,
+    story: createStoryState(config.herd.headCount, config),
   };
   return { state, score };
 }

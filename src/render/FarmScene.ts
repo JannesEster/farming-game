@@ -3,6 +3,7 @@ import { CONFIG } from "../sim/config";
 import { COPY } from "../sim/format";
 import { clamp } from "../sim/math";
 import { clearSavedGame, initialGameState, saveGame } from "../sim/persist";
+import { popNextCard } from "../sim/story";
 import { campIdAt, moveHerd, stepDay } from "../sim/simulation";
 import { herdInTransit, herdWorldTile, pathTangent, tickTransitRealtime } from "../sim/transit";
 import {
@@ -53,6 +54,7 @@ import {
   type Hud,
   type SpeedMode,
 } from "./hud";
+import { mountMarketSheet, type MarketSheet } from "./marketSheet";
 import { doubleTapGoesHome } from "./tap";
 import { resolveGroundTap, resolveHerdTap } from "./selection";
 import { isoLayout, tileCenter, tileTop, worldToTile, type IsoLayout } from "./iso";
@@ -75,6 +77,7 @@ export class FarmScene extends Phaser.Scene {
   private state!: GameState;
   private layout!: IsoLayout;
   private hud!: Hud;
+  private market!: MarketSheet;
   private mode: SpeedMode = "play";
   private selected = false;
   private pendingCampId: number | null = null;
@@ -146,6 +149,14 @@ export class FarmScene extends Phaser.Scene {
     this.refreshHerdLabel();
     this.layoutCamera(true);
     this.bindInput();
+    this.market = mountMarketSheet({
+      getState: () => this.state,
+      onChange: () => {
+        this.syncHud();
+        this.persist();
+      },
+      onToast: (text) => this.hud.setHint(text),
+    });
     this.hud = mountHud({
       onSpeed: (mode) => this.setSpeed(mode),
       onMinimap: (nx, ny) => this.onMinimap(nx, ny),
@@ -154,12 +165,16 @@ export class FarmScene extends Phaser.Scene {
       onDeselect: () => this.deselectHerd(),
       onConfirmMove: () => this.confirmPendingMove(),
       onCancelMove: () => this.cancelPendingMove(),
+      onOpenMarket: () => this.market.open(),
     });
     this.hud.setSpeed(this.mode);
     this.hud.setHint(COPY.hintStart);
     this.syncHud();
     this.scale.on("resize", () => this.layoutCamera(false));
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.hud.destroy());
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.hud.destroy();
+      this.market.destroy();
+    });
     this.game.canvas.style.touchAction = "none";
     this.game.canvas.addEventListener("wheel", (event) => event.preventDefault(), { passive: false });
     this.game.canvas.addEventListener("contextmenu", (event) => event.preventDefault());
@@ -251,6 +266,31 @@ export class FarmScene extends Phaser.Scene {
         const dest = this.state.camps.find((camp) => camp.id >= 0 && camp.id !== from);
         return dest?.id ?? null;
       },
+      openMarket: () => {
+        this.market.open();
+        return true;
+      },
+      showFeedWarning: () => {
+        this.hud.showEventCard(
+          "Feed warning",
+          "12 days on bare veld. Move or sell before condition slips.",
+        );
+        return true;
+      },
+      showMonthSummary: () => {
+        this.hud.showEventCard(
+          "Month in review",
+          "Dry season ended. Income N$0 · Expenses N$8,500. Net N$-8,500. Rain season-to-date 42 mm.",
+        );
+        return true;
+      },
+      showDroughtChoice: () => {
+        if (this.state.story) {
+          this.state.story.drought.choicePending = "sell_down";
+        }
+        this.market.open();
+        return true;
+      },
     };
     (window as Window & { __farmCapture?: typeof bridge }).__farmCapture = bridge;
   }
@@ -268,7 +308,9 @@ export class FarmScene extends Phaser.Scene {
       }
       if (steps > 0) {
         this.refreshGrass();
+        this.flushStoryCards();
         this.syncHud();
+        this.market.refresh(this.state);
         this.persist();
       }
     }
@@ -295,6 +337,18 @@ export class FarmScene extends Phaser.Scene {
     this.applyPanInertia(delta);
     this.drawRain(time);
     this.drawRing();
+  }
+
+  private flushStoryCards(): void {
+    for (let i = 0; i < 2; i += 1) {
+      const card = popNextCard(this.state);
+      if (!card) break;
+      if (card.kind === "summary" || card.kind === "drought" || card.kind === "warning") {
+        this.hud.showEventCard(card.title, card.body);
+      } else {
+        this.hud.setHint(`${card.title}: ${card.body}`);
+      }
+    }
   }
 
   private setSpeed(mode: SpeedMode): void {

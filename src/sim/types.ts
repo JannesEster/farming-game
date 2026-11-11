@@ -1,3 +1,5 @@
+import type { StoryState } from "./storyTypes";
+
 export const TILE_HOMESTEAD = -1;
 export const TILE_OUTSIDE = -2;
 
@@ -70,6 +72,7 @@ export type GameState = {
   camps: CampState[];
   herd: HerdState;
   features: Feature[];
+  story?: StoryState;
 };
 
 export type MoveResult =
