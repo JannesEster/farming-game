@@ -718,7 +718,7 @@ function drawGarden(): HTMLCanvasElement {
 }
 
 export function maybeTermiteAt(x: number, y: number): boolean {
-  return hash(x, y) > 0.96;
+  return hash(x, y) > 0.992;
 }
 
 export function treeDeadAt(x: number, y: number): boolean {

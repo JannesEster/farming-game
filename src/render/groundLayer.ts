@@ -11,6 +11,7 @@ import {
   terrainVariant,
 } from "./colour";
 import { groundTextureKey } from "./art";
+import { PAINTED_TILE_NATIVE_W } from "./sprites";
 
 export type GroundBakeTarget =
   | { mode: "painted"; key: string; alpha: number; rotation: number; tint: number }
@@ -91,11 +92,15 @@ export function bakeTerrainChunk(
 
     const img = scene.add.image(localX, localY, target.key);
     if (target.mode === "painted") {
+      const scale = (tileW + 10) / PAINTED_TILE_NATIVE_W;
       img.setOrigin(0.5, 0);
-      img.setDisplaySize(tileW + 6, tileH + 6);
+      img.setScale(scale);
       img.setRotation(target.rotation);
       img.setAlpha(target.alpha);
-      img.setTint(target.tint);
+      if (target.tint !== 0xffffff) {
+        img.setTint(target.tint);
+        img.setTintMode(Phaser.TintModes.MULTIPLY);
+      }
     } else {
       img.setOrigin(0.5, 0);
       img.setDisplaySize(tileW + 6, tileH + 4);

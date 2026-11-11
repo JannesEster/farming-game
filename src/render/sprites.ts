@@ -95,8 +95,12 @@ export function cattleSpriteForCoat(coat: number): string {
 
 export function treeSpriteKey(x: number, y: number): string {
   const n = Math.abs(Math.sin(x * 9.17 + y * 23.11) * 43758.5453) % 1;
-  if (n > 0.92) return SPRITE_KEYS.shepherdsTree;
+  if (n > 0.986) return SPRITE_KEYS.shepherdsTree;
   return n > 0.5 ? SPRITE_KEYS.camelthorn2 : SPRITE_KEYS.camelthorn1;
+}
+
+export function maybePaintedTermiteAt(x: number, y: number): boolean {
+  return Math.abs(Math.sin(x * 5.17 + y * 11.3 + 1.9) * 43758.5453) % 1 > 0.992;
 }
 
 export function bushSpriteKey(x: number, y: number): string {

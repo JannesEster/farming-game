@@ -13,6 +13,7 @@ import {
   applyPanFriction,
   boundsCenter,
   boundsFromPoints,
+  openingFrameBounds,
   clampCameraScrollWithInsets,
   scrollToLayoutTip,
   worldXAtScreenX,
@@ -70,12 +71,14 @@ import {
   cattleDisplayScale,
   cattleSpriteForCoat,
   ensureCowDotTexture,
+  maybePaintedTermiteAt,
   maybeRockAt,
   paintedSpritesReady,
   preloadPaintedSprites,
   propSpriteForKind,
   SPRITE_KEYS,
 } from "./sprites";
+import { HOMESTEAD_FEATURE_KINDS, homesteadSpritePlacements } from "./homesteadLayout";
 
 type PointerRec = {
   x: number;
@@ -532,59 +535,55 @@ export class FarmScene extends Phaser.Scene {
 
   private paintProps(): void {
     if (this.paintedSprites) {
-      for (const feature of this.state.features) {
-        if (feature.kind === "track" || feature.kind === "reservoir") continue;
-        const def = propSpriteForKind(feature.kind, feature.x, feature.y, feature.scale);
-        if (!this.textures.exists(def.key)) continue;
-        const center = tileCenter(feature.x, feature.y, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
-        const depth = 10 + feature.x + feature.y;
+      const tileW = CONFIG.view.tileWidth;
+      const tileH = CONFIG.view.tileHeight;
+      for (const place of homesteadSpritePlacements()) {
+        if (!this.textures.exists(place.key)) continue;
+        const center = tileCenter(place.tileX, place.tileY, this.layout, tileW, tileH);
+        const footX = center.x + place.offsetX;
+        const footY = center.y + place.offsetY;
         const image = this.add
-          .image(center.x, center.y, def.key)
-          .setOrigin(def.originX, def.originY)
-          .setScale(def.scale)
-          .setDepth(depth + (feature.kind === "trough" ? 0 : 0.4));
+          .image(footX, footY, place.key)
+          .setOrigin(place.originX, place.originY)
+          .setScale(place.scale)
+          .setDepth(8 + footY * 0.04);
         this.propSprites.push(image);
+      }
+      for (const feature of this.state.features) {
+        if (HOMESTEAD_FEATURE_KINDS.has(feature.kind)) continue;
+        if (feature.kind === "tree" || feature.kind === "bush") {
+          const def = propSpriteForKind(feature.kind, feature.x, feature.y, feature.scale);
+          if (!this.textures.exists(def.key)) continue;
+          const center = tileCenter(feature.x, feature.y, this.layout, tileW, tileH);
+          const image = this.add
+            .image(center.x, center.y, def.key)
+            .setOrigin(def.originX, def.originY)
+            .setScale(def.scale)
+            .setDepth(8 + center.y * 0.04);
+          this.propSprites.push(image);
+        }
       }
       for (let y = 0; y < this.state.height; y += 1) {
         for (let x = 0; x < this.state.width; x += 1) {
           const id = this.state.campIds[y * this.state.width + x];
           if (id === TILE_HOMESTEAD || id === TILE_OUTSIDE || this.track.has(`${x},${y}`)) continue;
-          const center = tileCenter(x, y, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
-          const depth = 8 + x + y;
-          if (maybeTermiteAt(x, y)) {
+          const center = tileCenter(x, y, this.layout, tileW, tileH);
+          if (maybePaintedTermiteAt(x, y)) {
             const termite = this.add
               .image(center.x, center.y, SPRITE_KEYS.termiteMound)
-              .setOrigin(0.5, 0.9)
-              .setScale((CONFIG.view.tileWidth * 0.55) / 171)
-              .setDepth(depth);
+              .setOrigin(0.5, 0.92)
+              .setScale((tileW * 0.28) / 171)
+              .setDepth(7 + center.y * 0.04);
             this.propSprites.push(termite);
           } else if (maybeRockAt(x, y)) {
             const rock = this.add
               .image(center.x, center.y, SPRITE_KEYS.rockCluster)
               .setOrigin(0.5, 0.88)
-              .setScale((CONFIG.view.tileWidth * 0.5) / 160)
-              .setDepth(depth);
+              .setScale((tileW * 0.45) / 160)
+              .setDepth(7 + center.y * 0.04);
             this.propSprites.push(rock);
           }
         }
-      }
-      const house = this.state.features.find((f) => f.kind === "house");
-      if (house) {
-        const bakkieCenter = tileCenter(
-          house.x + 2,
-          house.y + 1,
-          this.layout,
-          CONFIG.view.tileWidth,
-          CONFIG.view.tileHeight,
-        );
-        const def = propSpriteForKind("bakkie", house.x, house.y, 1);
-        this.propSprites.push(
-          this.add
-            .image(bakkieCenter.x, bakkieCenter.y, def.key)
-            .setOrigin(0.5, 0.88)
-            .setScale((CONFIG.view.tileWidth * 1.1) / 320)
-            .setDepth(12 + house.x + house.y),
-        );
       }
       return;
     }
@@ -657,31 +656,34 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private paintLabels(): void {
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
     for (const camp of this.state.camps) {
+      const onHomestead = camp.tiles.every(
+        (tile) => this.state.campIds[tile.y * this.state.width + tile.x] === TILE_HOMESTEAD,
+      );
+      if (onHomestead) continue;
+
       let sx = 0;
       let sy = 0;
       for (const tile of camp.tiles) {
         sx += tile.x;
         sy += tile.y;
       }
-      const point = tileCenter(
-        sx / camp.tiles.length,
-        sy / camp.tiles.length,
-        this.layout,
-        CONFIG.view.tileWidth,
-        CONFIG.view.tileHeight,
-      );
+      const point = tileCenter(sx / camp.tiles.length, sy / camp.tiles.length, this.layout, tileW, tileH);
       const label = this.add
-        .text(point.x, point.y, String(camp.id + 1), {
+        .text(point.x, point.y - 6, String(camp.id + 1), {
           fontFamily: "Segoe UI, Helvetica Neue, sans-serif",
-          fontSize: `${CONFIG.view.labelSizePx}px`,
-          color: "#f7f0e2",
+          fontSize: "11px",
+          color: "#f8f2e4",
           stroke: "#2a1c12",
-          strokeThickness: 4,
-          fontStyle: "700",
+          strokeThickness: 2,
+          fontStyle: "600",
+          backgroundColor: "rgba(32, 20, 12, 0.55)",
+          padding: { x: 5, y: 2 },
         })
         .setOrigin(0.5, 0.5)
-        .setDepth(20000)
+        .setDepth(20000 + point.y * 0.01)
         .setResolution(2);
       this.campLabels.set(camp.id, label);
     }
@@ -1259,9 +1261,15 @@ export class FarmScene extends Phaser.Scene {
     const camera = this.cameras.main;
     this.refreshZoomLimits();
     if (resetView && this.homesteadBounds) {
-      const center = boundsCenter(this.homesteadBounds);
-      const preferred = preferredHomesteadZoom(
+      const frame = openingFrameBounds(
         this.homesteadBounds,
+        this.herdVisual.x,
+        this.herdVisual.y,
+        homesteadBoundsPad(CONFIG.view.tileWidth, CONFIG.view.tileHeight) * 0.5,
+      );
+      const center = boundsCenter(frame);
+      const preferred = preferredHomesteadZoom(
+        frame,
         camera.width,
         camera.height,
         CONFIG.view.tileWidth,

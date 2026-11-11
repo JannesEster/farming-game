@@ -233,6 +233,31 @@ export function boundsFromPoints(
   };
 }
 
+export function mergeViewBounds(a: WorldBounds, b: WorldBounds, padPx = 0): WorldBounds {
+  return {
+    minX: Math.min(a.minX, b.minX) - padPx,
+    minY: Math.min(a.minY, b.minY) - padPx,
+    maxX: Math.max(a.maxX, b.maxX) + padPx,
+    maxY: Math.max(a.maxY, b.maxY) + padPx,
+  };
+}
+
+export function openingFrameBounds(
+  homestead: WorldBounds,
+  herdX: number,
+  herdY: number,
+  padPx: number,
+): WorldBounds {
+  const herdPad = padPx * 2.2;
+  const herdBox: WorldBounds = {
+    minX: herdX - herdPad,
+    minY: herdY - herdPad,
+    maxX: herdX + herdPad,
+    maxY: herdY + herdPad,
+  };
+  return mergeViewBounds(homestead, herdBox, padPx);
+}
+
 export function boundsCenter(bounds: WorldBounds): { x: number; y: number } {
   return { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
 }

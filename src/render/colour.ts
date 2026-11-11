@@ -43,16 +43,22 @@ export function tileTint(state: GameState, x: number, y: number, track: Set<stri
 export function paintedTileKey(state: GameState, x: number, y: number, track: Set<string>): string {
   if (track.has(`${x},${y}`)) return SPRITE_KEYS.tileTrack;
   const id = state.campIds[y * state.width + x];
-  if (id === TILE_OUTSIDE || id === TILE_HOMESTEAD) return SPRITE_KEYS.tileSand;
+  if (id === TILE_OUTSIDE) return SPRITE_KEYS.tileSand;
+  if (id === TILE_HOMESTEAD) {
+    return hash01(x, y, 4.2) > 0.88 ? SPRITE_KEYS.tileSand : SPRITE_KEYS.tileDryGrass;
+  }
   const camp = state.camps.find((item) => item.id === id);
-  if (!camp) return SPRITE_KEYS.tileSand;
+  if (!camp) return SPRITE_KEYS.tileDryGrass;
   const frac = grazeableFraction(camp);
-  if (frac < CONFIG.pasture.moveWarnGrazeableFraction) return SPRITE_KEYS.tileOvergrazed;
   const dry = !isRainyMonth(state.date.month, CONFIG);
-  if (dry && frac < 0.68) return SPRITE_KEYS.tileDryGrass;
-  if (!dry && frac > 0.42) return SPRITE_KEYS.tileGreenGrass;
-  if (!dry) return SPRITE_KEYS.tileGreenGrass;
-  return frac > 0.55 ? SPRITE_KEYS.tileDryGrass : SPRITE_KEYS.tileOvergrazed;
+
+  if (frac < 0.28) return SPRITE_KEYS.tileOvergrazed;
+  if (frac < 0.22 && hash01(x, y, 6.1) > 0.5) return SPRITE_KEYS.tileSand;
+
+  if (!dry && frac > 0.45) return SPRITE_KEYS.tileGreenGrass;
+  if (frac > 0.8 && hash01(x, y, 3.3) > 0.42) return SPRITE_KEYS.tileGreenGrass;
+
+  return SPRITE_KEYS.tileDryGrass;
 }
 
 export function paintedTileAlpha(state: GameState, x: number, y: number, track: Set<string>): number {
@@ -78,7 +84,12 @@ export function paintedTileRotation(x: number, y: number): number {
 }
 
 export function paintedTileTint(_state: GameState, x: number, y: number, _track: Set<string>): number {
-  return shade(0xffffff, x, y, 10);
+  const jitter = (hash01(x, y, 8.8) - 0.5) * 6;
+  const base = 0xf8f4ec;
+  const r = Math.max(240, Math.min(255, ((base >> 16) & 255) + jitter));
+  const g = Math.max(238, Math.min(255, ((base >> 8) & 255) + jitter * 0.8));
+  const b = Math.max(232, Math.min(255, (base & 255) + jitter * 0.5));
+  return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
 }
 
 export function terrainVariant(x: number, y: number, kind: GroundTexture): number {

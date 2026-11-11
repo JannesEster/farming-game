@@ -104,7 +104,7 @@ export function collectFenceSegments(
 }
 
 /** World px between the two fence wires so they read as separate strands at ~0.53 zoom. */
-export const FENCE_WIRE_STRAND_OFFSET_PX = 8;
+export const FENCE_WIRE_STRAND_OFFSET_PX = 5;
 
 export function wireStrandOffset(
   x1: number,
@@ -152,9 +152,9 @@ export function drawFences(graphics: Phaser.GameObjects.Graphics, segments: Fenc
     }
   };
 
-  drawBucket(buckets.inner, CONFIG.view.fencePx, palette.fenceWire, 0.9);
-  drawBucket(buckets.boundary, CONFIG.view.fenceBoundaryPx, palette.fenceStrong, 1);
-  drawBucket(buckets.selected, CONFIG.view.fenceSelectedPx, palette.fenceSelected, 1);
+  drawBucket(buckets.inner, Math.max(1.2, CONFIG.view.fencePx * 0.65), palette.fenceWire, 0.72);
+  drawBucket(buckets.boundary, Math.max(1.6, CONFIG.view.fenceBoundaryPx * 0.7), palette.fenceStrong, 0.82);
+  drawBucket(buckets.selected, CONFIG.view.fenceSelectedPx * 0.85, palette.fenceSelected, 0.95);
 
   const spacing = CONFIG.view.fencePostSpacingPx;
   for (const segment of segments) {
