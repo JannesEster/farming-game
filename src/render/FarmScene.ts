@@ -849,15 +849,14 @@ export class FarmScene extends Phaser.Scene {
 
   private clampScroll(): void {
     const camera = this.cameras.main;
-    const viewW = camera.width / camera.zoom;
-    const viewH = camera.height / camera.zoom;
     const next = clampCameraScroll(
       camera.scrollX,
       camera.scrollY,
       this.layout.width,
       this.layout.height,
-      viewW,
-      viewH,
+      camera.width,
+      camera.height,
+      camera.zoom,
     );
     camera.scrollX = next.scrollX;
     camera.scrollY = next.scrollY;

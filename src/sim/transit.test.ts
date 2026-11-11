@@ -68,6 +68,32 @@ describe("herd transit", () => {
     expect(playMax - fastMax).toBeGreaterThanOrEqual(4000);
   });
 
+  it("reaches the correct clock after many 16 ms ticks", () => {
+    const state = createGame(3300);
+    const fromId = state.herd.campId;
+  let longestKm = 0;
+    for (const camp of state.camps) {
+      if (camp.id === fromId) continue;
+      moveHerd(state, camp.id);
+      longestKm = Math.max(longestKm, state.herd.transit!.distanceKm);
+      state.herd.transit = null;
+    }
+    const dest = state.camps.find((c) => c.id !== fromId);
+    if (!dest) throw new Error("expected destination");
+    moveHerd(state, dest.id);
+    state.date = { year: 2026, month: 8, day: 1, hour: 6 };
+    const expectedHours = walkGameHours(state.herd.transit!.distanceKm);
+    if (Math.abs(state.herd.transit!.distanceKm - 4.54) > 0.5) {
+      expect(expectedHours).toBeGreaterThan(0.2);
+    }
+    while (herdInTransit(state.herd)) {
+      tickTransitRealtime(state, 16, "play", CONFIG);
+    }
+    expect(state.date.day).toBe(1);
+    expect(Math.floor(state.date.hour)).toBeGreaterThanOrEqual(6 + Math.floor(expectedHours));
+    expect(state.date.hour).toBeCloseTo(6 + expectedHours, 2);
+  });
+
   it("advances the game clock during a walk", () => {
     const state = createGame(9);
     const dest = state.camps.find((c) => c.id !== state.herd.campId);

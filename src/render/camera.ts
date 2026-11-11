@@ -1,21 +1,49 @@
 import { clamp } from "../sim/math";
 
-/** Scroll correction so zoom stays anchored on a screen point. */
-/** Scene scroll limits without Phaser camera bounds (allows negative scroll to centre the map). */
+/** World x of the left edge of the visible view (Phaser 4 scroll model). */
+export function visibleWorldLeft(scrollX: number, screenW: number, zoom: number): number {
+  const viewW = screenW / zoom;
+  return scrollX + screenW / 2 - viewW / 2;
+}
+
+/** Scroll in screen space that centres the layout when the zoomed view is larger than the map. */
+export function centreScrollWhenViewExceedsLayout(
+  layoutSize: number,
+  screenSize: number,
+): number {
+  return layoutSize / 2 - screenSize / 2;
+}
+
+/**
+ * Phaser 4: world at screen centre is scroll + screenSize / 2. Clamp scroll so the map stays on screen.
+ */
 export function clampCameraScroll(
   scrollX: number,
   scrollY: number,
   layoutW: number,
   layoutH: number,
-  viewW: number,
-  viewH: number,
+  screenW: number,
+  screenH: number,
+  zoom: number,
 ): { scrollX: number; scrollY: number } {
+  const viewW = screenW / zoom;
+  const viewH = screenH / zoom;
   let sx = scrollX;
   let sy = scrollY;
-  if (viewW >= layoutW) sx = (layoutW - viewW) / 2;
-  else sx = clamp(scrollX, 0, layoutW - viewW);
-  if (viewH >= layoutH) sy = (layoutH - viewH) / 2;
-  else sy = clamp(scrollY, 0, layoutH - viewH);
+  if (viewW >= layoutW) {
+    sx = centreScrollWhenViewExceedsLayout(layoutW, screenW);
+  } else {
+    const minX = viewW / 2 - screenW / 2;
+    const maxX = layoutW - viewW / 2 - screenW / 2;
+    sx = clamp(scrollX, minX, maxX);
+  }
+  if (viewH >= layoutH) {
+    sy = centreScrollWhenViewExceedsLayout(layoutH, screenH);
+  } else {
+    const minY = viewH / 2 - screenH / 2;
+    const maxY = layoutH - viewH / 2 - screenH / 2;
+    sy = clamp(scrollY, minY, maxY);
+  }
   return { scrollX: sx, scrollY: sy };
 }
 
@@ -216,12 +244,7 @@ export function computeZoomLimits(input: ZoomLimitsInput): { minZoom: number; ma
   const mapTiles = input.mapWidth * input.mapHeight;
   let minZoom: number;
   if (chunked) {
-    const overview = minZoomForCampOverview(
-      fullMin,
-      input.campCount ?? 12,
-      input.minCampsVisibleAtMinZoom ?? 4,
-    );
-    minZoom = Math.min(fullMin, overview);
+    minZoom = fullMin;
   } else {
     const tileBudget = limitsTileBudget(
       input.mapWidth,

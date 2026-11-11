@@ -23,7 +23,7 @@ export function addHours(date: CalendarDate, hours: number): CalendarDate {
     day = next.day;
     carry -= 24;
   }
-  return { year, month, day, hour: Math.floor(carry) };
+  return { year, month, day, hour: carry };
 }
 
 export function addDays(date: CalendarDate, days: number): CalendarDate {

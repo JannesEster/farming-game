@@ -25,7 +25,7 @@ export const COPY = {
 export function formatDate(date: CalendarDate): string {
   const month = MONTHS[date.month - 1] ?? "";
   const hour = date.hour ?? 0;
-  const hh = String(hour).padStart(2, "0");
+  const hh = String(Math.floor(hour)).padStart(2, "0");
   return `${date.day} ${month} ${date.year}, ${hh}:00`;
 }
 

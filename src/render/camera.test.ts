@@ -3,16 +3,17 @@ import {
   applyPanFriction,
   boundsCenter,
   boundsFromPoints,
+  centreScrollWhenViewExceedsLayout,
   clampCameraScroll,
   clampZoom,
   computeZoomLimits,
   fullMapZoom,
-  minZoomForCampOverview,
   homesteadBoundsPad,
   minimapTileFromNormalized,
   pinchCenter,
   pinchZoom,
   preferredHomesteadZoom,
+  visibleWorldLeft,
   zoomScrollDelta,
   zoomToFrameBounds,
 } from "./camera";
@@ -23,18 +24,29 @@ const TILE_H = 32;
 const PAD = 24;
 
 describe("clampCameraScroll", () => {
-  it("uses negative scroll to centre the map when the view is wider than the layout", () => {
-    const layoutW = 2400;
-    const viewW = 5200;
-    const result = clampCameraScroll(0, 0, layoutW, 1200, viewW, 800);
-    expect(result.scrollX).toBe((layoutW - viewW) / 2);
-    expect(result.scrollX).toBeLessThan(0);
+  it("centres the ranch on screen when the zoomed view exceeds the layout", () => {
+    const layoutW = 5200;
+    const screenW = 390;
+    const zoom = 0.073;
+    const result = clampCameraScroll(0, 0, layoutW, 1200, screenW, 844, zoom);
+    expect(result.scrollX).toBeCloseTo(centreScrollWhenViewExceedsLayout(layoutW, screenW), 5);
+    const left = visibleWorldLeft(result.scrollX, screenW, zoom);
+    const viewW = screenW / zoom;
+    expect(left).toBeLessThanOrEqual(0);
+    expect(left + viewW).toBeGreaterThanOrEqual(layoutW);
   });
 
   it("clamps scroll when the view is smaller than the layout", () => {
-    const result = clampCameraScroll(9999, 9999, 2400, 1200, 400, 300);
-    expect(result.scrollX).toBe(2000);
-    expect(result.scrollY).toBe(900);
+    const screenW = 390;
+    const zoom = 0.53;
+    const viewW = screenW / zoom;
+    const minX = viewW / 2 - screenW / 2;
+    const maxX = 2400 - viewW / 2 - screenW / 2;
+    const result = clampCameraScroll(9999, 9999, 2400, 1200, screenW, 844, zoom);
+    expect(result.scrollX).toBeCloseTo(maxX, 5);
+    expect(visibleWorldLeft(result.scrollX, screenW, zoom)).toBeGreaterThanOrEqual(0);
+    expect(visibleWorldLeft(result.scrollX, screenW, zoom) + viewW).toBeLessThanOrEqual(2400);
+    expect(minX).toBeLessThan(maxX);
   });
 });
 
@@ -142,7 +154,7 @@ describe("zoom limits for map size", () => {
     expect(limits.minZoom).toBeCloseTo(full * 0.92, 4);
   });
 
-  it("lets a chunked 76 by 76 ranch pinch out far enough for four camps", () => {
+  it("pins minimum zoom to whole-ranch fit on the chunked 76 by 76 ranch", () => {
     const ranch = isoLayout(76, 76, TILE_W, TILE_H, PAD);
     const full = fullMapZoom(ranch.width, ranch.height, viewport.w, viewport.h, fitMargin);
     const limits = computeZoomLimits({
@@ -159,11 +171,13 @@ describe("zoom limits for map size", () => {
       maxOnScreenTiles: 900,
       terrainChunkTiles: 16,
       campCount: 14,
-      minCampsVisibleAtMinZoom: 4,
     });
-    const overview = minZoomForCampOverview(full * 0.92, 14, 4);
-    expect(limits.minZoom).toBeCloseTo(Math.min(full * 0.92, overview), 5);
-    expect(limits.minZoom).toBeLessThan(full * 0.92);
+    expect(limits.minZoom).toBeCloseTo(full * 0.92, 4);
+    const scroll = clampCameraScroll(0, 0, ranch.width, ranch.height, viewport.w, viewport.h, limits.minZoom);
+    const left = visibleWorldLeft(scroll.scrollX, viewport.w, limits.minZoom);
+    const viewW = viewport.w / limits.minZoom;
+    expect(left).toBeLessThanOrEqual(0);
+    expect(left + viewW).toBeGreaterThanOrEqual(ranch.width);
   });
 });
 
