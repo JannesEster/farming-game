@@ -216,6 +216,211 @@ export function paintLivestockTruck(): HTMLCanvasElement {
   return canvas;
 }
 
+function yardCanvas(width: number, height: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } | null {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  return ctx ? { canvas, ctx } : null;
+}
+
+/** Four light-grey rails and a post, in the same 3/4 light as the rest of the map. */
+function steelRun(
+  ctx: CanvasRenderingContext2D,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  postAtEnd = true,
+): void {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = (-dy / len) * 5;
+  const ny = (dx / len) * 5;
+  ctx.lineCap = "round";
+  for (let i = 0; i < 4; i += 1) {
+    ctx.strokeStyle = i === 0 ? "#f4f7fa" : "#c5ced6";
+    ctx.lineWidth = i === 0 ? 5 : 3.5;
+    ctx.beginPath();
+    ctx.moveTo(x1 + nx * i, y1 + ny * i);
+    ctx.lineTo(x2 + nx * i, y2 + ny * i);
+    ctx.stroke();
+  }
+  const post = (x: number, y: number) => {
+    ctx.fillStyle = "#8e989f";
+    ctx.fillRect(x - 4, y - 22, 8, 28);
+    ctx.fillStyle = "#d5dde4";
+    ctx.fillRect(x - 5, y - 24, 10, 5);
+  };
+  post(x1, y1);
+  if (postAtEnd) post(x2, y2);
+  const posts = Math.max(1, Math.floor(len / 70));
+  for (let i = 1; i < posts; i += 1) {
+    const t = i / posts;
+    post(x1 + dx * t, y1 + dy * t);
+  }
+}
+
+/** Enclosed steel pen: bare dirt floor and a full rectangle of rails. */
+export function paintHoldingPen(): HTMLCanvasElement {
+  const painted = yardCanvas(480, 300);
+  if (!painted) return document.createElement("canvas");
+  const { canvas, ctx } = painted;
+  ctx.fillStyle = "rgba(36, 22, 12, 0.3)";
+  ctx.beginPath();
+  ctx.ellipse(250, 262, 190, 16, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(86, 86);
+  ctx.lineTo(392, 108);
+  ctx.lineTo(430, 210);
+  ctx.lineTo(52, 188);
+  ctx.closePath();
+  ctx.fillStyle = "#4e301c";
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(118, 108);
+  ctx.lineTo(360, 124);
+  ctx.lineTo(390, 186);
+  ctx.lineTo(92, 168);
+  ctx.closePath();
+  ctx.fillStyle = "#6a4330";
+  ctx.fill();
+  steelRun(ctx, 86, 86, 392, 108);
+  steelRun(ctx, 392, 108, 430, 210);
+  steelRun(ctx, 52, 188, 430, 210);
+  steelRun(ctx, 52, 188, 86, 86);
+  return canvas;
+}
+
+/** Curved forcing race, rails only, dirt in the lane. */
+export function paintRace(): HTMLCanvasElement {
+  const painted = yardCanvas(360, 260);
+  if (!painted) return document.createElement("canvas");
+  const { canvas, ctx } = painted;
+  ctx.fillStyle = "rgba(36, 22, 12, 0.28)";
+  ctx.beginPath();
+  ctx.ellipse(180, 230, 140, 14, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(36, 200);
+  ctx.quadraticCurveTo(70, 120, 150, 78);
+  ctx.quadraticCurveTo(230, 46, 320, 58);
+  ctx.lineTo(300, 96);
+  ctx.quadraticCurveTo(220, 92, 150, 118);
+  ctx.quadraticCurveTo(90, 150, 70, 214);
+  ctx.closePath();
+  ctx.fillStyle = "#5a3824";
+  ctx.fill();
+  const curve = (yShift: number) => {
+    ctx.beginPath();
+    ctx.moveTo(36, 200 + yShift);
+    ctx.quadraticCurveTo(70, 120 + yShift, 150, 78 + yShift * 0.4);
+    ctx.quadraticCurveTo(230, 46 + yShift * 0.2, 320, 58);
+  };
+  for (let i = 0; i < 3; i += 1) {
+    ctx.strokeStyle = i === 0 ? "#f4f7fa" : "#c5ced6";
+    ctx.lineWidth = 4;
+    curve(-i * 6);
+    ctx.stroke();
+  }
+  for (let i = 0; i < 3; i += 1) {
+    ctx.strokeStyle = i === 0 ? "#f4f7fa" : "#c5ced6";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(70, 214 - i * 6);
+    ctx.quadraticCurveTo(110, 160, 168, 128);
+    ctx.quadraticCurveTo(230, 100, 300, 96);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#8e989f";
+  for (const [x, y] of [
+    [36, 200],
+    [150, 78],
+    [320, 58],
+    [70, 214],
+    [168, 128],
+    [300, 96],
+  ] as const) {
+    ctx.fillRect(x - 4, y - 18, 8, 26);
+  }
+  return canvas;
+}
+
+/** Narrow steel crush that sits under the yard roof. */
+export function paintCrush(): HTMLCanvasElement {
+  const painted = yardCanvas(220, 150);
+  if (!painted) return document.createElement("canvas");
+  const { canvas, ctx } = painted;
+  ctx.fillStyle = "#5a3824";
+  ctx.fillRect(48, 48, 124, 62);
+  steelRun(ctx, 48, 48, 172, 48, true);
+  steelRun(ctx, 48, 110, 172, 110, true);
+  ctx.fillStyle = "#d5dde4";
+  ctx.fillRect(168, 40, 8, 78);
+  return canvas;
+}
+
+/** White roof over the crush only. The lower half of the canvas is empty. */
+export function paintHandlingRoof(): HTMLCanvasElement {
+  const painted = yardCanvas(340, 150);
+  if (!painted) return document.createElement("canvas");
+  const { canvas, ctx } = painted;
+  ctx.fillStyle = "#7d868c";
+  ctx.fillRect(70, 96, 8, 36);
+  ctx.fillRect(262, 96, 8, 36);
+  ctx.fillStyle = "#f7f4ee";
+  ctx.beginPath();
+  ctx.moveTo(28, 96);
+  ctx.lineTo(170, 36);
+  ctx.lineTo(312, 96);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#d9d3c6";
+  ctx.beginPath();
+  ctx.moveTo(170, 36);
+  ctx.lineTo(312, 96);
+  ctx.lineTo(312, 108);
+  ctx.lineTo(170, 48);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#2c3440";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(28, 96);
+  ctx.lineTo(170, 36);
+  ctx.lineTo(312, 96);
+  ctx.stroke();
+  return canvas;
+}
+
+/** Raised ramp with side rails, at the road end of the race. */
+export function paintLoadingRamp(): HTMLCanvasElement {
+  const painted = yardCanvas(240, 170);
+  if (!painted) return document.createElement("canvas");
+  const { canvas, ctx } = painted;
+  ctx.fillStyle = "rgba(36, 22, 12, 0.3)";
+  ctx.beginPath();
+  ctx.ellipse(120, 150, 90, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#8a7b68";
+  ctx.beginPath();
+  ctx.moveTo(36, 128);
+  ctx.lineTo(200, 128);
+  ctx.lineTo(176, 48);
+  ctx.lineTo(64, 48);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#6d5e4e";
+  ctx.fillRect(168, 48, 28, 80);
+  steelRun(ctx, 64, 48, 36, 128, true);
+  steelRun(ctx, 176, 48, 200, 128, true);
+  ctx.fillStyle = "#c5ced6";
+  ctx.fillRect(78, 36, 90, 6);
+  return canvas;
+}
+
 export function ensureStep3bPropTextures(scene: Phaser.Scene): void {
   if (!scene.textures.exists(SPRITE_KEYS.reservoir)) {
     const g = scene.make.graphics({ x: 0, y: 0 });
@@ -258,98 +463,19 @@ export function ensureStep3bPropTextures(scene: Phaser.Scene): void {
     g.destroy();
   }
   if (!scene.textures.exists(SPRITE_KEYS.crush)) {
-    const g = scene.make.graphics({ x: 0, y: 0 });
-    g.fillStyle(0x3a2a18, 0.28);
-    g.fillEllipse(56, 86, 70, 12);
-    g.fillStyle(0x8a9298, 1);
-    g.fillRect(22, 28, 8, 52);
-    g.fillRect(82, 28, 8, 52);
-    g.fillStyle(0xb7c0c8, 1);
-    g.fillRect(22, 28, 68, 6);
-    g.fillRect(22, 46, 68, 5);
-    g.fillRect(22, 62, 68, 5);
-    g.lineStyle(2, 0x2c3440, 1);
-    g.strokeRect(22, 28, 68, 52);
-    g.generateTexture(SPRITE_KEYS.crush, 112, 96);
-    g.destroy();
+    scene.textures.addCanvas(SPRITE_KEYS.crush, paintCrush());
   }
   if (!scene.textures.exists(SPRITE_KEYS.holdingPen)) {
-    const g = scene.make.graphics({ x: 0, y: 0 });
-    g.fillStyle(0x3a2a18, 0.3);
-    g.fillEllipse(80, 100, 90, 16);
-    g.fillStyle(0x6a5438, 1);
-    g.fillEllipse(80, 78, 78, 28);
-    g.fillStyle(0x8a9298, 1);
-    g.fillRect(28, 36, 7, 48);
-    g.fillRect(124, 36, 7, 48);
-    g.fillRect(76, 30, 7, 52);
-    g.fillStyle(0xd5dde4, 1);
-    g.fillRect(28, 40, 103, 4);
-    g.fillRect(28, 56, 103, 4);
-    g.fillRect(28, 70, 103, 4);
-    g.generateTexture(SPRITE_KEYS.holdingPen, 160, 120);
-    g.destroy();
+    scene.textures.addCanvas(SPRITE_KEYS.holdingPen, paintHoldingPen());
   }
   if (!scene.textures.exists(SPRITE_KEYS.race)) {
-    const g = scene.make.graphics({ x: 0, y: 0 });
-    g.fillStyle(0x3a2a18, 0.28);
-    g.fillEllipse(70, 100, 70, 12);
-    g.lineStyle(5, 0x8a9298, 1);
-    g.beginPath();
-    g.moveTo(24, 80);
-    g.lineTo(48, 48);
-    g.lineTo(90, 28);
-    g.moveTo(48, 88);
-    g.lineTo(78, 62);
-    g.lineTo(110, 46);
-    g.strokePath();
-    g.fillStyle(0xd5dde4, 1);
-    g.fillCircle(24, 80, 4);
-    g.fillCircle(90, 28, 4);
-    g.fillCircle(48, 88, 4);
-    g.fillCircle(110, 46, 4);
-    g.generateTexture(SPRITE_KEYS.race, 140, 110);
-    g.destroy();
+    scene.textures.addCanvas(SPRITE_KEYS.race, paintRace());
   }
   if (!scene.textures.exists(SPRITE_KEYS.handlingRoof)) {
-    const g = scene.make.graphics({ x: 0, y: 0 });
-    g.fillStyle(0x3a2a18, 0.25);
-    g.fillEllipse(90, 100, 100, 16);
-    g.fillStyle(0x6a7278, 1);
-    g.fillRect(36, 62, 6, 32);
-    g.fillRect(138, 62, 6, 32);
-    g.fillStyle(0xf4f1ea, 1);
-    g.beginPath();
-    g.moveTo(18, 62);
-    g.lineTo(90, 28);
-    g.lineTo(162, 62);
-    g.closePath();
-    g.fillPath();
-    g.fillStyle(0xd9d3c8, 1);
-    g.fillTriangle(90, 28, 162, 62, 162, 70);
-    g.lineStyle(2, 0x2c3440, 1);
-    g.strokeTriangle(18, 62, 90, 28, 162, 62);
-    g.generateTexture(SPRITE_KEYS.handlingRoof, 180, 110);
-    g.destroy();
+    scene.textures.addCanvas(SPRITE_KEYS.handlingRoof, paintHandlingRoof());
   }
   if (!scene.textures.exists(SPRITE_KEYS.loadingRamp)) {
-    const g = scene.make.graphics({ x: 0, y: 0 });
-    g.fillStyle(0x3a2a18, 0.3);
-    g.fillEllipse(56, 86, 70, 12);
-    g.fillStyle(0x8d8070, 1);
-    g.fillTriangle(18, 78, 96, 78, 70, 34);
-    g.fillStyle(0xb7c0c8, 1);
-    g.lineStyle(4, 0x8a9298, 1);
-    g.beginPath();
-    g.moveTo(28, 74);
-    g.lineTo(62, 40);
-    g.moveTo(48, 78);
-    g.lineTo(78, 46);
-    g.strokePath();
-    g.fillStyle(0x6a7278, 1);
-    g.fillRect(16, 70, 8, 16);
-    g.generateTexture(SPRITE_KEYS.loadingRamp, 112, 96);
-    g.destroy();
+    scene.textures.addCanvas(SPRITE_KEYS.loadingRamp, paintLoadingRamp());
   }
   if (!scene.textures.exists(SPRITE_KEYS.cattleTruck)) {
     scene.textures.addCanvas(SPRITE_KEYS.cattleTruck, paintLivestockTruck());
@@ -562,20 +688,21 @@ export function propSpriteForKind(kind: string, x: number, y: number, featureSca
       // TODO(A): a small array about 6 m across.
       return { key: SPRITE_KEYS.solarPump, originX: 0.5, originY: 0.94, scale: scaleToSpanMetres(112, 6) };
     case "crush":
-      return { key: SPRITE_KEYS.crush, originX: 0.5, originY: 0.88, scale: scaleToSpanMetres(112, 5) };
+      return { key: SPRITE_KEYS.crush, originX: 0.5, originY: 0.72, scale: (tileW * 1.7) / 220 };
     case "holding_pen":
+      // A scale of 1 spans about 3.6 tiles, so the three pens read as a real yard.
       return {
         key: SPRITE_KEYS.holdingPen,
         originX: 0.5,
-        originY: 0.82,
-        scale: ((tileW * 1.35) / 160) * featureScale,
+        originY: 0.58,
+        scale: ((tileW * 3.6) / 480) * featureScale,
       };
     case "race":
-      return { key: SPRITE_KEYS.race, originX: 0.5, originY: 0.84, scale: (tileW * 1.15) / 140 };
+      return { key: SPRITE_KEYS.race, originX: 0.5, originY: 0.62, scale: (tileW * 2.8) / 360 };
     case "handling_roof":
-      return { key: SPRITE_KEYS.handlingRoof, originX: 0.5, originY: 0.72, scale: (tileW * 2.1) / 180 };
+      return { key: SPRITE_KEYS.handlingRoof, originX: 0.5, originY: 0.96, scale: (tileW * 2.5) / 340 };
     case "loading_ramp":
-      return { key: SPRITE_KEYS.loadingRamp, originX: 0.5, originY: 0.92, scale: scaleToSpanMetres(112, 7) };
+      return { key: SPRITE_KEYS.loadingRamp, originX: 0.42, originY: 0.78, scale: (tileW * 2.2) / 240 };
     case "cattle_truck":
       // Cab plus two slatted trailers. Length is a visual stand-in for the road train in the photos.
       return { key: SPRITE_KEYS.cattleTruck, originX: 0.12, originY: 0.9, scale: scaleToSpanMetres(640, 22) };

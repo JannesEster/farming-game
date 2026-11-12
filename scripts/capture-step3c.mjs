@@ -124,6 +124,7 @@ async function main() {
   try {
     await waitForServer("http://127.0.0.1:4173/");
     const browser = await chromium.launch();
+    const onlyShots = new Set(process.argv.slice(2));
     const allHashes = {};
     for (const viewport of [
       { name: "desktop", width: 1280, height: 800 },
@@ -133,6 +134,7 @@ async function main() {
       await prepPage(page);
       const hashes = {};
 
+      if (onlyShots.size === 0) {
       const escapedOk = await page.evaluate(() => window.__farmCapture.prepareEscapeCapture());
       await page.waitForTimeout(250);
       const escaped = await page.evaluate(() => window.__farmCapture.namedSpritesInView("escaped-animal"));
@@ -199,44 +201,35 @@ async function main() {
       const facingPath = path.join(outDir, `${viewport.name}-cows-facing.png`);
       await page.screenshot({ path: facingPath });
       hashes.facing = await fileHash(facingPath);
+      }
 
+      if (onlyShots.size === 0 || onlyShots.has("truck")) {
       const truckOk = await page.evaluate(() => window.__farmCapture.prepareTruckRampCapture());
       await page.waitForTimeout(250);
-      const truck = await page.evaluate(() => window.__farmCapture.namedSpritesInView("cattle-truck"));
-      if (!truckOk || truck.count < 1 || truck.maxScreenPx < 24) {
-        await fail(page, viewport.name, "cattle truck not at the ramp", truck);
+      const truck = await page.evaluate(() => window.__farmCapture.yardCaptureAudit());
+      if (!truckOk || truck.pens < 3 || truck.cattle < 5 || truck.truckOverlapsPens) {
+        await fail(page, viewport.name, "cattle truck not beside the pens", truck);
       }
-      const sale = await page.evaluate(() => window.__farmCapture.namedSpritesInView("cut-out-animal"));
-      if (sale.count < 2) await fail(page, viewport.name, "sale animals not at the yards", sale);
       await assertHerdPicture(page, viewport.name, "truck");
       const truckPath = path.join(outDir, `${viewport.name}-cattle-truck-ramp.png`);
       await page.screenshot({ path: truckPath });
       hashes.truck = await fileHash(truckPath);
+      }
 
+      if (onlyShots.size === 0 || onlyShots.has("handling")) {
       const handlingOk = await page.evaluate(() => window.__farmCapture.prepareHandlingCapture());
       await page.waitForTimeout(250);
-      const handling = await page.evaluate(() => ({
-        pens: window.__farmCapture.auditKind("holding_pen"),
-        crush: window.__farmCapture.auditKind("crush"),
-        ramp: window.__farmCapture.auditKind("loading_ramp"),
-        truck: window.__farmCapture.namedSpritesInView("cattle-truck"),
-        sale: window.__farmCapture.namedSpritesInView("cut-out-animal"),
-      }));
-      if (
-        !handlingOk ||
-        handling.pens.inView < 2 ||
-        handling.crush.inView < 1 ||
-        handling.ramp.inView < 1 ||
-        handling.truck.count < 1 ||
-        handling.sale.count < 2
-      ) {
+      const handling = await page.evaluate(() => window.__farmCapture.yardCaptureAudit());
+      if (!handlingOk || handling.pens < 3 || handling.cattle < 5 || handling.truckOverlapsPens) {
         await fail(page, viewport.name, "handling yard not in view", handling);
       }
       await assertHerdPicture(page, viewport.name, "handling");
       const handlingPath = path.join(outDir, `${viewport.name}-cattle-handling.png`);
       await page.screenshot({ path: handlingPath });
       hashes.handling = await fileHash(handlingPath);
+      }
 
+      if (onlyShots.size === 0) {
       const overviewOk = await page.evaluate(() => window.__farmCapture.prepareOverviewCapture());
       await page.waitForTimeout(200);
       if (!overviewOk) await fail(page, viewport.name, "homestead and handling yard not both in view", {});
@@ -244,6 +237,7 @@ async function main() {
       const overviewPath = path.join(outDir, `${viewport.name}-farm-overview.png`);
       await page.screenshot({ path: overviewPath });
       hashes.overview = await fileHash(overviewPath);
+      }
 
       assertDistinct(hashes, viewport.name);
       Object.assign(allHashes, Object.fromEntries(Object.entries(hashes).map(([key, value]) => [`${viewport.name}-${key}`, value])));

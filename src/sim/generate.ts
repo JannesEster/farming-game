@@ -295,7 +295,7 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
   });
 
   const house = features.find((feature) => feature.kind === "house") ?? { x: hx + 1, y: hy + 1 };
-  placeCattleHandlingYard({
+  const yardTiles = placeCattleHandlingYard({
     grid: finalGrid,
     width,
     height,
@@ -305,6 +305,7 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
   });
 
   const occupied = new Set(features.map((feature) => `${feature.x},${feature.y}`));
+  for (const tile of yardTiles) occupied.add(`${tile.x},${tile.y}`);
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const id = finalGrid[idx(x, y, width)];

@@ -6,6 +6,7 @@ import type { HerdOffset } from "./art";
 import { offsetsForHerd } from "./herdLayout";
 import { tileCenter, type IsoLayout } from "./iso";
 import { cowOctantFromScreen } from "./sprites";
+import { yardSlots } from "./yardDraw";
 
 export type AnimalSpriteRole = "herd-animal" | "escaped-animal" | "cut-out-animal" | "other-camp-animal";
 
@@ -114,7 +115,7 @@ export function layoutAnimals(
   return placed;
 }
 
-/** Sale animals stand in the pens, then the race, then up at the ramp. */
+/** Sale animals stand inside the pens, and the rest walk up the race toward the ramp. */
 function saleLinePoint(
   state: GameState,
   animal: AnimalRecord,
@@ -129,24 +130,55 @@ function saleLinePoint(
     (sale.phase === "kraal" || sale.phase === "crush" || sale.phase === "ramp" || sale.phase === "loading") &&
     ids.includes(animal.id);
   if (!showing || !sale) return null;
-  const pens = state.features.filter((feature) => feature.kind === "holding_pen");
-  const races = state.features.filter((feature) => feature.kind === "race");
-  const crush = state.features.find((feature) => feature.kind === "crush");
-  const ramp = state.features.find((feature) => feature.kind === "loading_ramp");
-  const kraal = state.features.find((feature) => feature.kind === "kraal");
   const index = Math.max(0, ids.indexOf(animal.id));
-  const bucket = sale.phase === "kraal" ? 0 : index % 3;
-  let tile = pens[index % Math.max(1, pens.length)] ?? kraal ?? null;
-  if (bucket === 1) tile = races[index % Math.max(1, races.length)] ?? crush ?? tile;
-  if (bucket === 2) tile = ramp ?? crush ?? tile;
-  if (!tile) return null;
-  const at = tileCenter(tile.x, tile.y, layout, tileW, tileH);
-  const aim = ramp ?? tile;
-  const to = tileCenter(aim.x, aim.y, layout, tileW, tileH);
-  const nudge = (index % 3) * 8 - 8;
+  const slots = yardSlots(state.features, layout, tileW, tileH);
+  if (slots && slots.pens.length > 0) {
+    const penCount = Math.min(ids.length, Math.max(slots.pens.length, 5));
+    if (index < penCount) {
+      const pen = slots.pens[index % slots.pens.length];
+      const slot = Math.floor(index / slots.pens.length);
+      const across = slot === 0 ? -0.38 : 0.34;
+      const depth = index % 2 === 0 ? -0.22 : 0.28;
+      const aim = slots.race[0] ?? { x: pen.x, y: pen.y + 20 };
+      return {
+        x: pen.x + pen.alongX * pen.halfAlong * across + pen.intoX * pen.halfInto * depth,
+        y: pen.y + pen.alongY * pen.halfAlong * across + pen.intoY * pen.halfInto * depth,
+        octant: cowOctantFromScreen(aim.x - pen.x, aim.y - pen.y),
+      };
+    }
+    const raceIndex = index - penCount;
+    const raceSlots = Math.max(1, ids.length - penCount);
+    const t = (raceIndex + 0.5) / raceSlots;
+    const cursor = pointAlong(slots.race, t);
+    const ahead = pointAlong(slots.race, Math.min(1, t + 0.2));
+    return {
+      x: cursor.x,
+      y: cursor.y,
+      octant: cowOctantFromScreen(ahead.x - cursor.x, ahead.y - cursor.y),
+    };
+  }
+  const pens = state.features.filter((feature) => feature.kind === "holding_pen");
+  const ramp = state.features.find((feature) => feature.kind === "loading_ramp") ?? pens[0];
+  if (!ramp) return null;
+  const at = tileCenter(ramp.x, ramp.y, layout, tileW, tileH);
+  return { x: at.x, y: at.y, octant: 0 };
+}
+
+function pointAlong(points: { x: number; y: number }[], t: number): { x: number; y: number } {
+  if (points.length === 0) return { x: 0, y: 0 };
+  if (points.length === 1) return points[0];
+  const lengths: number[] = [0];
+  for (let i = 1; i < points.length; i += 1) {
+    lengths.push(lengths[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y));
+  }
+  const total = lengths[lengths.length - 1] || 1;
+  const dist = Math.max(0, Math.min(1, t)) * total;
+  let i = 1;
+  while (i < lengths.length - 1 && lengths[i] < dist) i += 1;
+  const span = lengths[i] - lengths[i - 1] || 1;
+  const u = (dist - lengths[i - 1]) / span;
   return {
-    x: at.x + nudge,
-    y: at.y + (index % 2) * 4,
-    octant: cowOctantFromScreen(to.x - at.x, to.y - at.y),
+    x: points[i - 1].x + (points[i].x - points[i - 1].x) * u,
+    y: points[i - 1].y + (points[i].y - points[i - 1].y) * u,
   };
 }

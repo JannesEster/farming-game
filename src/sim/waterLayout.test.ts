@@ -31,6 +31,8 @@ function assertGeneratedInfrastructure(state: GameState): void {
   expect(idAt(cottage!.x, cottage!.y)).toBe(-1);
   expect(house).toBeTruthy();
   expect(Math.hypot(ramp!.x - house!.x, ramp!.y - house!.y)).toBeGreaterThan(8);
+  const farPen = Math.max(...pens.map((pen) => Math.hypot(pen.x - ramp!.x, pen.y - ramp!.y)));
+  expect(farPen).toBeGreaterThanOrEqual(5);
   expect(state.camps.some((camp) => !campHasWaterAccess(state, camp))).toBe(true);
   expect(state.features.some((feature) => feature.kind === "lick_feeder")).toBe(true);
   const start = state.camps.find((camp) => camp.id === state.herd.campId);
