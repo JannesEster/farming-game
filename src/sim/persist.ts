@@ -17,14 +17,14 @@ import { LEGACY_SAVE_KEY, LEGACY_SINGLE_V2_KEY } from "./saveKeys";
 export const SAVE_KEY = LEGACY_SINGLE_V2_KEY;
 
 export type SavedGame = {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   savedAt: string;
   state: GameState;
 };
 
 export function serializeState(state: GameState): string {
   const payload: SavedGame = {
-    version: 2,
+    version: 3,
     savedAt: new Date().toISOString(),
     state,
   };
@@ -50,7 +50,7 @@ export function saveGame(state: GameState): void {
   const slotId = getActiveSlotId();
   const existing = readSlot(slotId);
   writeSlot(slotId, {
-    version: 2,
+    version: 3,
     savedAt: new Date().toISOString(),
     slotId,
     meta: existing?.meta ?? defaultFlowMeta(),

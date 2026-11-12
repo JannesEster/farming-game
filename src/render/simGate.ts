@@ -1,4 +1,12 @@
 import type { SpeedMode } from "./hud";
+import type { SimSpeedMultiplier } from "../sim/clock";
+
+export function speedMultiplier(mode: SpeedMode): SimSpeedMultiplier {
+  if (mode === "pause") return 0;
+  if (mode === "x3") return 3;
+  if (mode === "x2") return 2;
+  return 1;
+}
 
 /** Reasons the farm clock must not advance. Closing the overlay resumes the previous speed. */
 export type SimBlockers = {
@@ -47,7 +55,25 @@ export function dayStepsThisFrame(args: {
 }
 
 export function transitMayAdvance(blocked: boolean, speed: SpeedMode): boolean {
-  return !blocked && speed !== "pause";
+  return !blocked && speedMultiplier(speed) > 0;
+}
+
+/** Fixed sim tick: bank real time until one ranch-clock hour or day step is due. */
+export function ranchClockStep(args: {
+  blocked: boolean;
+  speed: SpeedMode;
+  bankMs: number;
+  deltaMs: number;
+  catchUpCapMs: number;
+  tickMs: number;
+}): { bankMs: number; spendMs: number } {
+  if (args.blocked || speedMultiplier(args.speed) === 0) {
+    return { bankMs: 0, spendMs: 0 };
+  }
+  const mult = speedMultiplier(args.speed);
+  const bank = args.bankMs + Math.min(Math.max(0, args.deltaMs), args.catchUpCapMs) * mult;
+  const spendMs = bank >= args.tickMs ? args.tickMs : 0;
+  return { bankMs: spendMs > 0 ? bank - spendMs : bank, spendMs };
 }
 
 export function elementVisible(root: ParentNode, id: string): boolean {

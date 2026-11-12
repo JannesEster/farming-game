@@ -63,13 +63,15 @@ export type MonthLedger = {
 
 export type UiCard = {
   id: string;
-  kind: "warning" | "summary" | "drought" | "weekly" | "season";
+  kind: "critical" | "warning" | "summary" | "drought" | "weekly" | "season";
   title: string;
   body: string;
   priority: number;
 };
 
 export type StoryState = {
+  /** @deprecated use state.notifications; kept for migration reads only */
+  legacyNotificationsMigrated?: boolean;
   composition: HerdComposition;
   /** Average liveweight per youngstock class for growth and weight gates. */
   classLiveweights: ClassLiveweights;

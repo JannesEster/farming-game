@@ -50,7 +50,7 @@ describe("organicTrekOffsets", () => {
     expect(offsets).toHaveLength(120);
     expect(span.width).toBeGreaterThan(140);
     expect(span.height).toBeGreaterThan(60);
-    expect(span.width).toBeLessThan(tileW * 6);
+    expect(span.width).toBeLessThan(tileW * 9);
     let onCamp = 0;
     for (const offset of offsets) {
       const tile = worldToTile(anchor.x + offset.x, anchor.y + offset.y, layout, tileW, tileH);

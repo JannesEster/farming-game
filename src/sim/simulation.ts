@@ -1,5 +1,12 @@
 import { CONFIG, type GameConfig } from "./config";
-import { addDays, isSeasonStart } from "./calendar";
+import { defaultRanchClock, ecologyScalePerGameDay, rollGameDayFromState } from "./clock";
+import { defaultNotificationState } from "./notifications";
+import { isSeasonStart, gameDaysInMonth } from "./calendar";
+import {
+  createGameFromDefinition,
+  isFarmDefinition,
+  loadDefaultFarmDefinition,
+} from "./farmDefinition";
 import { generateFarm } from "./generate";
 import {
   dailyDemandKg,
@@ -16,7 +23,50 @@ import { afterFeedDay } from "./story";
 import { herdInTransit, startHerdMove } from "./transit";
 import type { CampState, GameState, MoveResult } from "./types";
 
+function isDefaultRuntimeConfig(config: GameConfig): boolean {
+  return (
+    config.worldSeed === CONFIG.worldSeed &&
+    config.farm.hectares === CONFIG.farm.hectares &&
+    config.map.campCountMin === CONFIG.map.campCountMin &&
+    config.map.campCountMax === CONFIG.map.campCountMax &&
+    config.herd.headCount === CONFIG.herd.headCount &&
+    !config.map.herdStartNearYard
+  );
+}
+
 export function createGame(seed = CONFIG.worldSeed, config: GameConfig = CONFIG): GameState {
+  if (seed === CONFIG.worldSeed && cachedDefaultState && isDefaultRuntimeConfig(config)) {
+    return cloneGameState(cachedDefaultState);
+  }
+  return generateFarm(seed, config);
+}
+
+let cachedDefaultState: GameState | null = null;
+
+function cloneGameState(state: GameState): GameState {
+  return JSON.parse(JSON.stringify(state)) as GameState;
+}
+
+/** Load public/farms/default-farm.json once; used for seed 3300 at runtime. */
+export async function preloadDefaultFarm(config: GameConfig = CONFIG): Promise<boolean> {
+  const def = await loadDefaultFarmDefinition();
+  if (!def || def.seed !== config.worldSeed) return false;
+  cachedDefaultState = createGameFromDefinition(def, config);
+  return true;
+}
+
+/** Vitest: avoid regenerating seed 3300 from scratch. */
+export function primeDefaultFarmCache(def: unknown, config: GameConfig = CONFIG): boolean {
+  if (!isFarmDefinition(def) || def.seed !== config.worldSeed) return false;
+  cachedDefaultState = createGameFromDefinition(def, config);
+  return true;
+}
+
+export function clearDefaultFarmCacheForTests(): void {
+  cachedDefaultState = null;
+}
+
+export function generateFarmState(seed: number, config: GameConfig = CONFIG): GameState {
   return generateFarm(seed, config);
 }
 
@@ -34,8 +84,13 @@ export function campIdAt(state: GameState, x: number, y: number): number | null 
  * Herd walk progress is not advanced here; see tickTransitRealtime in transit.ts.
  */
 export function stepDayWithRain(state: GameState, rainMm: number, config: GameConfig = CONFIG): void {
-  if (isSeasonStart(state.date, config)) state.seasonRainMm = 0;
+  if (!state.clock) state.clock = defaultRanchClock();
+  if (!state.notifications) state.notifications = defaultNotificationState();
+  const nextDate = rollGameDayFromState(state, config);
+  if (isSeasonStart(nextDate, config)) state.seasonRainMm = 0;
   state.todayRainMm = rainMm;
+  const dpm = gameDaysInMonth(state, config);
+  const eco = ecologyScalePerGameDay(dpm, config.calendar.ecologyReferenceDaysPerMonth);
   state.seasonRainMm += rainMm;
 
   const demand = dailyDemandKg(state.herd, config);
@@ -43,8 +98,8 @@ export function stepDayWithRain(state: GameState, rainMm: number, config: GameCo
   let eaten = 0;
   for (const camp of state.camps) {
     const occupied = !walking && camp.id === state.herd.campId;
-    const soil = nextSoil(camp.soilMoistureMm, rainMm, config);
-    let growth = growthKgPerHa(soil.soilForGrowth, camp.restDays, occupied, config);
+    const soil = nextSoil(camp.soilMoistureMm, rainMm * eco, config);
+    let growth = growthKgPerHa(soil.soilForGrowth, camp.restDays, occupied, config) * eco;
     const droughtMul = state.story?.drought.forageMultiplier ?? 1;
     growth *= droughtMul;
     camp.soilMoistureMm = soil.soilAfter;
@@ -71,10 +126,10 @@ export function stepDayWithRain(state: GameState, rainMm: number, config: GameCo
   if (!walking) {
     state.herd.condition = nextCondition(state.herd.condition, eaten, demand, config);
     state.herd.daysInCamp += 1;
-    afterFeedDay(state, eaten, demand, config);
+    afterFeedDay(state, eaten, demand, config, eco);
   }
 
-  state.date = addDays(state.date, 1);
+  state.date = nextDate;
 }
 
 export function stepDay(state: GameState, config: GameConfig = CONFIG): void {

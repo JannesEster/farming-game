@@ -52,7 +52,11 @@ export type OfferValidation = {
   errors: string[];
 };
 
+const validationByCard = new WeakMap<FarmOfferCard, OfferValidation>();
+
 export function validateOfferCard(card: FarmOfferCard, config: GameConfig = CONFIG): OfferValidation {
+  const cached = validationByCard.get(card);
+  if (cached) return cached;
   const state = card.previewState;
   const errors: string[] = [];
 
@@ -88,5 +92,7 @@ export function validateOfferCard(card: FarmOfferCard, config: GameConfig = CONF
     errors.push("playable offer missing herd");
   }
 
-  return { ok: errors.length === 0, errors };
+  const result = { ok: errors.length === 0, errors };
+  validationByCard.set(card, result);
+  return result;
 }

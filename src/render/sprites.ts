@@ -125,9 +125,9 @@ export function propSpriteForKind(kind: string, x: number, y: number, featureSca
   const tw = PAINTED_TILE_NATIVE_W;
   switch (kind) {
     case "house":
-      return { key: SPRITE_KEYS.farmhouse, originX: 0.5, originY: 0.9, scale: (tileW * 3.1) / tw };
+      return { key: SPRITE_KEYS.farmhouse, originX: 0.5, originY: 0.9, scale: (tileW * 2.45) / tw };
     case "windmill":
-      return { key: SPRITE_KEYS.windmill, originX: 0.48, originY: 0.94, scale: (tileW * 2.8) / tw };
+      return { key: SPRITE_KEYS.windmill, originX: 0.48, originY: 0.94, scale: (tileW * 2.2) / tw };
     case "shed":
       return { key: SPRITE_KEYS.shed, originX: 0.5, originY: 0.88, scale: (tileW * 2.2) / tw };
     case "kraal":
@@ -166,8 +166,99 @@ export function cattleDisplayScale(multiplier = 1): number {
   const tileW = CONFIG.view.tileWidth;
   const houseWidthPx = tileW * 2.05;
   const cowBodyPx = 131;
-  const targetBody = houseWidthPx / 5.4;
+  const targetBody = houseWidthPx / 9.5;
   return (targetBody / cowBodyPx) * multiplier;
+}
+
+export type CowView = "left" | "right" | "toward" | "away";
+
+const COW_VIEW_SUFFIX: Record<CowView, string> = {
+  right: "r",
+  left: "l",
+  toward: "t",
+  away: "a",
+};
+
+/** Iso march direction → discrete sprite facing (no rotation). */
+export function cowViewFromVector(ux: number, uy: number): CowView {
+  const sx = ux - uy;
+  const sy = ux + uy;
+  if (Math.abs(sx) >= Math.abs(sy) * 0.55) return sx > 0 ? "right" : "left";
+  return sy > 0 ? "toward" : "away";
+}
+
+export function cattleTextureKeyForView(baseKey: string, view: CowView): string {
+  return `${baseKey}-${COW_VIEW_SUFFIX[view]}`;
+}
+
+export function cattleTextureForView(coat: number, view: CowView): string {
+  return cattleTextureKeyForView(cattleSpriteForCoat(coat), view);
+}
+
+export function cowPresentationScale(view: CowView, base: number): { x: number; y: number } {
+  switch (view) {
+    case "toward":
+      return { x: base * 0.88, y: base * 1.06 };
+    case "away":
+      return { x: base * 0.82, y: base * 0.78 };
+    default:
+      return { x: base, y: base };
+  }
+}
+
+/** Build toward/away variants from side-on breed PNGs (mirrors for left). */
+export function ensureCowViewTextures(scene: Phaser.Scene): void {
+  const breeds = [
+    SPRITE_KEYS.cattleBrahman,
+    SPRITE_KEYS.cattleBonsmara,
+    SPRITE_KEYS.cattleSimmentaler,
+    SPRITE_KEYS.cattleNguni,
+    SPRITE_KEYS.cattleAngus,
+  ];
+  for (const base of breeds) {
+    if (!scene.textures.exists(base)) continue;
+    const source = scene.textures.get(base).getSourceImage() as HTMLImageElement | HTMLCanvasElement;
+    const w = source.width;
+    const h = source.height;
+  const rightKey = cattleTextureKeyForView(base, "right");
+  if (!scene.textures.exists(rightKey)) {
+    if (source instanceof HTMLCanvasElement) scene.textures.addCanvas(rightKey, source);
+    else scene.textures.addImage(rightKey, source);
+  }
+  const leftKey = cattleTextureKeyForView(base, "left");
+  if (!scene.textures.exists(leftKey)) {
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.translate(w, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(source, 0, 0);
+      scene.textures.addCanvas(leftKey, canvas);
+    }
+  }
+    for (const variant of [
+      { view: "toward" as const, sx: 0.86, sy: 1.08 },
+      { view: "away" as const, sx: 0.8, sy: 0.76 },
+    ]) {
+      const { view, sx, sy } = variant;
+      const key = cattleTextureKeyForView(base, view);
+      if (scene.textures.exists(key)) continue;
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(w * sx);
+      canvas.height = Math.round(h * sy);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) continue;
+      ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+      if (view === "away") {
+        ctx.globalAlpha = 0.92;
+        ctx.fillStyle = "rgba(32, 22, 14, 0.08)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+      scene.textures.addCanvas(key, canvas);
+    }
+  }
 }
 
 /** Dots only at full pinch-out (same band as min zoom). */

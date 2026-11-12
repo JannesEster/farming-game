@@ -37,7 +37,13 @@ describe("starvation timeline", () => {
     let deathDay = -1;
     for (let day = 0; day < 80; day += 1) {
       stepDayWithRain(state, 0);
-      if (warnDay < 0 && state.story.pendingCards.some((card) => card.kind === "warning")) warnDay = day;
+      if (
+        warnDay < 0 &&
+        (state.story.pendingCards.some((card) => card.kind === "critical") ||
+          state.notifications?.log.some((n) => n.kind === "feed_warning"))
+      ) {
+        warnDay = day;
+      }
       if (deathDay < 0 && state.herd.headCount < startHead) deathDay = day;
     }
     expect(warnDay).toBeGreaterThanOrEqual(0);
@@ -55,7 +61,7 @@ describe("starvation timeline", () => {
     const head = state.herd.headCount;
     stepDayWithRain(state, 0);
     expect(state.herd.headCount).toBe(head);
-    expect(state.story?.pendingCards.some((card) => card.title === "Water warning")).toBe(true);
+    expect(state.notifications?.alerts.some((a) => a.label.includes("trough"))).toBe(true);
   });
 
   it("condition drops when camp has no grazeable grass", () => {

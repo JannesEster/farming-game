@@ -1,3 +1,4 @@
+import type { GameState } from "../sim/types";
 import { createGame } from "../sim/simulation";
 import { PURCHASE_BUDGET_NAD } from "./budget";
 import { buildGameConfig, type OfferGenParams } from "./buildGameConfig";
@@ -36,6 +37,32 @@ function campCountFor(regionKey: keyof typeof REGIONS, seed: number): number {
 
 export function attachFarmMeta(state: ReturnType<typeof createGame>, meta: FarmMeta): void {
   state.farmMeta = meta;
+}
+
+const previewStateCache = new Map<string, GameState>();
+
+function previewCacheKey(params: OfferGenParams, mapSeed: number): string {
+  return [
+    mapSeed,
+    params.hectares,
+    params.campCount,
+    params.herdHead,
+    params.herdStartNearYard ? 1 : 0,
+    params.region.key,
+    params.fenceCondition,
+    params.water.boreholes,
+    params.water.windmills,
+    params.water.solar,
+  ].join(":");
+}
+
+function cachedPreviewState(params: OfferGenParams, mapSeed: number, config: ReturnType<typeof buildGameConfig>): GameState {
+  const key = previewCacheKey(params, mapSeed);
+  const hit = previewStateCache.get(key);
+  if (hit) return JSON.parse(JSON.stringify(hit)) as GameState;
+  const state = createGame(mapSeed, config);
+  previewStateCache.set(key, state);
+  return JSON.parse(JSON.stringify(state)) as GameState;
 }
 
 function buildOffer(
@@ -83,7 +110,7 @@ function buildOffer(
     herdStartNearYard,
   };
   const config = buildGameConfig(params);
-  const previewState = createGame(mapSeed, config);
+  const previewState = cachedPreviewState(params, mapSeed, config);
   attachFarmMeta(previewState, {
     offerId: id,
     regionKey,

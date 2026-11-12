@@ -4,7 +4,7 @@ import { migrateState, parseLegacySaved } from "../sim/stateMigrate";
 import type { FlowMeta } from "./types";
 import { defaultFlowMeta } from "./metaDefaults";
 
-export const SAVE_FORMAT_VERSION = 2;
+export const SAVE_FORMAT_VERSION = 3;
 export const SLOT_COUNT = 3;
 const SLOT_PREFIX = "farming-game-slot-";
 const ACTIVE_SLOT_KEY = "farming-game-active-slot";

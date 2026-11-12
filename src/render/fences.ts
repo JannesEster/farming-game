@@ -136,8 +136,13 @@ function strokeDoubleWire(
   }
 }
 
-export function drawFences(graphics: Phaser.GameObjects.Graphics, segments: FenceSegment[]): void {
+export function drawFences(
+  graphics: Phaser.GameObjects.Graphics,
+  segments: FenceSegment[],
+  cameraZoom = 1,
+): void {
   graphics.clear();
+  const zoomBoost = Math.max(1, 0.62 / Math.max(cameraZoom, 0.12));
   const buckets: Record<FenceSegment["kind"], FenceSegment[]> = {
     inner: [],
     boundary: [],
@@ -152,9 +157,24 @@ export function drawFences(graphics: Phaser.GameObjects.Graphics, segments: Fenc
     }
   };
 
-  drawBucket(buckets.inner, Math.max(1.2, CONFIG.view.fencePx * 0.65), palette.fenceWire, 0.72);
-  drawBucket(buckets.boundary, Math.max(1.6, CONFIG.view.fenceBoundaryPx * 0.7), palette.fenceStrong, 0.82);
-  drawBucket(buckets.selected, CONFIG.view.fenceSelectedPx * 0.85, palette.fenceSelected, 0.95);
+  drawBucket(
+    buckets.inner,
+    Math.max(1.1, CONFIG.view.fencePx * 0.65 * zoomBoost),
+    palette.fenceWire,
+    0.74,
+  );
+  drawBucket(
+    buckets.boundary,
+    Math.max(1.3, CONFIG.view.fenceBoundaryPx * 0.7 * zoomBoost),
+    palette.fenceStrong,
+    0.84,
+  );
+  drawBucket(
+    buckets.selected,
+    CONFIG.view.fenceSelectedPx * 0.85 * zoomBoost,
+    palette.fenceSelected,
+    0.95,
+  );
 
   const spacing = CONFIG.view.fencePostSpacingPx;
   for (const segment of segments) {
@@ -168,7 +188,7 @@ export function drawFences(graphics: Phaser.GameObjects.Graphics, segments: Fenc
       const px = segment.x1 + dx * t;
       const py = segment.y1 + dy * t;
       graphics.fillStyle(palette.fencePost, 1);
-      graphics.fillCircle(px, py, segment.gate ? 3.6 : 3);
+      graphics.fillCircle(px, py, (segment.gate ? 3.6 : 3) * Math.min(zoomBoost, 2.2));
       if (!segment.gate) {
         graphics.lineStyle(1.4, palette.fencePost, 1);
         graphics.beginPath();

@@ -184,14 +184,17 @@ export function applyYoungstockGrowth(
   state: GameState,
   intakeRatio: number,
   config: GameConfig = CONFIG,
+  ecologyScale = 1,
 ): void {
   const story = state.story;
   if (!story) return;
   const weights = story.classLiveweights;
   const fed = intakeRatio >= config.story.poorFeedIntakeRatio;
-  const delta = fed
-    ? config.cattle.dailyYoungstockGainKg * Math.min(1, intakeRatio)
-    : -config.story.dailyWeightLossKg;
+  const delta = (
+    fed
+      ? config.cattle.dailyYoungstockGainKg * Math.min(1, intakeRatio)
+      : -config.story.dailyWeightLossKg
+  ) * ecologyScale;
 
   for (const cls of GROWER_CLASSES) {
     if (story.composition[cls] <= 0) continue;

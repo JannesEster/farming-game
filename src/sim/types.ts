@@ -1,3 +1,5 @@
+import type { RanchClockState } from "./clock";
+import type { NotificationState } from "./notifications";
 import type { StoryState } from "./storyTypes";
 
 export const TILE_HOMESTEAD = -1;
@@ -75,6 +77,10 @@ export type GameState = {
   rngState: number;
   farmMeta?: FarmMeta;
   date: CalendarDate;
+  /** Ranch real time clock and days per month settings. */
+  clock?: RanchClockState;
+  /** Notification log, letters, and persistent alerts. */
+  notifications?: NotificationState;
   seasonRainMm: number;
   todayRainMm: number;
   cashNad: number;

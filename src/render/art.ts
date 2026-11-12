@@ -46,7 +46,16 @@ export type ArtSheet = {
   garden: HTMLCanvasElement;
 };
 
-export type HerdOffset = { x: number; y: number; flip: boolean; coat: number; scale: number };
+export type CowView = "left" | "right" | "toward" | "away";
+
+export type HerdOffset = {
+  x: number;
+  y: number;
+  flip: boolean;
+  coat: number;
+  scale: number;
+  view: CowView;
+};
 
 function canvas(width: number, height: number, draw: (ctx: CanvasRenderingContext2D) => void): HTMLCanvasElement {
   const element = document.createElement("canvas");
@@ -132,9 +141,10 @@ export function herdLayout(count: number, seed: number, radiusX: number, radiusY
     offsets.push({
       x: Math.cos(angle) * radiusX * dist,
       y: Math.sin(angle) * radiusY * dist,
-      flip: next() > 0.5,
+      flip: false,
       coat: Math.floor(next() * 6),
       scale: 0.42 + next() * 0.22,
+      view: next() > 0.5 ? "right" : "left",
     });
   }
   return offsets;

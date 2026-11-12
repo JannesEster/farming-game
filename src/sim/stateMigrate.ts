@@ -1,11 +1,15 @@
 import { CONFIG } from "./config";
+import { defaultRanchClock } from "./clock";
 import { defaultClassLiveweights, migrateLegacyComposition } from "./cattleClasses";
+import { defaultNotificationState } from "./notifications";
 import { createStoryState, defaultComposition } from "./story";
 import type { GameState } from "./types";
 import type { HerdComposition } from "./storyTypes";
 
+export const GAME_STATE_VERSION = 4;
+
 export type LegacySavedGame = {
-  version?: 1 | 2 | 3;
+  version?: 1 | 2 | 3 | 4;
   savedAt?: string;
   state?: GameState;
 };
@@ -37,6 +41,14 @@ export function migrateState(state: GameState): GameState {
     if (state.herd.transit.walkGameHours === undefined) state.herd.transit.walkGameHours = 0;
     if (state.herd.transit.hoursApplied === undefined) state.herd.transit.hoursApplied = 0;
   }
+  if (!state.clock) {
+    state.clock = defaultRanchClock();
+    state.clock.settings.daysPerMonth = CONFIG.calendar.daysPerMonthDefault;
+    state.clock.settings.dayLengthSeconds = CONFIG.time.dayLengthSecondsDefault as 180 | 240 | 300;
+    state.clock.settings.catchUpCapMs = CONFIG.time.catchUpCapMs;
+  }
+  if (!state.notifications) state.notifications = defaultNotificationState();
+  if (state.date.hour < 0 || state.date.hour > 23) state.date.hour = CONFIG.calendar.startHour;
   return state;
 }
 

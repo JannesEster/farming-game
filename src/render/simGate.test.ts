@@ -29,7 +29,7 @@ describe("sim gate", () => {
   it("does not tick days or bank time while a popup is open", () => {
     const held = dayStepsThisFrame({
       blocked: true,
-      speed: "fast",
+      speed: "x3",
       bankMs: 500,
       deltaMs: 10_000,
       intervalMs: 120,
@@ -42,7 +42,7 @@ describe("sim gate", () => {
   it("resumes at the speed that was already selected", () => {
     const play = dayStepsThisFrame({
       blocked: false,
-      speed: "play",
+      speed: "x1",
       bankMs: 0,
       deltaMs: 1000,
       intervalMs: 1000,
@@ -51,7 +51,7 @@ describe("sim gate", () => {
     });
     const fast = dayStepsThisFrame({
       blocked: false,
-      speed: "fast",
+      speed: "x3",
       bankMs: 0,
       deltaMs: 1000,
       intervalMs: 120,
@@ -60,8 +60,8 @@ describe("sim gate", () => {
     });
     expect(play.days).toBe(1);
     expect(fast.days).toBe(3);
-    expect(transitMayAdvance(false, "fast")).toBe(true);
-    expect(transitMayAdvance(true, "fast")).toBe(false);
+    expect(transitMayAdvance(false, "x2")).toBe(true);
+    expect(transitMayAdvance(true, "x2")).toBe(false);
     expect(transitMayAdvance(false, "pause")).toBe(false);
   });
 });
