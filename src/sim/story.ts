@@ -17,7 +17,10 @@ import {
 } from "./levers";
 import { refreshDailyGoal, rollMorningDecision } from "./morningPlay";
 import { tickPlayerEvents } from "./playerEvents";
+import { defaultFarmerPresence } from "./herding";
+import { DEFAULT_PLAYER_DISPLAY_NAME } from "./playerName";
 import { defaultWorkGrid, freshDailyPlay, tickDailyGoal, tickFarmhandWorld } from "./workGrid";
+import { tickPeopleSchedule } from "./people";
 import { tickFarmhand } from "./workers";
 import { isLastGameDayOfMonth } from "./calendar";
 import {
@@ -77,7 +80,16 @@ export function createStoryState(headCount: number, config: GameConfig = CONFIG)
     dailyPlay: freshDailyPlay(),
     monthDiary: [],
     pendingPlayerEvent: null,
+    farmerPresence: undefined,
+    herdMoveQueue: null,
+    playerDisplayName: DEFAULT_PLAYER_DISPLAY_NAME,
   };
+}
+
+export function initStoryPeople(state: GameState, config: GameConfig = CONFIG): void {
+  if (!state.story) state.story = createStoryState(state.herd.headCount, config);
+  if (!state.story.farmerPresence) state.story.farmerPresence = defaultFarmerPresence(state);
+  state.story.herdMoveQueue ??= null;
 }
 
 const BLOCKING_CARD_KINDS = new Set(["drought", "critical"]);
@@ -116,6 +128,7 @@ export function afterFeedDay(
   tickInfrastructureWear(state, config);
   tickLickCondition(state, config);
   tickFarmhandWorld(state, config);
+  tickPeopleSchedule(state, config);
   tickDailyGoal(state, config);
 
   const notes = applyStarvationDay(state, feedContextForHerd(state, config), config);

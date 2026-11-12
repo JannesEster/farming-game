@@ -3,12 +3,14 @@ import { defaultRanchClock } from "./clock";
 import { defaultClassLiveweights, migrateLegacyComposition } from "./cattleClasses";
 import { defaultNotificationState } from "./notifications";
 import { defaultCostLevers, defaultInfrastructureWear } from "./levers";
+import { defaultFarmerPresence } from "./herding";
+import { DEFAULT_PLAYER_DISPLAY_NAME } from "./playerName";
 import { defaultWorkGrid, freshDailyPlay } from "./workGrid";
 import { createStoryState, defaultComposition } from "./story";
 import type { GameState } from "./types";
 import type { HerdComposition } from "./storyTypes";
 
-export const GAME_STATE_VERSION = 5;
+export const GAME_STATE_VERSION = 6;
 
 export type LegacySavedGame = {
   version?: 1 | 2 | 3 | 4 | 5;
@@ -73,6 +75,17 @@ export function migrateState(state: GameState): GameState {
       if (state.story.farmhand.job === "check_water") state.story.workGrid.check_water = 2;
       if (state.story.farmhand.job === "move_herd") state.story.workGrid.move_herd_help = 2;
     }
+    if (!state.story.farmerPresence) state.story.farmerPresence = defaultFarmerPresence(state);
+    if (!state.story.playerDisplayName?.trim()) state.story.playerDisplayName = DEFAULT_PLAYER_DISPLAY_NAME;
+    if (state.story.herdMoveQueue === undefined) state.story.herdMoveQueue = null;
+    if (!state.features.some((f) => f.kind === "worker_house")) {
+      state.features.push({ kind: "worker_house", x: 11, y: 13, scale: 1 });
+    }
+  }
+  if (state.herd.transit) {
+    if (!state.herd.transit.phase) state.herd.transit.phase = "drive";
+    if (!state.herd.transit.herder) state.herd.transit.herder = "farmer";
+    if (state.herd.transit.approachProgress === undefined) state.herd.transit.approachProgress = 1;
   }
   return state;
 }
@@ -81,9 +94,16 @@ export function parseLegacySaved(raw: string): GameState | null {
   try {
     const data = JSON.parse(raw) as LegacySavedGame;
     if (!data.state) return null;
-    if (data.version !== undefined && data.version !== 1 && data.version !== 2 && data.version !== 3 && data.version !== 4) {
-    return null;
-  }
+    if (
+      data.version !== undefined &&
+      data.version !== 1 &&
+      data.version !== 2 &&
+      data.version !== 3 &&
+      data.version !== 4 &&
+      data.version !== 5
+    ) {
+      return null;
+    }
     const state = data.state;
     if (!Array.isArray(state.camps) || !state.herd || !state.date) return null;
     return migrateState(state);

@@ -73,3 +73,33 @@ export function homesteadSpritePlacementsFromFeatures(features: Feature[]): Home
   }
   return list;
 }
+
+/** Small corrugated worker cottages just outside the yard (roughly half the main house). */
+export function workerCottagePlacements(features: Feature[]): HomesteadSpritePlacement[] {
+  const cottages = features.filter((f) => f.kind === "worker_house");
+  const main = features.find((f) => f.kind === "house");
+  const list: HomesteadSpritePlacement[] = [];
+  for (const cottage of cottages) {
+    let offsetX = 0;
+    let offsetY = 2;
+    if (main) {
+      const dx = main.x - cottage.x;
+      const dy = main.y - cottage.y;
+      const len = Math.hypot(dx, dy) || 1;
+      offsetX = (dx / len) * 3;
+      offsetY = (dy / len) * 3;
+    }
+    push(
+      list,
+      SPRITE_KEYS.workerHouse,
+      cottage.x,
+      cottage.y,
+      96,
+      1.02,
+      0.92,
+      offsetX,
+      offsetY,
+    );
+  }
+  return list;
+}

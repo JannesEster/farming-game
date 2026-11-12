@@ -21,6 +21,8 @@ import { findCamp } from "../sim/simulation";
 import { formatClockTime, type DayLengthSeconds } from "../sim/clock";
 import { CONFIG } from "../sim/config";
 import type { NotificationItem } from "../sim/notifications";
+import { herdMoveStatusLine } from "../sim/herding";
+import { DEFAULT_PLAYER_DISPLAY_NAME } from "../sim/playerName";
 import { grazeableFraction, grazingDaysLeft } from "../sim/pasture";
 import type { GameState } from "../sim/types";
 import type { ViewInsets } from "./camera";
@@ -61,6 +63,8 @@ const ICONS = {
   x2: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5l8 7-8 7z"></path><path d="M12 5l8 7-8 7z"></path></svg>',
   x3: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 5l7 7-7 7z"></path><path d="M9 5l7 7-7 7z"></path><path d="M16 5l7 7-7 7z"></path></svg>',
   menu: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg>',
+  barn:
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10l9-6 9 6v10a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1V10z"></path></svg>',
   dry: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5"></circle><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4 4l1.5 1.5M18.5 18.5L20 20M4 20l1.5-1.5M18.5 5.5L20 4"></path></svg>',
   rain: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 14a6 6 0 0111.3-2.8A4.5 4.5 0 0118 16H7a3 3 0 01-1-2z"></path><path d="M8 18l1 3M12 17l1 3M16 18l1 3"></path></svg>',
 };
@@ -78,6 +82,7 @@ export function mountHud(options: {
   onSheetExpanded?: (expanded: boolean) => void;
   onHerdLocator?: () => void;
   onDayLength?: (seconds: DayLengthSeconds) => void;
+  onFarmerName?: (name: string) => void;
 }): Hud {
   const root = document.getElementById("hud-root");
   if (!root) throw new Error("Missing the HUD root.");
@@ -88,8 +93,8 @@ export function mountHud(options: {
         <span class="chip chip-date" id="stat-date"></span>
         <span class="chip chip-time" id="stat-time" title="Ranch clock"></span>
         <span class="chip chip-icon" id="stat-season" title="Season"></span>
-        <span class="chip" id="stat-cash" title="${COPY.cashTitle}"></span>
-        <span class="chip" id="stat-rain" title="${COPY.rainTitle}"></span>
+        <span class="chip chip-cash" id="stat-cash" title="${COPY.cashTitle}"></span>
+        <span class="chip chip-rain" id="stat-rain" title="${COPY.rainTitle}"></span>
       </div>
       <div class="top-actions">
         <div class="speeds compact" role="group" aria-label="Speed">
@@ -98,8 +103,10 @@ export function mountHud(options: {
           <button type="button" id="speed-x2" aria-label="Speed 2x">${ICONS.x2}</button>
           <button type="button" id="speed-x3" aria-label="Speed 3x">${ICONS.x3}</button>
         </div>
-        <button type="button" class="chip dock-ranch" id="ranch-open" title="Ranch jobs and costs">
-          Ranch <span class="dock-badge" id="ranch-badge" hidden aria-hidden="true">!</span>
+        <button type="button" class="chip dock-ranch" id="ranch-open" title="Ranch jobs and costs" aria-label="Ranch ops">
+          <span class="ranch-icon" aria-hidden="true">${ICONS.barn}</span>
+          <span class="ranch-label">Ranch</span>
+          <span class="dock-badge" id="ranch-badge" hidden aria-hidden="true">!</span>
         </button>
         <button type="button" class="icon-btn" id="menu-overflow" aria-label="More actions" aria-expanded="false">${ICONS.menu}</button>
       </div>
@@ -113,6 +120,15 @@ export function mountHud(options: {
           <option value="240">4 minutes</option>
           <option value="300">5 minutes</option>
         </select>
+        <label class="settings-row" for="farmer-name-input">Your name</label>
+        <input
+          type="text"
+          id="farmer-name-input"
+          class="settings-input"
+          maxlength="24"
+          autocomplete="nickname"
+          placeholder="Farmer"
+        />
         <button type="button" id="new-farm">${COPY.newFarmLabel}</button>
       </div>
     </header>
@@ -205,6 +221,7 @@ export function mountHud(options: {
   const newFarmBtn = requiredButton(root, "new-farm");
   const homeBtn = requiredButton(root, "view-home");
   const dayLengthSelect = required(root, "day-length-select") as HTMLSelectElement;
+  const farmerNameInput = required(root, "farmer-name-input") as HTMLInputElement;
   const minimap = root.querySelector<HTMLCanvasElement>("#minimap");
   if (!minimap) throw new Error("Missing the minimap.");
   const herdLocator = requiredButton(root, "herd-locator");
@@ -317,6 +334,11 @@ export function mountHud(options: {
     options.onHome();
   });
   dayLengthSelect.value = String(CONFIG.time.dayLengthSecondsDefault);
+  farmerNameInput.addEventListener("change", () => {
+    const trimmed = farmerNameInput.value.trim().slice(0, 24);
+    farmerNameInput.value = trimmed;
+    options.onFarmerName?.(trimmed || DEFAULT_PLAYER_DISPLAY_NAME);
+  });
   dayLengthSelect.addEventListener("change", () => {
     const seconds = Number(dayLengthSelect.value) as DayLengthSeconds;
     if (CONFIG.time.dayLengthOptions.includes(seconds)) options.onDayLength?.(seconds);
@@ -399,10 +421,17 @@ export function mountHud(options: {
       lastState = state;
       const seasonText = seasonLabelForHud(state);
       const dry = !seasonText.toLowerCase().includes("rain");
+      const narrow = typeof window !== "undefined" && window.innerWidth <= 430;
       dateEl.textContent = formatHudDate(state.date);
       timeEl.textContent = formatClockTime(state.date);
+      timeEl.hidden = false;
+      seasonEl.hidden = narrow;
       if (state.clock?.settings.dayLengthSeconds) {
         dayLengthSelect.value = String(state.clock.settings.dayLengthSeconds);
+      }
+      if (document.activeElement !== farmerNameInput) {
+        const raw = state.story?.playerDisplayName?.trim();
+        farmerNameInput.value = raw && raw !== DEFAULT_PLAYER_DISPLAY_NAME ? raw : "";
       }
       seasonEl.innerHTML = dry ? ICONS.dry : ICONS.rain;
       seasonEl.title = seasonText;
@@ -438,11 +467,10 @@ export function mountHud(options: {
         const fraction = camp ? grazeableFraction(camp) : 0;
         const pct = Math.round(fraction * 100);
         const warn = camp ? formatMoveWarning(state.herd, camp, state.date).length > 0 : false;
-        sheetLine.textContent = formatHerdSheetSummary(
-          state.herd.headCount,
-          camp?.name ?? "Camp",
-          pct,
-        );
+        const moveSummary = herdMoveStatusLine(state);
+        sheetLine.textContent = moveSummary
+          ? `${formatHerdSheetSummary(state.herd.headCount, camp?.name ?? "Camp", pct)} · ${moveSummary}`
+          : formatHerdSheetSummary(state.herd.headCount, camp?.name ?? "Camp", pct);
         warnDot.hidden = !warn;
 
         if (expanded && camp) {
@@ -475,10 +503,15 @@ export function mountHud(options: {
           const status = formatFeedStatus(daysLeft);
           const farmhand = state.story?.farmhand;
           const presence = state.story?.farmhandPresence;
+          const moveLine = herdMoveStatusLine(state);
           const farmLine =
             farmhand?.hired && presence ? `Piet: ${presence.activityLabel}` : "";
-          statusEl.textContent = [status, farmLine].filter(Boolean).join(" · ");
+          statusEl.textContent = [moveLine, status, farmLine].filter(Boolean).join(" · ");
           statusEl.hidden = statusEl.textContent.length === 0;
+          const summaryMove = herdMoveStatusLine(state);
+          if (summaryMove) {
+            sheetLine.textContent = `${formatHerdSheetSummary(state.herd.headCount, camp?.name ?? "Camp", pct)} · ${summaryMove}`;
+          }
         }
 
         if (ui.pendingCampId !== null) {
@@ -653,6 +686,21 @@ export function measureChipWidths(root: HTMLElement = document.getElementById("h
   };
 }
 
+export function measureTopbarTextOverflow(root: HTMLElement = document.getElementById("hud-root")!): {
+  ok: boolean;
+  offenders: string[];
+} {
+  const offenders: string[] = [];
+  root
+    .querySelectorAll<HTMLElement>(
+      ".topbar .chip, .topbar .chip-icon, .topbar .speeds button, .topbar #ranch-open, .topbar #menu-overflow",
+    )
+    .forEach((el) => {
+      if (el.scrollWidth > el.clientWidth + 1) offenders.push(el.id || el.className);
+    });
+  return { ok: offenders.length === 0, offenders };
+}
+
 export function measureTopbarMetrics(root: HTMLElement = document.getElementById("hud-root")!): {
   chipFontPx: number;
   chipLetterSpacing: string;
@@ -662,8 +710,13 @@ export function measureTopbarMetrics(root: HTMLElement = document.getElementById
   chipsRight: number;
   actionsLeft: number;
   chips: ReturnType<typeof measureChipWidths>;
+  textOverflowOk: boolean;
+  textOverflowOffenders: string[];
+  topbarPx: number;
 } {
   const spare = measureTopbarSpare(root);
+  const overflow = measureTopbarTextOverflow(root);
+  const heights = measureHudHeights(root);
   const dateChip = root.querySelector<HTMLElement>("#stat-date");
   const speedBtn = root.querySelector<HTMLElement>("#speed-pause");
   const menuBtn = root.querySelector<HTMLElement>("#menu-overflow");
@@ -674,6 +727,9 @@ export function measureTopbarMetrics(root: HTMLElement = document.getElementById
     menuButtonPx: menuBtn?.getBoundingClientRect().width ?? 0,
     ...spare,
     chips: measureChipWidths(root),
+    textOverflowOk: overflow.ok,
+    textOverflowOffenders: overflow.offenders,
+    topbarPx: heights.topbarPx,
   };
 }
 

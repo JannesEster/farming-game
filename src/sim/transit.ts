@@ -14,7 +14,17 @@ function transitSpeedMult(mode: TransitSpeed): number {
 }
 
 export function herdInTransit(herd: HerdState): boolean {
-  return herd.transit !== null && herd.transit.progress < 1;
+  const transit = herd.transit;
+  if (!transit) return false;
+  if (transit.phase === "approach") return false;
+  return transit.progress < 1;
+}
+
+export function herdMoveActive(herd: HerdState): boolean {
+  const transit = herd.transit;
+  if (!transit) return false;
+  if (transit.phase === "approach") return (transit.approachProgress ?? 0) < 1;
+  return transit.progress < 1;
 }
 
 export function walkGameHours(distanceKm: number, config: GameConfig = CONFIG): number {
@@ -51,7 +61,7 @@ export function tickTransitRealtime(
   config: GameConfig = CONFIG,
 ): void {
   const transit = state.herd.transit;
-  if (!transit || mode === "pause") return;
+  if (!transit || transit.phase === "approach" || mode === "pause") return;
   const mult = transitSpeedMult(mode);
   if (mult <= 0) return;
   const duration = moveDurationMs(transit.distanceKm, "x1", config);
@@ -73,6 +83,9 @@ function finishTransit(state: GameState): void {
   state.herd.daysInCamp = 0;
   state.herd.transit = null;
   if (dest) dest.restDays = 0;
+  const story = state.story;
+  if (story?.farmerPresence?.onHerdingDuty) story.farmerPresence.onHerdingDuty = false;
+  if (story?.farmhandPresence?.onHerdingDuty) story.farmhandPresence.onHerdingDuty = false;
 }
 
 export function startHerdMove(state: GameState, toCampId: number, config: GameConfig = CONFIG): void {

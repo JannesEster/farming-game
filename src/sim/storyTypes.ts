@@ -59,7 +59,7 @@ export type InfrastructureWear = {
   deferredMaintenanceMonths: number;
 };
 
-export type FarmhandPresence = {
+export type PersonPresence = {
   tileX: number;
   tileY: number;
   targetTileX: number;
@@ -67,6 +67,19 @@ export type FarmhandPresence = {
   activeJob: WorkJobId | null;
   activityLabel: string;
   walkProgress: number;
+  /** On a herd move (approach or drive). */
+  onHerdingDuty?: boolean;
+  /** At night, worker rests at assigned house. */
+  atHome?: boolean;
+};
+
+/** @deprecated alias */
+export type FarmhandPresence = PersonPresence;
+
+export type HerdMoveQueue = {
+  toCampId: number;
+  reason: "no_herder" | "night";
+  campName?: string;
 };
 
 export type MorningDecisionId = "lick_batch" | "water_round" | "fence_first";
@@ -127,6 +140,8 @@ export type UiCard = {
 };
 
 export type StoryState = {
+  /** Player-chosen farmer name on the map (default Farmer). */
+  playerDisplayName?: string;
   /** @deprecated use state.notifications; kept for migration reads only */
   legacyNotificationsMigrated?: boolean;
   composition: HerdComposition;
@@ -152,6 +167,8 @@ export type StoryState = {
   workGrid?: WorkGrid;
   infrastructure?: InfrastructureWear;
   farmhandPresence?: FarmhandPresence;
+  farmerPresence?: PersonPresence;
+  herdMoveQueue?: HerdMoveQueue | null;
   dailyPlay?: DailyPlayState;
   pendingPlayerEvent?: PendingPlayerEvent | null;
   monthDiary?: string[];

@@ -20,7 +20,8 @@ import {
 import { dailyRainMm } from "./rainfall";
 import { rngFromState } from "./rng";
 import { afterFeedDay } from "./story";
-import { herdInTransit, startHerdMove } from "./transit";
+import { requestHerdMove, tryDispatchHerdQueue } from "./herding";
+import { herdInTransit } from "./transit";
 import type { CampState, GameState, MoveResult } from "./types";
 
 function isDefaultRuntimeConfig(config: GameConfig): boolean {
@@ -130,6 +131,7 @@ export function stepDayWithRain(state: GameState, rainMm: number, config: GameCo
   }
 
   state.date = nextDate;
+  tryDispatchHerdQueue(state, config);
 }
 
 export function stepDay(state: GameState, config: GameConfig = CONFIG): void {
@@ -139,11 +141,11 @@ export function stepDay(state: GameState, config: GameConfig = CONFIG): void {
   stepDayWithRain(state, rain, config);
 }
 
-export function moveHerd(state: GameState, campId: number): MoveResult {
-  if (herdInTransit(state.herd)) return { ok: false, reason: "moving" };
-  const camp = findCamp(state, campId);
-  if (!camp) return { ok: false, reason: "missing" };
-  if (camp.id === state.herd.campId) return { ok: false, reason: "same" };
-  startHerdMove(state, camp.id);
-  return { ok: true, campName: camp.name };
+export function moveHerd(state: GameState, campId: number, config: GameConfig = CONFIG): MoveResult {
+  if (state.herd.transit && (state.herd.transit.phase !== "drive" || state.herd.transit.progress < 1)) {
+    if (state.herd.transit.phase === "approach" || herdInTransit(state.herd)) {
+      return { ok: false, reason: "moving" };
+    }
+  }
+  return requestHerdMove(state, campId, config);
 }
