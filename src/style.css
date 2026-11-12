@@ -35,6 +35,16 @@ body {
   touch-action: none;
 }
 
+#night-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(ellipse 36% 28% at 22% 34%, rgba(255, 200, 120, 0.22), transparent 70%),
+    linear-gradient(180deg, rgba(6, 12, 32, 0.94), rgba(4, 8, 20, 0.9));
+  opacity: 0;
+}
+
 #hud-root {
   position: fixed;
   inset: 0;
@@ -1110,6 +1120,14 @@ body {
 
 #game canvas {
   filter: brightness(calc(0.55 + 0.45 * var(--daylight-blend, 1)));
+}
+
+#hud-root.ranch-night {
+  --daylight-blend: 0.22;
+}
+
+#hud-root.ranch-night .topbar.compact {
+  background: rgba(12, 16, 28, 0.92);
 }
 
 .chip-time {

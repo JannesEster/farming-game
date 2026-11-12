@@ -50,6 +50,7 @@ export type Hud = {
   pushNewsLog(lines: string[]): void;
   setScaleBar(label: string): void;
   setDaylight(blend: number): void;
+  setNightChrome(active: boolean): void;
   destroy(): void;
 };
 
@@ -557,6 +558,9 @@ export function mountHud(options: {
     },
     setDaylight(blend) {
       root.style.setProperty("--daylight-blend", String(Math.max(0, Math.min(1, blend))));
+    },
+    setNightChrome(active) {
+      root.classList.toggle("ranch-night", active);
     },
     destroy() {
       if (toastTimer) clearTimeout(toastTimer);

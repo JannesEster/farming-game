@@ -108,6 +108,10 @@ export class FarmScene extends Phaser.Scene {
   private homesteadGlow?: Phaser.GameObjects.Graphics;
   private homesteadLight?: { x: number; y: number };
   private captureHideHerdLabel = false;
+  private captureLightingHour: number | null = null;
+  private captureFreezeClock = false;
+  private captureSkipCowCull = false;
+  private captureHoldTransit = false;
   private selected = false;
   private pendingCampId: number | null = null;
   private pendingCampName = "";
@@ -260,6 +264,7 @@ export class FarmScene extends Phaser.Scene {
     this.syncHud();
     const onResize = () => {
       if (!this.sys?.isActive()) return;
+      this.fitNightOverlay();
       this.layoutCamera(false);
     };
     this.scale.on("resize", onResize);
@@ -286,12 +291,23 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private applyRanchLighting(): void {
-    const hour = this.state.date.hour;
+    const hour = this.captureLightingHour ?? this.state.date.hour;
     const blend = sceneDaylightBlend(hour);
     const night = nightOverlayAlpha(hour);
     this.hud.setDaylight(blend);
+    this.hud.setNightChrome(night > 0.35);
+    this.fitNightOverlay();
     if (this.nightOverlay) this.nightOverlay.setAlpha(night);
+    const veil = document.getElementById("night-veil");
+    if (veil) veil.style.opacity = String(night);
     this.updateHomesteadGlow(night);
+  }
+
+  private fitNightOverlay(): void {
+    if (!this.nightOverlay) return;
+    const cam = this.cameras.main;
+    this.nightOverlay.setPosition(0, 0);
+    this.nightOverlay.setSize(Math.ceil(cam.width), Math.ceil(cam.height));
   }
 
   private updateHomesteadGlow(nightAlpha: number): void {
@@ -315,6 +331,102 @@ export class FarmScene extends Phaser.Scene {
     if (!this.state.clock) return;
     this.state.clock.settings.dayLengthSeconds = seconds;
     this.persist();
+  }
+
+  private captureDiagnostics(): Record<string, unknown> {
+    const cam = this.cameras.main;
+    const center = this.mobCenter();
+    const night = nightOverlayAlpha(this.captureLightingHour ?? this.state.date.hour);
+    return {
+      hour: this.state.date.hour,
+      hudTime: document.getElementById("stat-time")?.textContent ?? "",
+      nightOverlay: this.nightOverlay?.alpha ?? 0,
+      nightAlpha: night,
+      daylightBlend: sceneDaylightBlend(this.captureLightingHour ?? this.state.date.hour),
+      inTransit: herdInTransit(this.state.herd),
+      transitProgress: this.state.herd.transit?.progress ?? 0,
+      cattleInView: this.countCattleInView(),
+      mobCenter: center,
+      cameraCenter: {
+        x: cam.scrollX + cam.width / (2 * cam.zoom),
+        y: cam.scrollY + cam.height / (2 * cam.zoom),
+      },
+      zoom: cam.zoom,
+      canvasLuminance: this.canvasMeanLuminance(),
+    };
+  }
+
+  private canvasMeanLuminance(): number {
+    if (typeof document === "undefined") return 0;
+    const canvas = document.querySelector<HTMLCanvasElement>("#game canvas");
+    if (!canvas) return 0;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx || canvas.width < 8 || canvas.height < 8) return 0;
+    const sampleW = Math.min(320, canvas.width);
+    const sampleH = Math.min(240, canvas.height);
+    const ox = Math.floor((canvas.width - sampleW) / 2);
+    const oy = Math.floor((canvas.height - sampleH) / 2);
+    const data = ctx.getImageData(ox, oy, sampleW, sampleH).data;
+    let sum = 0;
+    const pixels = data.length / 4;
+    for (let i = 0; i < data.length; i += 4) {
+      sum += data[i] * 0.2126 + data[i + 1] * 0.7152 + data[i + 2] * 0.0722;
+    }
+    return sum / pixels;
+  }
+
+  private countCattleInView(): number {
+    const view = this.cameras.main.worldView;
+    let count = 0;
+    for (let i = 0; i < this.cows.length; i += 1) {
+      const cow = this.cows[i];
+      if (!cow.visible) continue;
+      if (view.contains(cow.x, cow.y)) count += 1;
+    }
+    return count;
+  }
+
+  private holdTransitProgress(progress?: number): boolean {
+    if (!herdInTransit(this.state.herd)) return false;
+    this.captureHoldTransit = true;
+    this.captureFreezeClock = true;
+    this.setSpeed("pause");
+    if (typeof progress === "number" && this.state.herd.transit) {
+      this.state.herd.transit.progress = Math.max(0.05, Math.min(0.95, progress));
+    }
+    this.syncHerdFromSim();
+    this.placeHerd(performance.now());
+    return true;
+  }
+
+  private bumpHerdCaptureZoom(zoom: number): Record<string, unknown> {
+    this.captureSkipCowCull = true;
+    this.captureHideHerdLabel = true;
+    this.hud.setHerdLocator(false, "", "right");
+    const camera = this.cameras.main;
+    camera.setZoom(clampZoom(zoom, this.minZoom, this.maxZoom));
+    this.placeHerd(performance.now());
+    for (const cow of this.cows) cow.setVisible(true);
+    return this.captureDiagnostics();
+  }
+
+  private frameHerdForCapture(zoom: number): Record<string, unknown> {
+    this.captureSkipCowCull = true;
+    this.captureHideHerdLabel = true;
+    this.hud.setHerdLocator(false, "", "right");
+    this.syncHerdFromSim();
+    this.placeHerd(performance.now());
+    const camera = this.cameras.main;
+    camera.setZoom(clampZoom(zoom, this.minZoom, this.maxZoom));
+    const center = this.mobCenter();
+    this.jumpCameraTo(center.x, center.y, false);
+    this.placeHerd(performance.now());
+    const refined = this.mobCenter();
+    camera.centerOn(refined.x, refined.y);
+    this.clampScroll();
+    this.placeHerd(performance.now());
+    for (const cow of this.cows) cow.setVisible(true);
+    return this.captureDiagnostics();
   }
 
   private pickDistantMoveCamp(): number | null {
@@ -483,6 +595,10 @@ export class FarmScene extends Phaser.Scene {
         };
       },
       prepareForScreenshot: () => {
+        this.captureFreezeClock = true;
+        this.captureLightingHour = null;
+        this.captureSkipCowCull = false;
+        this.captureHoldTransit = false;
         this.setSpeed("pause");
         this.hud.hideEventCard();
         this.hud.clearHint();
@@ -555,17 +671,24 @@ export class FarmScene extends Phaser.Scene {
         return true;
       },
       setNightForCapture: () => {
+        this.captureLightingHour = 22;
         this.state.date.hour = 22;
         this.applyRanchLighting();
         this.syncHud();
-        return true;
+        return this.captureDiagnostics();
       },
       resetDaylightForCapture: () => {
+        this.captureLightingHour = 11;
         this.state.date.hour = 11;
         this.applyRanchLighting();
         this.syncHud();
-        return true;
+        return this.captureDiagnostics();
       },
+      captureDiagnostics: () => this.captureDiagnostics(),
+      canvasMeanLuminance: () => this.canvasMeanLuminance(),
+      countCattleInView: () => this.countCattleInView(),
+      herdInTransit: () => herdInTransit(this.state.herd),
+      frameHerdForCapture: (zoom = 1.05) => this.frameHerdForCapture(zoom),
       setSpeed: (mode: SpeedMode) => {
         this.setSpeed(mode);
         return true;
@@ -585,37 +708,20 @@ export class FarmScene extends Phaser.Scene {
         this.redrawFences();
         return camera.zoom;
       },
-      zoomHerdWalkCapture: () => {
-        const camera = this.cameras.main;
-        this.captureHideHerdLabel = true;
-        this.refreshHerdLabel();
-        camera.setZoom(clampZoom(1.02, this.minZoom, this.maxZoom));
-        const center = this.mobCenter();
-        this.jumpCameraTo(center.x, center.y, false);
-        this.clampScroll();
-        this.placeHerd(performance.now());
-        return camera.zoom;
-      },
-      zoomHerdCloseupCapture: () => {
-        const camera = this.cameras.main;
-        this.captureHideHerdLabel = true;
-        this.refreshHerdLabel();
-        camera.setZoom(clampZoom(1.22, this.minZoom, this.maxZoom));
-        const center = this.mobCenter();
-        this.jumpCameraTo(center.x, center.y, false);
-        this.clampScroll();
-        this.placeHerd(performance.now());
-        return camera.zoom;
-      },
+      zoomHerdWalkCapture: () => this.frameHerdForCapture(1.05),
+      zoomHerdCloseupCapture: () => this.bumpHerdCaptureZoom(1.16),
+      bumpHerdCaptureZoom: (zoom: number) => this.bumpHerdCaptureZoom(zoom),
+      holdTransitProgress: (progress?: number) => this.holdTransitProgress(progress),
       pickDistantMoveCamp: () => this.pickDistantMoveCamp(),
       triggerHerdMoveDemo: () => {
+        this.captureFreezeClock = false;
         const targetId = this.pickDistantMoveCamp();
         const target =
           (targetId !== null && this.state.camps.find((c) => c.id === targetId)) ??
           this.state.camps.find((c) => c.id !== this.state.herd.campId);
         if (target) this.commitMove(target.id);
         this.setSpeed("x3");
-        return true;
+        return { started: Boolean(target), targetId: target ? target.id : null };
       },
       openNotificationsDemo: () => {
         this.hud.pushLetter({
@@ -671,7 +777,10 @@ export class FarmScene extends Phaser.Scene {
     }
     this.state.clock.speed = speedMultiplier(this.mode);
     let steps = 0;
-    if (!walking) {
+    if (this.captureLightingHour !== null) {
+      this.state.date.hour = this.captureLightingHour;
+    }
+    if (!walking && !this.captureFreezeClock) {
       let catchUp = 0;
       if (this.visibilityCatchMs > 0) {
         catchUp = this.visibilityCatchMs;
@@ -707,7 +816,7 @@ export class FarmScene extends Phaser.Scene {
       pushCritical: (title, body) => this.hud.showEventCard(title, body),
       syncAlerts: (labels) => this.hud.syncAlerts(labels),
     });
-    if (walking && transitMayAdvance(blocked, this.mode)) {
+    if (walking && transitMayAdvance(blocked, this.mode) && !this.captureFreezeClock && !this.captureHoldTransit) {
       const was = this.state.herd.transit?.progress ?? 0;
       tickTransitRealtime(this.state, delta, this.mode);
       if (!herdInTransit(this.state.herd)) {
@@ -1270,14 +1379,16 @@ export class FarmScene extends Phaser.Scene {
           sprite.y <= view.bottom + pad,
       );
     }
-    for (let i = 0; i < this.cows.length; i += 1) {
-      const cow = this.cows[i];
-      const offset = this.herdOffsets[i];
-      const cx = this.herdVisual.x + (offset?.x ?? 0);
-      const cy = this.herdVisual.y + (offset?.y ?? 0);
-      cow.setVisible(
-        cx >= view.x - pad - 24 && cx <= view.right + pad + 24 && cy >= view.y - pad - 24 && cy <= view.bottom + pad + 24,
-      );
+    if (!this.captureSkipCowCull) {
+      for (let i = 0; i < this.cows.length; i += 1) {
+        const cow = this.cows[i];
+        const offset = this.herdOffsets[i];
+        const cx = this.herdVisual.x + (offset?.x ?? 0);
+        const cy = this.herdVisual.y + (offset?.y ?? 0);
+        cow.setVisible(
+          cx >= view.x - pad - 24 && cx <= view.right + pad + 24 && cy >= view.y - pad - 24 && cy <= view.bottom + pad + 24,
+        );
+      }
     }
   }
 
