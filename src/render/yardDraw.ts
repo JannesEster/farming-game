@@ -122,18 +122,36 @@ function penBoxes(basis: Basis, features: Feature[]): PenBox[] {
   }));
 }
 
-function raceLocals(basis: Basis, features: Feature[], boxes: PenBox[]): Local[] {
+function arcPoints(a: Pt, b: Pt, bend: number, steps: number): Pt[] {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const cx = (a.x + b.x) / 2 + (-dy / len) * bend;
+  const cy = (a.y + b.y) / 2 + (dx / len) * bend;
+  const out: Pt[] = [];
+  for (let i = 0; i <= steps; i += 1) {
+    const t = i / steps;
+    const u = 1 - t;
+    out.push({
+      x: u * u * a.x + 2 * u * t * cx + t * t * b.x,
+      y: u * u * a.y + 2 * u * t * cy + t * t * b.y,
+    });
+  }
+  return out;
+}
+
+/** Screen path of the race: a bend out of the pens, through the crush, and into the ramp. */
+function raceScreen(basis: Basis, features: Feature[], boxes: PenBox[]): Pt[] {
   const crush = features.find((feature) => feature.kind === "crush");
   const crushLocal = crush ? localOf(basis, crush) : { into: 2, along: 2 };
   const front = boxes.length > 0 ? boxes[0].into0 : crushLocal.into + 1.4;
   const gateAlong = boxes.length > 0 ? boxes[Math.min(1, boxes.length - 1)].along0 : crushLocal.along;
-  return [
-    { into: front, along: gateAlong },
-    { into: (front + crushLocal.into) / 2, along: (gateAlong + crushLocal.along) / 2 + 0.35 },
-    crushLocal,
-    { into: crushLocal.into * 0.45, along: crushLocal.along * 0.45 },
-    { into: 0.85, along: 0.05 },
-  ];
+  const start = screenOf(basis, { into: front, along: gateAlong });
+  const crushPt = screenOf(basis, crushLocal);
+  const rampPt = { x: basis.rampScreen.x, y: basis.rampScreen.y };
+  const intoCrush = arcPoints(start, crushPt, 86, 8);
+  const intoRamp = arcPoints(crushPt, rampPt, 72, 7);
+  return [...intoCrush, ...intoRamp.slice(1)];
 }
 
 function screenOf(basis: Basis, local: Local): Pt {
@@ -163,7 +181,7 @@ export function yardSlots(features: Feature[], layout: IsoLayout, tileW: number,
       intoY: basis.intoScreen.y,
     };
   });
-  const race = raceLocals(basis, features, boxes).map((local) => screenOf(basis, local));
+  const race = raceScreen(basis, features, boxes);
   return { pens, race };
 }
 
@@ -232,7 +250,7 @@ export function yardGeometry(
   return {
     edges,
     corners: [first[0], first[3], last[1], last[2]],
-    race: raceLocals(basis, features, boxes).map((local) => screenOf(basis, local)),
+    race: raceScreen(basis, features, boxes),
     crush: crushLocal
       ? {
           ...screenOf(basis, crushLocal),

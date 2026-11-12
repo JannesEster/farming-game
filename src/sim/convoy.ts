@@ -10,7 +10,10 @@ function pathLengthTiles(path: TilePoint[]): number {
   return total || 1;
 }
 
-/** Spacing for a filed column. The herder stays 0.6 tiles behind the last animal. */
+/** Tiles between the last animal's feet and the herder, clear of the cow's body. */
+const HERDER_BEHIND_TILES = 1.75;
+
+/** Spacing for a filed column. The herder walks behind the last animal, clear of its body. */
 export function columnMetrics(
   path: TilePoint[],
   progress: number,
@@ -23,7 +26,7 @@ export function columnMetrics(
   const spacingTiles = Math.min(preferred, (total * 0.92) / Math.max(1, safe - 1));
   const centerTiles = progress * total;
   const rearTiles = centerTiles - ((safe - 1) / 2) * spacingTiles;
-  const herderTiles = Math.max(0, rearTiles - 0.6);
+  const herderTiles = Math.max(0, rearTiles - HERDER_BEHIND_TILES);
   return {
     total,
     spacingTiles,

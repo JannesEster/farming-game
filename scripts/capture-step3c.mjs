@@ -107,6 +107,66 @@ async function assertHerdPicture(page, viewport, label) {
   }
 }
 
+function nearClear(png, x, y) {
+  const i = (y * png.width + x) << 2;
+  const dr = png.data[i] - 0x3b;
+  const dg = png.data[i + 1] - 0x2a;
+  const db = png.data[i + 2] - 0x1e;
+  return dr * dr + dg * dg + db * db < 18 * 18;
+}
+
+/** Reject a large block of the camera clear colour. That is ground that never drew. */
+async function assertGroundFilled(file) {
+  const png = PNG.sync.read(await readFile(file));
+  const step = 4;
+  const top = 78;
+  const bottom = png.height - 72;
+  const seen = new Set();
+  let worst = null;
+  for (let y = top; y < bottom; y += step) {
+    for (let x = 0; x < png.width; x += step) {
+      if (x > png.width - 150 && y > png.height - 170) continue;
+      const key = x + y * png.width;
+      if (seen.has(key) || !nearClear(png, x, y)) continue;
+      let area = 0;
+      let minX = x;
+      let maxX = x;
+      let minY = y;
+      let maxY = y;
+      const stack = [[x, y]];
+      seen.add(key);
+      while (stack.length > 0) {
+        const [cx, cy] = stack.pop();
+        area += step * step;
+        if (cx < minX) minX = cx;
+        if (cx > maxX) maxX = cx;
+        if (cy < minY) minY = cy;
+        if (cy > maxY) maxY = cy;
+        const next = [
+          [cx + step, cy],
+          [cx - step, cy],
+          [cx, cy + step],
+          [cx, cy - step],
+        ];
+        for (const [nx, ny] of next) {
+          if (nx < 0 || ny < top || nx >= png.width || ny >= bottom) continue;
+          if (nx > png.width - 150 && ny > png.height - 170) continue;
+          const nk = nx + ny * png.width;
+          if (seen.has(nk) || !nearClear(png, nx, ny)) continue;
+          seen.add(nk);
+          stack.push([nx, ny]);
+        }
+      }
+      const w = maxX - minX;
+      const h = maxY - minY;
+      if (w >= 70 && h >= 70 && area >= 2500 && (!worst || area > worst.area)) {
+        worst = { area, w, h, x: minX, y: minY };
+      }
+    }
+  }
+  if (worst) throw new Error(`${file} has a bare untextured region ${JSON.stringify(worst)}`);
+}
+
 async function assertV2(page, viewport, label) {
   const art = await page.evaluate(() => window.__farmCapture.v2ArtAudit());
   const keys = await page.evaluate(() => {
@@ -160,6 +220,7 @@ async function main() {
       await assertV2(page, viewport.name, "escaped");
       const escapedPath = path.join(outDir, `${viewport.name}-escaped-animal.png`);
       await page.screenshot({ path: escapedPath });
+      await assertGroundFilled(escapedPath);
       hashes.escaped = await fileHash(escapedPath);
 
       const detailOk = await page.evaluate(() => window.__farmCapture.prepareAnimalDetailCapture());
@@ -178,6 +239,7 @@ async function main() {
       await assertV2(page, viewport.name, "detail");
       const detailPath = path.join(outDir, `${viewport.name}-animal-detail.png`);
       await page.screenshot({ path: detailPath });
+      await assertGroundFilled(detailPath);
       hashes.detail = await fileHash(detailPath);
       const comparePath = path.join(outDir, `${viewport.name}-art-before-after.png`);
       await writeFile(comparePath, stitchSideBySide(beforeArt[viewport.name], await readFile(detailPath)));
@@ -196,6 +258,7 @@ async function main() {
       await assertV2(page, viewport.name, "multi-select");
       const selectPath = path.join(outDir, `${viewport.name}-multi-select.png`);
       await page.screenshot({ path: selectPath });
+      await assertGroundFilled(selectPath);
       hashes.select = await fileHash(selectPath);
 
       const cutOk = await page.evaluate(() => window.__farmCapture.prepareCutOutCapture());
@@ -208,18 +271,23 @@ async function main() {
       await assertV2(page, viewport.name, "cut-out");
       const cutPath = path.join(outDir, `${viewport.name}-cut-out-drive.png`);
       await page.screenshot({ path: cutPath });
+      await assertGroundFilled(cutPath);
       hashes.cut = await fileHash(cutPath);
 
       const facingOk = await page.evaluate(() => window.__farmCapture.prepareFacingCapture());
       await page.waitForTimeout(250);
       const facing = await page.evaluate(() => window.__farmCapture.namedSpritesInView("cut-out-animal"));
-      if (!facingOk || facing.count < 4 || facing.octants.length < 3 || facing.maxScreenPx < 12) {
-        await fail(page, viewport.name, "cows not facing several directions", facing);
+      const workerPx = await page.evaluate(() =>
+        Math.max(window.__farmCapture.farmhandScreenHeightPx(), window.__farmCapture.farmerScreenHeightPx()),
+      );
+      if (!facingOk || facing.count < 4 || facing.octants.length < 3 || facing.maxScreenPx < 12 || workerPx < 22) {
+        await fail(page, viewport.name, "cows not facing several directions", { facing, workerPx });
       }
       await assertHerdPicture(page, viewport.name, "facing");
       await assertV2(page, viewport.name, "facing");
       const facingPath = path.join(outDir, `${viewport.name}-cows-facing.png`);
       await page.screenshot({ path: facingPath });
+      await assertGroundFilled(facingPath);
       hashes.facing = await fileHash(facingPath);
       }
 
@@ -234,6 +302,7 @@ async function main() {
       await assertV2(page, viewport.name, "truck");
       const truckPath = path.join(outDir, `${viewport.name}-cattle-truck-ramp.png`);
       await page.screenshot({ path: truckPath });
+      await assertGroundFilled(truckPath);
       hashes.truck = await fileHash(truckPath);
       }
 
@@ -248,6 +317,7 @@ async function main() {
       await assertV2(page, viewport.name, "handling");
       const handlingPath = path.join(outDir, `${viewport.name}-cattle-handling.png`);
       await page.screenshot({ path: handlingPath });
+      await assertGroundFilled(handlingPath);
       hashes.handling = await fileHash(handlingPath);
       }
 
@@ -259,6 +329,7 @@ async function main() {
       await assertV2(page, viewport.name, "overview");
       const overviewPath = path.join(outDir, `${viewport.name}-farm-overview.png`);
       await page.screenshot({ path: overviewPath });
+      await assertGroundFilled(overviewPath);
       hashes.overview = await fileHash(overviewPath);
       const beforeOverview = path.join(outDir, "art-before", `${viewport.name}-farm-overview.png`);
       if (await fileExists(beforeOverview)) {
@@ -273,6 +344,7 @@ async function main() {
       await assertV2(page, viewport.name, "homestead");
       const homesteadPath = path.join(outDir, `${viewport.name}-homestead.png`);
       await page.screenshot({ path: homesteadPath });
+      await assertGroundFilled(homesteadPath);
       hashes.homestead = await fileHash(homesteadPath);
 
       if (viewport.name === "phone") {

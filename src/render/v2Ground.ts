@@ -41,11 +41,19 @@ export function applyGroundTransform(
   tileH: number,
   originWorldX: number,
   originWorldY: number,
+  pixelScale = 1,
 ): void {
   const span = image.width / GROUND_REPEAT_TILES;
-  const a = tileW / (2 * span);
-  const b = tileH / (2 * span);
-  ctx.setTransform(a, b, -a, b, layout.originX - originWorldX, layout.originY - originWorldY);
+  const a = (tileW / (2 * span)) * pixelScale;
+  const b = (tileH / (2 * span)) * pixelScale;
+  ctx.setTransform(
+    a,
+    b,
+    -a,
+    b,
+    (layout.originX - originWorldX) * pixelScale,
+    (layout.originY - originWorldY) * pixelScale,
+  );
 }
 
 function fillPattern(
@@ -57,15 +65,36 @@ function fillPattern(
   originWorldX: number,
   originWorldY: number,
   alpha: number,
+  pixelScale = 1,
 ): void {
   const pattern = ctx.createPattern(image, "repeat");
   if (!pattern) return;
   ctx.save();
   ctx.globalAlpha = alpha;
-  applyGroundTransform(ctx, image, layout, tileW, tileH, originWorldX, originWorldY);
+  applyGroundTransform(ctx, image, layout, tileW, tileH, originWorldX, originWorldY, pixelScale);
   ctx.fillStyle = pattern;
-  ctx.fillRect(-20000, -20000, 40000, 40000);
+  ctx.fillRect(-80000, -80000, 160000, 160000);
   ctx.restore();
+}
+
+/**
+ * One seamless dry-grass cell. A tile sprite of this fills any gap the chunks leave,
+ * including the margin around the map when the camera is zoomed out.
+ * The cell is exactly one axis-aligned repeat of the iso projection (256×128).
+ */
+export function ensureV2GroundFillTexture(scene: Phaser.Scene, layout: IsoLayout): string | null {
+  const dry = sourceOf(scene, V2_GROUND_KEYS.dry);
+  if (!dry) return null;
+  const key = "v2-ground-fill";
+  if (scene.textures.exists(key)) scene.textures.remove(key);
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  fillPattern(ctx, dry, layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight, 0, 0, 1, 1);
+  scene.textures.addCanvas(key, canvas);
+  return key;
 }
 
 type TileStamp = { x: number; y: number; topX: number; topY: number };

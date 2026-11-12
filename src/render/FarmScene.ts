@@ -137,9 +137,12 @@ import {
   placeV2Fences,
   placeV2Props,
   preloadV2,
+  roadtrainEndOffsets,
+  roadtrainFile,
   v2Ready,
   vehiclePose,
 } from "./v2Art";
+import { ensureV2GroundFillTexture, v2GroundReady } from "./v2Ground";
 
 function clearHerdTransit(state: GameState): void {
   state.herd.transit = null;
@@ -209,6 +212,7 @@ export class FarmScene extends Phaser.Scene {
   private tileSprites: Phaser.GameObjects.Image[] = [];
   private chunkRoots = new Map<string, Phaser.GameObjects.Container>();
   private chunkRenderTextures = new Map<string, Phaser.GameObjects.RenderTexture | Phaser.GameObjects.Image>();
+  private groundFill?: Phaser.GameObjects.TileSprite;
   private fenceArt: Phaser.GameObjects.Image[] = [];
   private fenceSig = "";
   private cowShadows: Phaser.GameObjects.Image[] = [];
@@ -1173,6 +1177,7 @@ export class FarmScene extends Phaser.Scene {
     this.placeFarmer();
     this.refreshCampLabelScale();
     this.cullProps();
+    this.syncGroundFill();
     this.cullChunks();
     if (this.blades && !this.reduceMotion && !this.paintedSprites) {
       this.blades.rotation += (delta / 1000) * CONFIG.view.windmillRadiansPerSecond;
@@ -1292,7 +1297,9 @@ export class FarmScene extends Phaser.Scene {
   private bakeAllTerrain(): void {
     for (const rt of this.chunkRenderTextures.values()) rt.destroy();
     this.chunkRenderTextures.clear();
-  this.chunkRoots.forEach((root) => root.destroy());
+    this.groundFill?.destroy();
+    this.groundFill = undefined;
+    this.chunkRoots.forEach((root) => root.destroy());
     this.chunkRoots.clear();
     const size = CONFIG.view.terrainChunkTiles;
     for (let cy = 0; cy * size < this.state.height; cy += 1) {
@@ -1302,6 +1309,10 @@ export class FarmScene extends Phaser.Scene {
     }
     for (const camp of this.state.camps) {
       this.shownPct.set(camp.id, Math.round(grazeableFraction(camp) * 100));
+    }
+    if (v2GroundReady(this.textures)) {
+      const fillKey = ensureV2GroundFillTexture(this, this.layout);
+      if (fillKey) this.groundFill = this.add.tileSprite(0, 0, 64, 64, fillKey).setOrigin(0, 0).setDepth(-2);
     }
   }
 
@@ -1809,7 +1820,7 @@ export class FarmScene extends Phaser.Scene {
       sprite.setScale(scale);
     }
     sprite.setPosition(foot.x, foot.y + bob);
-    sprite.setDepth(20000 + presence.tileX + presence.tileY);
+    sprite.setDepth(8 + foot.y * 0.04 + 0.45);
     lastPos.x = foot.x;
     lastPos.y = foot.y;
     return { x: foot.x, y: foot.y, bob, scale };
@@ -2607,10 +2618,19 @@ export class FarmScene extends Phaser.Scene {
       if (ordered.length < 6) continue;
       const framed = ordered;
       if (new Set(framed.map((cow) => cow.getData("octant"))).size < 3) continue;
-      this.frameWorldPoints(framed.map((sprite) => ({ x: sprite.x, y: sprite.y })), 0.84);
+      this.placeFarmhand();
+      this.placeFarmer();
+      const herder = story.cutOut?.herder === "piet" ? this.farmhandSprite : this.farmerSprite;
+      const points = framed.map((sprite) => ({ x: sprite.x, y: sprite.y }));
+      if (herder?.visible) points.push({ x: herder.x, y: herder.y });
+      this.frameWorldPoints(points, 0.78);
       this.placeIndividualAnimals(performance.now());
+      this.placeFarmhand();
+      this.placeFarmer();
       const seen = this.namedSpritesInView("cut-out-animal");
-      if (seen.octants.length >= 3 && seen.count >= 4 && seen.maxScreenPx >= 16) {
+      const workerPx = Math.max(this.farmhandScreenHeightPx(), this.farmerSprite?.visible ? this.farmerSprite.displayHeight * this.cameras.main.zoom : 0);
+      const workerIn = story.cutOut?.herder === "piet" ? this.countFarmhandInView() >= 1 : this.countFarmerInView() >= 1;
+      if (seen.octants.length >= 3 && seen.count >= 4 && seen.maxScreenPx >= 16 && workerIn && workerPx >= 22) {
         this.collapseHerdSheet();
         this.hud.clearHint();
         return true;
@@ -2742,9 +2762,19 @@ export class FarmScene extends Phaser.Scene {
   private truckExtentPoints(): { x: number; y: number }[] {
     const truck = this.cattleTruck;
     if (!truck?.visible) return [];
+    const rearX = truck.getData("rearX");
+    const rearY = truck.getData("rearY");
+    const cabX = truck.getData("cabX");
+    const cabY = truck.getData("cabY");
+    if (typeof rearX === "number" && typeof rearY === "number" && typeof cabX === "number" && typeof cabY === "number") {
+      return [
+        { x: rearX, y: rearY },
+        { x: cabX, y: cabY },
+      ];
+    }
     const half = truck.displayWidth / 2;
-    const alongX = Number(truck.getData("alongX") ?? Math.cos((truck.angle * Math.PI) / 180));
-    const alongY = Number(truck.getData("alongY") ?? Math.sin((truck.angle * Math.PI) / 180));
+    const alongX = Number(truck.getData("alongX") ?? 1);
+    const alongY = Number(truck.getData("alongY") ?? 0);
     const alongLen = Math.hypot(alongX, alongY) || 1;
     const dx = (alongX / alongLen) * half;
     const dy = (alongY / alongLen) * half;
@@ -2816,11 +2846,19 @@ export class FarmScene extends Phaser.Scene {
     let truckOverlapsPens = false;
     let truckPx = 0;
     if (truck?.visible && this.spriteInView(truck)) {
-      const bounds = truck.getBounds();
       truckPx = this.screenHeightOf(truck);
+      const rearX = Number(truck.getData("rearX") ?? truck.x);
+      const rearY = Number(truck.getData("rearY") ?? truck.y);
+      const cabX = Number(truck.getData("cabX") ?? truck.x);
+      const cabY = Number(truck.getData("cabY") ?? truck.y);
       truckOverlapsPens = pens.some((pen) => {
-        const penBounds = pen.getBounds();
-        return bounds.right > penBounds.left && bounds.left < penBounds.right && bounds.bottom > penBounds.top && bounds.top < penBounds.bottom;
+        const box = pen.getBounds();
+        for (let t = 0; t <= 1; t += 0.1) {
+          const x = rearX + (cabX - rearX) * t;
+          const y = rearY + (cabY - rearY) * t;
+          if (x > box.left && x < box.right && y > box.top && y < box.bottom) return true;
+        }
+        return false;
       });
     }
     return { pens: pens.length, cattle: cattle.length, truckOverlapsPens, truckPx };
@@ -3141,7 +3179,6 @@ export class FarmScene extends Phaser.Scene {
     const awayY = bayPos.y - rampPos.y;
     const awayLen = Math.hypot(awayX, awayY) || 1;
     const along = this.truckRoadScreenStep(bay ?? tile, ramp);
-    const alongLen = Math.hypot(along.x, along.y) || 1;
     const train = v2Ready(this.textures) ? vehiclePose("roadtrain", along.x, along.y) : null;
     const truckScale = train?.scale ?? scaleToSpanMetres(640, 22);
     if (!this.cattleTruck) {
@@ -3159,18 +3196,44 @@ export class FarmScene extends Phaser.Scene {
       this.cattleTruck.setScale(truckScale);
       this.cattleTruck.setAngle((Math.atan2(along.y, along.x) * 180) / Math.PI);
     }
-    const half = this.cattleTruck.displayWidth / 2;
-    // Feet sit on the gravel, with the trailer end beside the ramp and the cab along the road.
-    const pos = depart
-      ? tileCenter(tile.x, tile.y, this.layout, tileW, tileH)
-      : {
-          x: bayPos.x + (awayX / awayLen) * 42 - (along.x / alongLen) * half * 0.28,
-          y: bayPos.y + (awayY / awayLen) * 22 - (along.y / alongLen) * half * 0.28,
-        };
+    const file = roadtrainFile(along.x, along.y);
+    const ends = roadtrainEndOffsets(file, this.cattleTruck.scaleX);
+    const axle = (shift: number) => ({
+      x: rampPos.x + (awayX / awayLen) * shift,
+      y: rampPos.y + (awayY / awayLen) * shift * 0.55,
+    });
+    const parkedAt = (shift: number) => {
+      const contact = axle(shift);
+      if (!ends) return contact;
+      return { x: contact.x - ends.rearX, y: contact.y - ends.rearY };
+    };
+    let shift = 12;
+    let pos = depart ? tileCenter(tile.x, tile.y, this.layout, tileW, tileH) : parkedAt(shift);
+    if (!depart && ends) {
+      const pens = this.propSprites.filter((sprite) => sprite.getData("featureKind") === "holding_pen");
+      const hitsPen = (at: { x: number; y: number }) =>
+        pens.some((pen) => {
+          const box = pen.getBounds();
+          for (let t = 0; t <= 1; t += 0.12) {
+            const x = at.x + ends.rearX + (ends.cabX - ends.rearX) * t;
+            const y = at.y + ends.rearY + (ends.cabY - ends.rearY) * t;
+            if (x > box.left && x < box.right && y > box.top && y < box.bottom) return true;
+          }
+          return false;
+        });
+      while (shift < 80 && hitsPen(pos)) {
+        shift += 8;
+        pos = parkedAt(shift);
+      }
+    }
     this.cattleTruck.setFlipX(false);
     this.cattleTruck.setPosition(pos.x, pos.y).setVisible(true).setDepth(9.2 + pos.y * 0.04);
     this.cattleTruck.setData("alongX", along.x);
     this.cattleTruck.setData("alongY", along.y);
+    this.cattleTruck.setData("rearX", pos.x + (ends?.rearX ?? 0));
+    this.cattleTruck.setData("rearY", pos.y + (ends?.rearY ?? 0));
+    this.cattleTruck.setData("cabX", pos.x + (ends?.cabX ?? 0));
+    this.cattleTruck.setData("cabY", pos.y + (ends?.cabY ?? 0));
     this.cattleTruck.setData("featureKind", "cattle_truck");
     this.cattleTruck.setData("tileX", tile.x);
     this.cattleTruck.setData("tileY", tile.y);
@@ -3254,7 +3317,7 @@ export class FarmScene extends Phaser.Scene {
       // Sale animals stand on the yard sprites. Those use the prop depth scale, which
       // sits above the usual cattle depth once the yard is far down the map.
       const onYard = spot.role === "cut-out-animal";
-      cow.setDepth(onYard ? 8 + spot.y * 0.04 + 1.1 : 20 + spot.y * 0.01);
+      cow.setDepth(onYard ? 8 + spot.y * 0.04 + 1.1 : 8 + spot.y * 0.04 + 0.25);
       cow.setVisible(true);
       cow.setData("suppress", false);
     });
@@ -3512,19 +3575,26 @@ export class FarmScene extends Phaser.Scene {
     }
   }
 
+  /** Keep a grass tile under the camera so panning or zooming never shows the clear colour. */
+  private syncGroundFill(): void {
+    const fill = this.groundFill;
+    if (!fill) return;
+    const view = this.cameras.main.worldView;
+    const pad = 48;
+    const x = view.x - pad;
+    const y = view.y - pad;
+    fill.setPosition(x, y);
+    fill.setSize(Math.max(8, view.width + pad * 2), Math.max(8, view.height + pad * 2));
+    fill.tilePositionX = x;
+    fill.tilePositionY = y;
+  }
+
   private cullChunks(): void {
     const camera = this.cameras.main;
-    const pad = CONFIG.view.propCullPadPx;
-    const tileW = CONFIG.view.tileWidth;
-    const tileH = CONFIG.view.tileHeight;
+    const pad = Math.max(CONFIG.view.propCullPadPx, 96);
     const source = this.paintedSprites ? this.chunkRenderTextures : this.chunkRoots;
-    for (const [key, root] of source) {
-      const [cx, cy] = key.split(",").map(Number);
-      const sample = tileTop(cx * CONFIG.view.terrainChunkTiles, cy * CONFIG.view.terrainChunkTiles, this.layout, tileW, tileH);
-      const bounds = new Phaser.Geom.Rectangle(sample.x - tileW * 8, sample.y - tileH * 2, tileW * 16, tileH * 16);
-      const visible = boundsVisible(camera, bounds, pad);
-      if (root instanceof Phaser.GameObjects.Container) root.setVisible(visible);
-      else root.setVisible(visible);
+    for (const root of source.values()) {
+      root.setVisible(boundsVisible(camera, root.getBounds(), pad));
     }
   }
 

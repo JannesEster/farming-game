@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cattleFile, facingFromOctant, grazeFacing, nwSeDiagonal, personFile } from "./v2Art";
+import { cattleBodyTiles, cattleFile, facingFromOctant, grazeFacing, nwSeDiagonal, personFile, personPose } from "./v2Art";
 
 describe("v2 art choices", () => {
   it("maps a travel octant onto the facing sheet", () => {
@@ -26,6 +26,21 @@ describe("v2 art choices", () => {
   it("picks Piet and the farmer from the screen step", () => {
     expect(personFile("farmhand", -1, 0.4, true)).toContain("piet-walk");
     expect(personFile("farmer", 0, 1, false)).toBe("person-farmer-stand-s.png");
+  });
+
+  it("draws a calf at about two thirds of a cow's length", () => {
+    const cow = cattleBodyTiles(false);
+    const calf = cattleBodyTiles(true);
+    expect(cow).toBeCloseTo(0.62, 2);
+    expect(calf / cow).toBeGreaterThanOrEqual(0.65);
+    expect(calf / cow).toBeLessThanOrEqual(0.7);
+  });
+
+  it("draws a worker tall enough to read behind a herd", () => {
+    const pose = personPose("farmhand", 1, 0.4, true);
+    expect(pose).not.toBeNull();
+    const heightTiles = ((pose?.scale ?? 0) * 140) / 64;
+    expect(heightTiles).toBeGreaterThan(0.5);
   });
 
   it("tells the two fence diagonals apart", () => {
