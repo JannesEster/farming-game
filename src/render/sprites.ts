@@ -29,7 +29,23 @@ export const SPRITE_KEYS = {
   cattleAngus: "spr-cattle-angus",
   cattleCalf: "spr-cattle-calf",
   cowDot: "spr-cow-dot",
+  farmhand: "spr-farmhand",
 } as const;
+
+/** Simple worker silhouette until step 3 art lands. */
+export function ensureFarmhandTexture(scene: Phaser.Scene): void {
+  const key = SPRITE_KEYS.farmhand;
+  if (scene.textures.exists(key)) return;
+  const g = scene.make.graphics({ x: 0, y: 0 });
+  g.fillStyle(0x2a4f7a, 1);
+  g.fillRoundedRect(8, 6, 20, 28, 4);
+  g.fillStyle(0xf2c9a0, 1);
+  g.fillCircle(18, 12, 7);
+  g.fillStyle(0x1d3550, 1);
+  g.fillRect(12, 30, 16, 10);
+  g.generateTexture(key, 36, 44);
+  g.destroy();
+}
 
 export const SPRITE_FILES: { key: string; file: string }[] = [
   { key: SPRITE_KEYS.farmhouse, file: "farmhouse.png" },

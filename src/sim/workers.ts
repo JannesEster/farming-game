@@ -1,5 +1,7 @@
 import { CONFIG, type GameConfig } from "./config";
-import type { FarmhandJob } from "./storyTypes";
+import { defaultWorkGrid } from "./workGrid";
+import { ensureStep2State } from "./levers";
+import type { FarmhandJob, WorkJobId } from "./storyTypes";
 import type { GameState } from "./types";
 
 export function hireFarmhand(state: GameState, config: GameConfig = CONFIG): { ok: boolean; message: string } {
@@ -10,13 +12,26 @@ export function hireFarmhand(state: GameState, config: GameConfig = CONFIG): { o
   story.farmhand.wageCashNad = config.economy.farmhandMonthlyCashNad;
   story.farmhand.daysUntilPayroll = config.economy.payrollIntervalDays;
   story.farmhand.job = "check_water";
-  return { ok: true, message: "Hired Piet. He can check water or help move the herd." };
+  if (!story.workGrid) story.workGrid = defaultWorkGrid();
+  story.workGrid.check_water = 2;
+  ensureStep2State(state);
+  return { ok: true, message: "Hired Piet. Set his jobs on the work grid in Ranch ops." };
 }
 
+/** @deprecated use setWorkPriority from workGrid */
 export function setFarmhandJob(state: GameState, job: FarmhandJob): void {
   const story = state.story;
   if (!story?.farmhand.hired) return;
   story.farmhand.job = job;
+  if (!story.workGrid) story.workGrid = defaultWorkGrid();
+  const map: Record<NonNullable<FarmhandJob>, WorkJobId> = {
+    check_water: "check_water",
+    move_herd: "move_herd_help",
+  };
+  if (job) {
+    for (const key of Object.keys(story.workGrid) as WorkJobId[]) story.workGrid[key] = 0;
+    story.workGrid[map[job]] = 2;
+  }
 }
 
 export function tickFarmhand(state: GameState, config: GameConfig = CONFIG): string | null {
@@ -27,18 +42,13 @@ export function tickFarmhand(state: GameState, config: GameConfig = CONFIG): str
     story.farmhand.daysUntilPayroll = config.economy.payrollIntervalDays;
     return "Farmhand paid (wages run with month-end costs).";
   }
-  if (story.farmhand.job === "check_water" && state.date.day % config.story.farmhandWaterCheckInterval === 0) {
-    return "Farmhand checked water points.";
-  }
-  if (story.farmhand.job === "move_herd" && state.herd.condition < config.story.farmhandMoveCondition) {
-    return "Farmhand suggests moving the herd to greener grass.";
-  }
   return null;
 }
 
 export function farmhandWaterBonus(state: GameState, config: GameConfig = CONFIG): number {
-  if (state.story?.farmhand.hired && state.story.farmhand.job === "check_water") {
-    return config.story.farmhandWaterConditionBonus;
-  }
+  const story = state.story;
+  if (!story?.farmhand.hired) return 0;
+  const waterOn = (story.workGrid?.check_water ?? 0) > 0 || story.farmhand.job === "check_water";
+  if (waterOn) return config.story.farmhandWaterConditionBonus;
   return 0;
 }

@@ -34,11 +34,68 @@ export type DroughtState = {
   forageMultiplier: number;
 };
 
+/** @deprecated Step 2 uses workGrid priorities; kept for save migration reads. */
 export type FarmhandJob = "check_water" | "move_herd" | null;
+
+export type WorkJobId = "check_water" | "fix_fences" | "fill_lick" | "move_herd_help";
+export type WorkPriority = 0 | 1 | 2 | 3;
+export type WorkGrid = Record<WorkJobId, WorkPriority>;
+
+export type LickChoice = "summer_phosphate_p6" | "summer_phosphate_p12" | "winter_protein_urea";
+export type PumpChoice = "diesel" | "solar" | "windmill";
+export type MaintenanceMode = "maintain" | "defer";
+
+export type CostLevers = {
+  lick: LickChoice;
+  pump: PumpChoice;
+  bakkieRunsPerMonth: number;
+  maintenance: MaintenanceMode;
+  solarPaid: boolean;
+};
+
+export type InfrastructureWear = {
+  fenceWear: number;
+  pumpReliability: number;
+  deferredMaintenanceMonths: number;
+};
+
+export type FarmhandPresence = {
+  tileX: number;
+  tileY: number;
+  targetTileX: number;
+  targetTileY: number;
+  activeJob: WorkJobId | null;
+  activityLabel: string;
+  walkProgress: number;
+};
+
+export type MorningDecisionId = "lick_batch" | "water_round" | "fence_first";
+
+export type DailyPlayState = {
+  goalText: string;
+  goalTarget: string;
+  goalProgress: number;
+  goalMet: boolean;
+  morningDecisionId: MorningDecisionId | null;
+  morningDecisionAnswered: boolean;
+};
+
+export type PlayerEventAction = { id: string; label: string; costNad: number };
+
+export type PendingPlayerEvent = {
+  id: string;
+  kind: "pump_fault" | "jackal" | "buyer_offer";
+  title: string;
+  body: string;
+  ignoreConsequence: string;
+  actions: PlayerEventAction[];
+  critical: boolean;
+};
 
 export type FarmhandState = {
   hired: boolean;
-  job: FarmhandJob;
+  /** @deprecated use workGrid */
+  job: "check_water" | "move_herd" | null;
   daysUntilPayroll: number;
   wageCashNad: number;
 };
@@ -91,6 +148,13 @@ export type StoryState = {
   moveWarnCampId: number | null;
   /** Camp that already showed the water warning for this stay. */
   thirstWarnCampId: number | null;
+  costLevers?: CostLevers;
+  workGrid?: WorkGrid;
+  infrastructure?: InfrastructureWear;
+  farmhandPresence?: FarmhandPresence;
+  dailyPlay?: DailyPlayState;
+  pendingPlayerEvent?: PendingPlayerEvent | null;
+  monthDiary?: string[];
 };
 
 export type SellRequest = {

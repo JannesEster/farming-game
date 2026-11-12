@@ -74,6 +74,7 @@ export function mountHud(options: {
   onConfirmMove: () => void;
   onCancelMove: () => void;
   onOpenMarket: () => void;
+  onOpenOps?: () => void;
   onSheetExpanded?: (expanded: boolean) => void;
   onHerdLocator?: () => void;
   onDayLength?: (seconds: DayLengthSeconds) => void;
@@ -102,6 +103,7 @@ export function mountHud(options: {
       <div class="overflow-menu" id="overflow-menu" hidden>
         <button type="button" id="view-home">Home</button>
         <button type="button" id="market-open">Sell / market</button>
+        <button type="button" id="ops-open">Ranch ops</button>
         <label class="settings-row" for="day-length-select">Day length</label>
         <select id="day-length-select" aria-label="Day length in minutes">
           <option value="180">3 minutes</option>
@@ -186,6 +188,7 @@ export function mountHud(options: {
   const moveConfirmBtn = requiredButton(root, "move-confirm-btn");
   const moveCancelBtn = requiredButton(root, "move-cancel-btn");
   const marketBtn = requiredButton(root, "market-open");
+  const opsBtn = requiredButton(root, "ops-open");
   const overflowBtn = requiredButton(root, "menu-overflow");
   const eventCard = required(root, "event-card");
   const eventTitle = required(root, "event-title");
@@ -227,6 +230,12 @@ export function mountHud(options: {
     overflowMenu.hidden = true;
     overflowBtn.setAttribute("aria-expanded", "false");
     options.onOpenMarket();
+  });
+  opsBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    overflowMenu.hidden = true;
+    overflowBtn.setAttribute("aria-expanded", "false");
+    options.onOpenOps?.();
   });
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
   let toastHeld = false;
@@ -443,8 +452,12 @@ export function mountHud(options: {
           }
           leftEl.textContent = formatGrassLeft(daysLeft, fraction);
           const status = formatFeedStatus(daysLeft);
-          statusEl.textContent = status;
-          statusEl.hidden = status.length === 0;
+          const farmhand = state.story?.farmhand;
+          const presence = state.story?.farmhandPresence;
+          const farmLine =
+            farmhand?.hired && presence ? `Piet: ${presence.activityLabel}` : "";
+          statusEl.textContent = [status, farmLine].filter(Boolean).join(" · ");
+          statusEl.hidden = statusEl.textContent.length === 0;
         }
 
         if (ui.pendingCampId !== null) {

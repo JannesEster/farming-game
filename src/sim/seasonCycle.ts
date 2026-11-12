@@ -1,8 +1,8 @@
 import { CONFIG, type GameConfig } from "./config";
 import { calvingFromPregnantHeifers } from "./cattleClasses";
 import { addDays, daysInMonth, isRainyMonth } from "./calendar";
-import { chargeMonthlyCosts, monthlyCostExplainers, syncHeadFromComposition } from "./economy";
-import { formatNad } from "./format";
+import { chargeMonthlyCosts, syncHeadFromComposition } from "./economy";
+import { buildMonthDiaryBody } from "./monthDiary";
 import type { CalendarDate } from "./types";
 import type { GameState } from "./types";
 
@@ -118,14 +118,11 @@ export function closeMonth(state: GameState, config: GameConfig = CONFIG): void 
   if (story.lastMonthKey === key) return;
   story.lastMonthKey = key;
   const costs = chargeMonthlyCosts(state, config);
-  const net = story.ledger.incomeNad - story.ledger.expenseNad;
   const lines: string[] = [];
   const transition = monthPhaseTransitionLine(state.date, config);
   if (transition) lines.push(transition);
-  lines.push(`Income ${formatNad(story.ledger.incomeNad)}. Expenses ${formatNad(story.ledger.expenseNad)}.`);
-  lines.push("Costs");
-  for (const line of monthlyCostExplainers(state, costs, config)) lines.push(line);
-  lines.push(`Net ${formatNad(net)}. Rain season-to-date ${Math.round(state.seasonRainMm)} mm.`);
+  const diary = buildMonthDiaryBody(state, costs, config);
+  lines.push(...diary);
   if (story.ledger.deathCount > 0) lines.push(`${story.ledger.deathCount} deaths logged.`);
   else lines.push("No deaths logged.");
   if (story.composition.tolly + story.composition.heifer > 0) {
@@ -136,10 +133,11 @@ export function closeMonth(state: GameState, config: GameConfig = CONFIG): void 
   story.pendingCards.push({
     id: `month-${key}`,
     kind: "summary",
-    title: `Month in review`,
+    title: "Farm diary",
     body,
     priority: 5,
   });
+  story.monthDiary = [];
 
   story.ledger = {
     incomeNad: 0,
