@@ -269,6 +269,7 @@ export class FarmScene extends Phaser.Scene {
   private capturePin: { x: number; y: number; zoom: number } | null = null;
   private captureWhy = "";
   private captureHideStaff = false;
+  private reviewDriveZoom: number | null = null;
   private captureScaleLineup = false;
   private scaleReferenceSprites: Phaser.GameObjects.Image[] = [];
   private yardBakkie?: Phaser.GameObjects.Image;
@@ -668,6 +669,48 @@ export class FarmScene extends Phaser.Scene {
     return this.captureDiagnostics();
   }
 
+  /** One zoom for the whole drive. Pan so the herder stays in frame behind the mob. */
+  private frameReviewDrive(zoom: number): Record<string, unknown> {
+    this.captureSkipCowCull = true;
+    this.captureHideHerdLabel = true;
+    this.capturePin = null;
+    this.syncHerdFromSim();
+    this.placeHerd(performance.now());
+    this.placeFarmer();
+    this.placeFarmhand();
+    const camera = this.cameras.main;
+    if (this.reviewDriveZoom === null) {
+      this.reviewDriveZoom = clampZoom(zoom, this.minZoom, this.maxZoom);
+    }
+    camera.setZoom(this.reviewDriveZoom);
+    const herd = this.mobCenter();
+    const herder = this.farmerSprite?.visible ? { x: this.farmerSprite.x, y: this.farmerSprite.y } : herd;
+    const viewW = camera.width / camera.zoom;
+    const viewH = camera.height / camera.zoom;
+    const margin = 0.2;
+    let cx = (herd.x + herder.x) / 2;
+    let cy = (herd.y + herder.y) / 2;
+    const limitX = viewW * (0.5 - margin);
+    const limitY = viewH * (0.5 - margin);
+    cx = Math.min(herder.x + limitX, Math.max(herder.x - limitX, cx));
+    cy = Math.min(herder.y + limitY, Math.max(herder.y - limitY, cy));
+    this.jumpCameraTo(cx, cy, false);
+    this.placeHerd(performance.now());
+    this.placeFarmer();
+    this.placeFarmhand();
+    this.cullProps();
+    this.fadeCoveringTrees();
+    const view = camera.worldView;
+    const herderVisible = Boolean(
+      this.farmerSprite?.visible &&
+        this.farmerSprite.x >= view.x &&
+        this.farmerSprite.x <= view.right &&
+        this.farmerSprite.y >= view.y &&
+        this.farmerSprite.y <= view.bottom,
+    );
+    return { zoom: camera.zoom, herderVisible, x: herder.x, y: herder.y };
+  }
+
   private pickDistantMoveCamp(): number | null {
     const from = this.state.herd.campId;
     let best: { id: number; hops: number } | null = null;
@@ -1005,6 +1048,7 @@ export class FarmScene extends Phaser.Scene {
       },
       herdInTransit: () => herdInTransit(this.state.herd),
       frameHerdForCapture: (zoom = 1.05) => this.frameHerdForCapture(zoom),
+      frameReviewDrive: (zoom = 0.9) => this.frameReviewDrive(zoom),
       setSpeed: (mode: SpeedMode) => {
         this.setSpeed(mode);
         return true;
@@ -1090,6 +1134,7 @@ export class FarmScene extends Phaser.Scene {
       startNeighbourDriveCapture: (hour = 10, minute = 0) => {
         this.captureFreezeClock = false;
         this.captureHoldTransit = false;
+        this.reviewDriveZoom = null;
         this.setSpeed("x1");
         const dayLength = this.state.clock?.settings.dayLengthSeconds ?? 240;
         this.state.date = { ...this.state.date, hour };
@@ -1197,6 +1242,7 @@ export class FarmScene extends Phaser.Scene {
       prepareHandlingCapture: () => this.prepareHandlingCapture(),
       prepareOverviewCapture: () => this.prepareOverviewCapture(),
       prepareHomesteadCapture: () => this.prepareHomesteadCapture(),
+      prepareHomesteadAtDefaultZoom: () => this.prepareHomesteadAtDefaultZoom(),
       prepareHomesteadCloseCapture: () => this.prepareHomesteadCloseCapture(),
       prepareScaleReferenceCapture: () => this.prepareScaleReferenceCapture(),
       v2ArtAudit: () => this.v2ArtAudit(),
@@ -1320,6 +1366,7 @@ export class FarmScene extends Phaser.Scene {
     this.placeFarmer();
     this.refreshCampLabelScale();
     this.cullProps();
+    this.fadeCoveringTrees();
     this.syncGroundFill();
     this.cullChunks();
     if (this.blades && !this.reduceMotion && !this.paintedSprites) {
@@ -1604,6 +1651,7 @@ export class FarmScene extends Phaser.Scene {
             .setOrigin(def.originX, def.originY)
             .setScale(def.scale)
             .setDepth(8 + center.y * 0.04);
+          image.setData("featureKind", feature.kind);
           this.propSprites.push(image);
         }
       }
@@ -1680,6 +1728,7 @@ export class FarmScene extends Phaser.Scene {
         depth + (feature.kind === "trough" ? 0 : 0.4),
         scale,
       );
+      image.setData("featureKind", feature.kind);
       this.propSprites.push(image);
     }
 
@@ -2900,6 +2949,7 @@ export class FarmScene extends Phaser.Scene {
     this.setCampLabelsShown(false);
     this.placeFarmer();
     this.placeFarmhand();
+    this.fadeCoveringTrees();
     const herdOnYard = this.pictureAudit().herdCoversHomestead;
     const yard = this.yardCaptureAudit();
     this.captureWhy = `${truck.name}|herd:${herdOnYard}|px:${yard.truckPx.toFixed(0)}|pens:${yard.pens}|cattle:${yard.cattle}|over:${yard.truckOverlapsPens}`;
@@ -3110,6 +3160,21 @@ export class FarmScene extends Phaser.Scene {
       true,
     );
     return true;
+  }
+
+  private prepareHomesteadAtDefaultZoom(): boolean {
+    this.captureHideStaff = false;
+    this.capturePin = null;
+    this.layoutCamera(true);
+    const house = this.state.features.find((feature) => feature.kind === "house");
+    if (!house) return false;
+    const center = tileCenter(house.x, house.y, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
+    this.cameras.main.centerOn(center.x, center.y);
+    this.clampScroll();
+    this.placeFarmer();
+    this.cullProps();
+    this.fadeCoveringTrees();
+    return this.auditKind("house").inView >= 1;
   }
 
   private prepareHomesteadCapture(): boolean {
@@ -3792,6 +3857,43 @@ export class FarmScene extends Phaser.Scene {
       cow.setDepth(depth + offset.y * 0.01);
       cow.setVisible(true);
     });
+  }
+
+  /** A tree that stands over a person, the herd, a building or the truck drops to 35% alpha. */
+  private fadeCoveringTrees(): void {
+    const covers: { x: number; y: number; r: number }[] = [];
+    const add = (sprite: Phaser.GameObjects.Image | undefined, scale = 0.42) => {
+      if (!sprite?.visible) return;
+      covers.push({
+        x: sprite.x,
+        y: sprite.y - sprite.displayHeight * (1 - sprite.originY) * 0.5,
+        r: Math.max(16, Math.max(sprite.displayWidth, sprite.displayHeight) * scale),
+      });
+    };
+    add(this.farmerSprite, 0.55);
+    add(this.farmhandSprite, 0.55);
+    add(this.cattleTruck, 0.48);
+    add(this.yardBakkie, 0.48);
+    for (const cow of this.cows) add(cow, 0.5);
+    for (const prop of this.propSprites) {
+      const kind = prop.getData("featureKind");
+      if (typeof kind !== "string" || kind === "tree" || kind === "bush") continue;
+      add(prop, 0.46);
+    }
+    for (const prop of this.propSprites) {
+      if (prop.getData("featureKind") !== "tree") continue;
+      const cx = prop.x;
+      const cy = prop.y - prop.displayHeight * (1 - prop.originY) * 0.55;
+      const cr = Math.max(20, prop.displayWidth * 0.4);
+      let hit = false;
+      for (const target of covers) {
+        if (Math.hypot(cx - target.x, cy - target.y) < cr + target.r) {
+          hit = true;
+          break;
+        }
+      }
+      prop.setAlpha(hit ? 0.35 : 1);
+    }
   }
 
   private cullProps(): void {

@@ -547,6 +547,17 @@ export function pathLengthKm(path: TilePoint[], config: GameConfig = CONFIG): nu
 
 export function pointOnPath(path: TilePoint[], progress: number): TilePoint {
   if (path.length === 0) return { x: 0, y: 0 };
+  if (path.length >= 2 && progress < 0) {
+    let totalLen = 0;
+    for (let i = 1; i < path.length; i += 1) {
+      totalLen += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+    }
+    const back = -progress * (totalLen || 1);
+    const dx = path[0].x - path[1].x;
+    const dy = path[0].y - path[1].y;
+    const len = Math.hypot(dx, dy) || 1;
+    return { x: path[0].x + (dx / len) * back, y: path[0].y + (dy / len) * back };
+  }
   if (path.length === 1 || progress <= 0) return path[0];
   if (progress >= 1) return path[path.length - 1];
   let totalLen = 0;

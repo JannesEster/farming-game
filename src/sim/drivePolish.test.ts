@@ -8,6 +8,7 @@ import {
   tickRanchClock,
 } from "./clock";
 import { columnMetrics } from "./convoy";
+import { clearYardRadiusTiles, generateFarm } from "./generate";
 import { CONFIG } from "./config";
 import { tickHerdingRealtime } from "./herding";
 import { campGateBetween, fenceCrossingsOffGate, planHerdPath } from "./path";
@@ -212,5 +213,43 @@ describe("drive polish", () => {
       40,
     );
     expect(filed.centerTiles - filed.rearProgress * filed.total).toBeLessThanOrEqual(12);
+  });
+
+  it("keeps the herder behind the rear animal for most of a drive, in a mob several animals wide", () => {
+    const path = [
+      { x: 0, y: 0 },
+      { x: 48, y: 0 },
+    ];
+    const samples = [0.2, 0.35, 0.5, 0.65, 0.8, 0.95];
+    let behind = 0;
+    for (const progress of samples) {
+      const filed = columnMetrics(path, progress, 80);
+      const rear = filed.rearProgress * filed.total;
+      const herder = filed.herderProgress * filed.total;
+      expect(filed.centerTiles - rear).toBeLessThanOrEqual(12);
+      expect(filed.abreast).toBeGreaterThanOrEqual(4);
+      expect(filed.widthTiles).toBeGreaterThanOrEqual(3);
+      expect(filed.widthTiles).toBeLessThanOrEqual(5);
+      if (herder < rear - 0.3) behind += 1;
+    }
+    expect(behind).toBe(samples.length);
+  });
+
+  it("leaves a clear yard around the house and plants an open scatter of trees", () => {
+    const state = generateFarm(1);
+    const house = state.features.find((feature) => feature.kind === "house");
+    expect(house).toBeTruthy();
+    const trees = state.features.filter((feature) => feature.kind === "tree");
+    const clear = clearYardRadiusTiles();
+    for (const tree of trees) {
+      const dist = Math.hypot(tree.x - house!.x, tree.y - house!.y);
+      expect(dist).toBeGreaterThan(clear - 0.05);
+      const onTrack = state.features.some(
+        (feature) => feature.kind === "track" && feature.x === tree.x && feature.y === tree.y,
+      );
+      expect(onTrack).toBe(false);
+    }
+    expect(trees.length).toBeGreaterThan(12);
+    expect(trees.length).toBeLessThan(80);
   });
 });

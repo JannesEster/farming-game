@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import { generateFarmOffers } from "../picker/generateOffers";
 import { stateFromOfferCard } from "../integration/pickerAdapter";
 import { CONFIG } from "../sim/config";
+import { generateFarm } from "../sim/generate";
 import { moveHerd } from "../sim/simulation";
-import { TILE_HOMESTEAD, TILE_OUTSIDE } from "../sim/types";
+import { TILE_HOMESTEAD } from "../sim/types";
 import { trackKeys } from "./colour";
 import { isoLayout, tileCenter, worldToTile } from "./iso";
 import {
   campLabelTile,
+  fileAlongPath,
   gateFileWidthPx,
   grazingCenterTile,
   mobSpanPx,
@@ -115,12 +117,58 @@ describe("organicTrekOffsets", () => {
       const ty = Math.round(tile.y);
       const id = state.campIds[ty * state.width + tx];
       const key = `${tx},${ty}`;
-      const allowed = id === fromId || id === destId || (id === TILE_OUTSIDE && track.has(key)) || track.has(key);
+      const path = state.herd.transit!.path;
+      const besideRoute = path.some((tile) => Math.max(Math.abs(tile.x - tx), Math.abs(tile.y - ty)) <= 3);
+      const allowed = id === fromId || id === destId || track.has(key) || (besideRoute && id !== TILE_HOMESTEAD);
       expect(allowed).toBe(true);
       expect(id).not.toBe(TILE_HOMESTEAD);
     }
     const span = mobSpanPx(offsets);
     expect(Math.max(span.width, span.height)).toBeGreaterThan(80);
+  });
+
+  it("files a loose mob several animals abreast and no longer than about 12 tiles", () => {
+    const state = generateFarm(3);
+    const camp = state.camps[0];
+    state.herd.campId = camp.id;
+    state.herd.headCount = 80;
+    for (let i = 0; i < state.campIds.length; i += 1) state.campIds[i] = camp.id;
+    const path = [];
+    for (let y = 18; y <= 58; y += 1) path.push({ x: 30, y });
+    state.herd.transit = {
+      toCampId: camp.id,
+      progress: 0.72,
+      distanceKm: 3,
+      walkGameHours: 1,
+      hoursApplied: 0,
+      path,
+      phase: "drive",
+      herder: "farmer",
+    };
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    const layout = isoLayout(state.width, state.height, tileW, tileH, CONFIG.view.boundsPadPx);
+    const here = tileCenter(30, 18, layout, tileW, tileH);
+    const offsets = fileAlongPath(state, layout, tileW, tileH, 80, state.seed, 1000, here.x, here.y);
+    const moving = offsets.filter((offset) => offset.moving);
+    expect(moving.length).toBeGreaterThan(12);
+    const tilePx = Math.hypot(tileW / 2, tileH / 2);
+    const alongX = -tileW / 2;
+    const alongY = tileH / 2;
+    const alongLen = Math.hypot(alongX, alongY) || 1;
+    const width = mobWidthPx(moving, alongX, alongY);
+    expect(width / tilePx).toBeGreaterThan(2.4);
+    expect(width / tilePx).toBeLessThan(5);
+    let minAlong = Number.POSITIVE_INFINITY;
+    let maxAlong = Number.NEGATIVE_INFINITY;
+    for (const offset of moving) {
+      const along = (offset.x * alongX + offset.y * alongY) / alongLen;
+      minAlong = Math.min(minAlong, along);
+      maxAlong = Math.max(maxAlong, along);
+    }
+    const length = (maxAlong - minAlong) / tilePx;
+    expect(length).toBeLessThanOrEqual(13);
+    expect(length).toBeGreaterThan(8);
   });
 
   it("moves the yard camp badge off the homestead", () => {

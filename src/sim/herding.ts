@@ -157,7 +157,8 @@ function ensureApproachPath(state: GameState, config: GameConfig = CONFIG): void
     : transit.herder === "piet"
       ? workerHouseForFarmhand(state) ?? mainHouseTile(state)
       : mainHouseTile(state);
-  const meet = transit.path[0] ?? from;
+  const behind = herderPathProgressBehindTail(state, config);
+  const meet = transit.path.length > 0 ? pointOnPath(transit.path, behind) : from;
   const allow = campsTouched(state, from, meet);
   let path = planPersonPath(state, from, meet, undefined, allow);
   if (Math.hypot(path[0].x - from.x, path[0].y - from.y) > 0.05) path = [from, ...path];

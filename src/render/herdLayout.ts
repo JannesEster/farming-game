@@ -1,4 +1,5 @@
 import { fractionalHour } from "../sim/clock";
+import { columnMetrics, MOB_LATERAL_TILES } from "../sim/convoy";
 import { pointOnPath } from "../sim/path";
 import type { CampState, GameState, TilePoint } from "../sim/types";
 import { TILE_HOMESTEAD, TILE_OUTSIDE } from "../sim/types";
@@ -29,29 +30,23 @@ function rng(seed: number): () => number {
   };
 }
 
-function gateWithin(state: GameState, x: number, y: number, tiles: number): boolean {
-  const cx = Math.round(x);
-  const cy = Math.round(y);
+/** True when the lead is within a few tiles of a path step that changes camp, the actual gate. */
+function openingNear(state: GameState, path: TilePoint[], x: number, y: number, tiles: number): boolean {
   const idAt = (tx: number, ty: number) => {
-    if (tx < 0 || ty < 0 || tx >= state.width || ty >= state.height) return TILE_OUTSIDE;
-    return state.campIds[ty * state.width + tx];
+    const gx = Math.round(tx);
+    const gy = Math.round(ty);
+    if (gx < 0 || gy < 0 || gx >= state.width || gy >= state.height) return TILE_OUTSIDE;
+    return state.campIds[gy * state.width + gx];
   };
-  for (let dy = -tiles; dy <= tiles; dy += 1) {
-    for (let dx = -tiles; dx <= tiles; dx += 1) {
-      if (dx * dx + dy * dy > tiles * tiles) continue;
-      const id = idAt(cx + dx, cy + dy);
-      if (id < 0) continue;
-      const neighbors = [
-        [1, 0],
-        [-1, 0],
-        [0, 1],
-        [0, -1],
-      ] as const;
-      if (neighbors.some(([sx, sy]) => {
-        const other = idAt(cx + dx + sx, cy + dy + sy);
-        return other >= 0 && other !== id;
-      })) return true;
-    }
+  for (let i = 1; i < path.length; i += 1) {
+    const a = path[i - 1];
+    const b = path[i];
+    const idA = idAt(a.x, a.y);
+    const idB = idAt(b.x, b.y);
+    if (idA === idB) continue;
+    const touchesCamp = idA >= 0 || idB >= 0 || idA === TILE_HOMESTEAD || idB === TILE_HOMESTEAD;
+    if (!touchesCamp) continue;
+    if (Math.hypot(x - b.x, y - b.y) <= tiles || Math.hypot(x - a.x, y - a.y) <= tiles) return true;
   }
   return false;
 }
@@ -363,15 +358,35 @@ export function fileAlongPath(
   }
   const total = lengths[lengths.length - 1] || 1;
   const tilePx = Math.hypot(tileW / 2, tileH / 2);
-  const mobPx = 12 * tilePx;
-  const centerDist = progress * total;
+  const metrics = columnMetrics(path, progress, count);
+  const leadDist = progress * total;
+  const rearDist = metrics.rearProgress * total;
   const leadTile = pointOnPath(path, progress);
-  const nearGate = gateWithin(state, leadTile.x, leadTile.y, 3);
-  const lanes = nearGate ? 2 : Math.min(8, Math.max(2, count));
-  const ranks = Math.max(1, Math.ceil(count / lanes));
-  const spacing = Math.min(tilePx * 1.15, mobPx / Math.max(1, ranks - 1));
+  const nearGate = openingNear(state, path, leadTile.x, leadTile.y, 3);
+  const lanes = nearGate ? Math.min(2, count) : Math.min(metrics.abreast, Math.max(1, count));
+  const lateral = tilePx * (nearGate ? 0.4 : MOB_LATERAL_TILES);
+  const spanPx = Math.max(tilePx * 0.6, leadDist - rearDist);
+  const ranks = Math.max(1, Math.round(spanPx / (tilePx * 1.05)));
+  const movingCount = Math.min(count, Math.max(lanes, ranks * lanes));
+  const spacing = ranks <= 1 ? 0 : spanPx / (ranks - 1);
 
   const pointAt = (distance: number): { x: number; y: number; ux: number; uy: number } => {
+    if (distance < 0 && points.length >= 2) {
+      const a = points[0];
+      const b = points[1];
+      const fx = b.x - a.x;
+      const fy = b.y - a.y;
+      const flen = Math.hypot(fx, fy) || 1;
+      const bx = a.x - b.x;
+      const by = a.y - b.y;
+      const blen = Math.hypot(bx, by) || 1;
+      return {
+        x: a.x + (bx / blen) * -distance,
+        y: a.y + (by / blen) * -distance,
+        ux: fx / flen,
+        uy: fy / flen,
+      };
+    }
     const dist = Math.max(0, Math.min(total, distance));
     let index = 1;
     while (index < lengths.length - 1 && lengths[index] < dist) index += 1;
@@ -387,33 +402,49 @@ export function fileAlongPath(
   };
 
   const offsets: HerdOffset[] = [];
+  const track = trackKeys(state);
+  const fromId = state.herd.campId;
+  const destId = state.herd.transit?.toCampId ?? fromId;
+  const onCorridor = (tx: number, ty: number) => {
+    for (const tile of path) {
+      if (Math.max(Math.abs(tile.x - tx), Math.abs(tile.y - ty)) <= 2) return true;
+    }
+    return false;
+  };
+  const legal = (px0: number, py0: number) => {
+    const tile = worldToTile(px0, py0, layout, tileW, tileH);
+    const tx = Math.round(tile.x);
+    const ty = Math.round(tile.y);
+    if (tx < 0 || ty < 0 || tx >= state.width || ty >= state.height) return false;
+    const id = state.campIds[ty * state.width + tx];
+    if (id === TILE_HOMESTEAD) return false;
+    if (id === fromId || id === destId || track.has(`${tx},${ty}`)) return true;
+    return onCorridor(tx, ty);
+  };
   for (let i = 0; i < count; i += 1) {
     const phase = cowPhase(seed, i);
+    const waiting = i >= movingCount;
     const laneIndex = i % lanes;
     const rank = Math.floor(i / lanes);
-    const along = rank;
     const wobble = Math.sin(timeMs / 700 + phase * 9) * 2;
-    const dist = centerDist - along * spacing + wobble;
-    const waiting = dist < tilePx * 0.4;
-    const at = pointAt(Math.max(tilePx * 0.2, dist));
-    const lane = (laneIndex - (lanes - 1) / 2) * (nearGate ? 8 : 12);
+    const dist = Math.max(tilePx * 0.2, leadDist - rank * spacing + wobble);
+    const at = pointAt(waiting ? 0 : dist);
+    const lane = (laneIndex - (lanes - 1) / 2) * lateral;
     const px = -at.uy;
     const py = at.ux;
-    const track = trackKeys(state);
-    const fromId = state.herd.campId;
-    const destId = state.herd.transit?.toCampId ?? fromId;
-    const legal = (px0: number, py0: number) => {
-      const tile = worldToTile(px0, py0, layout, tileW, tileH);
-      const tx = Math.round(tile.x);
-      const ty = Math.round(tile.y);
-      if (tx < 0 || ty < 0 || tx >= state.width || ty >= state.height) return false;
-      const id = state.campIds[ty * state.width + tx];
-      return id === fromId || id === destId || track.has(`${tx},${ty}`);
-    };
     let foot = { x: at.x + px * lane, y: at.y + py * lane };
-    if (!legal(foot.x, foot.y)) foot = { x: at.x + px * lane * 0.35, y: at.y + py * lane * 0.35 };
+    if (!legal(foot.x, foot.y)) foot = { x: at.x + px * lane * 0.45, y: at.y + py * lane * 0.45 };
     if (!legal(foot.x, foot.y)) foot = { x: at.x, y: at.y };
-    foot = nudgeInsideCamp(state, foot.x, foot.y, layout, tileW, tileH);
+    const stood = worldToTile(foot.x, foot.y, layout, tileW, tileH);
+    const sx = Math.round(stood.x);
+    const sy = Math.round(stood.y);
+    const stoodId =
+      sx >= 0 && sy >= 0 && sx < state.width && sy < state.height
+        ? state.campIds[sy * state.width + sx]
+        : TILE_OUTSIDE;
+    if (stoodId === fromId || stoodId === destId) {
+      foot = nudgeInsideCamp(state, foot.x, foot.y, layout, tileW, tileH);
+    }
     if (!legal(foot.x, foot.y)) foot = { x: at.x, y: at.y };
     offsets.push({
       x: foot.x - herdX,

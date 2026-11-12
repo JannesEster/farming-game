@@ -16,11 +16,13 @@ const INTO = [
   [0, -1],
 ] as const;
 
+type GravelCell = TilePoint & { scale: number };
+
 type Placed = {
   score: number;
   tiles: Feature[];
   reserved: TilePoint[];
-  gravel: TilePoint[];
+  gravel: GravelCell[];
 };
 
 export function placeCattleHandlingYard(args: {
@@ -97,13 +99,13 @@ export function placeCattleHandlingYard(args: {
             const cell = at(piece.into, piece.along);
             return { kind: piece.kind, x: cell.x, y: cell.y, scale: piece.scale };
           });
-          const gravel: TilePoint[] = [];
-          for (let along = -bay; along <= alongMax + 2; along += 1) {
-            for (const into of [0, -1]) {
+          const gravel: GravelCell[] = [];
+          for (let along = -bay; along <= alongMax + 3; along += 1) {
+            for (const into of [0, -1, -2, -3, -4, -5]) {
               const cell = at(into, along);
               if (cell.x < 0 || cell.y < 0 || cell.x >= width || cell.y >= height) continue;
               if (idAt(cell.x, cell.y) === TILE_HOMESTEAD) continue;
-              gravel.push(cell);
+              gravel.push({ ...cell, scale: into === 0 ? 3 : 2 });
             }
           }
           let score = fromHouse;
@@ -122,12 +124,13 @@ export function placeCattleHandlingYard(args: {
     }
   }
   for (const tile of best.tiles) features.push(tile);
-  const trackKeys = new Set(features.filter((feature) => feature.kind === "track").map((feature) => `${feature.x},${feature.y}`));
   for (const tile of best.gravel) {
-    const key = `${tile.x},${tile.y}`;
-    if (trackKeys.has(key)) continue;
-    features.push({ kind: "track", x: tile.x, y: tile.y, scale: 1 });
-    trackKeys.add(key);
+    const existing = features.find((feature) => feature.kind === "track" && feature.x === tile.x && feature.y === tile.y);
+    if (existing) {
+      existing.scale = Math.max(existing.scale, tile.scale);
+      continue;
+    }
+    features.push({ kind: "track", x: tile.x, y: tile.y, scale: tile.scale });
   }
   return best.reserved;
 }

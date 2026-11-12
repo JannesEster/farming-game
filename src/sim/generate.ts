@@ -8,7 +8,8 @@ import {
 } from "./pasture";
 import { ensureAnimals } from "./animals";
 import { createStoryState, initStoryPeople } from "./story";
-import { campGateToward } from "./path";
+import { campGateBetween, campGateToward } from "./path";
+import { PIXELS_PER_METRE } from "../render/worldScale";
 import { placeCattleHandlingYard } from "./cattleYard";
 import { homesteadYardPieces, placeSharedWaterPoints } from "./waterLayout";
 import { createRng, type Rng } from "./rng";
@@ -28,6 +29,60 @@ type Draft = {
 
 function idx(x: number, y: number, width: number): number {
   return y * width + x;
+}
+
+/** Open ground around houses, water and the handling yard, in the cow's metres. */
+const CLEAR_YARD_METRES = 40;
+/** Singles stay about this many tiles apart. A clump by water may be tighter. */
+const TREE_GAP_TILES = 4;
+const CLUMP_GAP_TILES = 1.6;
+const CLUMP_RING_TILES = 5;
+const CLUMP_MAX = 3;
+const CLUMP_CHANCE = 0.22;
+const GATE_CLEAR_TILES = 2;
+const STRUCTURE_CLEAR_KINDS = new Set([
+  "house",
+  "worker_house",
+  "shed",
+  "kraal",
+  "holding_pen",
+  "race",
+  "crush",
+  "handling_roof",
+  "loading_ramp",
+]);
+const WATER_CLUMP_KINDS = new Set(["trough", "reservoir", "windmill", "solar_pump"]);
+
+/** 40 sprite-metres, as a radius in travel tiles. One tile step is about 2.2 m on screen. */
+export function clearYardRadiusTiles(): number {
+  const stepPx = Math.hypot(CONFIG.view.tileWidth / 2, CONFIG.view.tileHeight / 2);
+  return CLEAR_YARD_METRES / (stepPx / PIXELS_PER_METRE);
+}
+
+function nearAny(x: number, y: number, points: TilePoint[], tiles: number): boolean {
+  const limit = tiles * tiles;
+  for (const point of points) {
+    const dx = x - point.x;
+    const dy = y - point.y;
+    if (dx * dx + dy * dy <= limit) return true;
+  }
+  return false;
+}
+
+function nearestWithin(x: number, y: number, points: TilePoint[], tiles: number): number {
+  const limit = tiles * tiles;
+  let best = -1;
+  let bestDist = limit;
+  for (let i = 0; i < points.length; i += 1) {
+    const dx = x - points[i].x;
+    const dy = y - points[i].y;
+    const dist = dx * dx + dy * dy;
+    if (dist <= bestDist) {
+      bestDist = dist;
+      best = i;
+    }
+  }
+  return best;
 }
 
 function placeCenters(
@@ -306,18 +361,56 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
 
   const occupied = new Set(features.map((feature) => `${feature.x},${feature.y}`));
   for (const tile of yardTiles) occupied.add(`${tile.x},${tile.y}`);
+  const clearTiles = clearYardRadiusTiles();
+  const structurePoints = features
+    .filter((feature) => STRUCTURE_CLEAR_KINDS.has(feature.kind))
+    .map((feature) => ({ x: feature.x, y: feature.y }));
+  const waterPoints = features
+    .filter((feature) => WATER_CLUMP_KINDS.has(feature.kind))
+    .map((feature) => ({ x: feature.x, y: feature.y }));
+  const gatePoints: TilePoint[] = [];
+  for (let i = 0; i < camps.length; i += 1) {
+    for (let j = i + 1; j < camps.length; j += 1) {
+      const gate = campGateBetween(camps[i], camps[j]);
+      if (!gate) continue;
+      gatePoints.push(gate.fromGate, gate.toGate);
+    }
+  }
+  const plantedTrees: TilePoint[] = [];
+  const clumpCount = new Map<number, number>();
+  const shoulder = (x: number, y: number) => {
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      if (trackKeys.has(`${x + dx},${y + dy}`)) return true;
+    }
+    return false;
+  };
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const id = finalGrid[idx(x, y, width)];
       const key = `${x},${y}`;
-      if (id === TILE_HOMESTEAD || trackKeys.has(key) || occupied.has(key)) continue;
+      if (id === TILE_HOMESTEAD || trackKeys.has(key) || occupied.has(key) || shoulder(x, y)) continue;
       if (isEdge(finalGrid, width, height, x, y)) continue;
+      if (nearAny(x, y, gatePoints, GATE_CLEAR_TILES)) continue;
+      if (nearAny(x, y, structurePoints, clearTiles) || nearAny(x, y, waterPoints, clearTiles)) continue;
+      const waterIndex = nearestWithin(x, y, waterPoints, clearTiles + CLUMP_RING_TILES);
+      const inClump = waterIndex >= 0;
       const treeChance =
         id === TILE_OUTSIDE ? config.map.treeChance * config.map.outsidePlantFactor : config.map.treeChance;
-      if (rng.next() < treeChance) {
+      const gap = inClump ? CLUMP_GAP_TILES : TREE_GAP_TILES;
+      const crowded = plantedTrees.some((tree) => (tree.x - x) ** 2 + (tree.y - y) ** 2 < gap * gap);
+      const clumpFull = inClump && (clumpCount.get(waterIndex) ?? 0) >= CLUMP_MAX;
+      const chance = inClump ? Math.max(treeChance, CLUMP_CHANCE) : treeChance;
+      if (!crowded && !clumpFull && rng.next() < chance) {
         const scale = lerp(config.map.treeScaleMin, config.map.treeScaleMax, rng.next());
         features.push({ kind: "tree", x, y, scale });
         occupied.add(key);
+        plantedTrees.push({ x, y });
+        if (inClump) clumpCount.set(waterIndex, (clumpCount.get(waterIndex) ?? 0) + 1);
         continue;
       }
       const open = id >= 0 ? opennessByCamp[id] : 1;

@@ -100,7 +100,7 @@ export function ensureV2GroundFillTexture(scene: Phaser.Scene, layout: IsoLayout
 type TileStamp = { x: number; y: number; topX: number; topY: number };
 
 function grassOverlay(state: GameState, x: number, y: number, track: Set<string>): { key: string; alpha: number } | null {
-  if (track.has(`${x},${y}`)) return { key: V2_GROUND_KEYS.road, alpha: 1 };
+  if (track.has(`${x},${y}`)) return null;
   const id = state.campIds[y * state.width + x];
   if (id === TILE_OUTSIDE) return null;
   if (id === TILE_HOMESTEAD) return { key: V2_GROUND_KEYS.pen, alpha: 0.38 };
@@ -130,6 +130,87 @@ function addDiamond(ctx: CanvasRenderingContext2D, topX: number, topY: number, t
     else ctx.lineTo(px, py);
   });
   ctx.closePath();
+}
+
+const ROAD_DIRS = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+  [1, -1],
+  [-1, 1],
+  [1, 1],
+  [-1, -1],
+] as const;
+
+function roadScreenDir(
+  track: Set<string>,
+  x: number,
+  y: number,
+  tileW: number,
+  tileH: number,
+): { x: number; y: number } {
+  let best = { x: tileW / 2, y: tileH / 2 };
+  let bestScore = -1;
+  for (const [dx, dy] of ROAD_DIRS) {
+    if (!track.has(`${x + dx},${y + dy}`)) continue;
+    const straight = track.has(`${x + dx * 2},${y + dy * 2}`) || track.has(`${x - dx},${y - dy}`) ? 2 : 1;
+    if (straight <= bestScore) continue;
+    bestScore = straight;
+    best = { x: (dx - dy) * (tileW / 2), y: (dx + dy) * (tileH / 2) };
+  }
+  return best;
+}
+
+/**
+ * Two wheel ruts on the farm road. Scale 1 is the two-track through the grass.
+ * Scale 2 is the gravel turning pad. Scale 3 is the pad's centre line, ruts included.
+ */
+function paintTwoTrack(
+  ctx: CanvasRenderingContext2D,
+  topX: number,
+  topY: number,
+  tileW: number,
+  tileH: number,
+  dir: { x: number; y: number },
+  scale: number,
+): void {
+  ctx.save();
+  ctx.beginPath();
+  addDiamond(ctx, topX, topY, tileW, tileH);
+  ctx.clip();
+  const cx = topX;
+  const cy = topY + tileH / 2;
+  const apron = scale >= 2;
+  const len = Math.hypot(dir.x, dir.y) || 1;
+  const ux = dir.x / len;
+  const uy = dir.y / len;
+  const px = -uy;
+  const py = ux;
+  const half = tileW * (apron ? 0.18 : 0.14);
+  const along = Math.hypot(tileW / 2, tileH / 2) * 1.35;
+  if (apron) {
+    ctx.fillStyle = "rgba(214, 188, 142, 0.94)";
+    ctx.fillRect(cx - tileW, cy - tileH, tileW * 2, tileH * 2);
+  } else {
+    ctx.strokeStyle = "rgba(176, 128, 74, 0.85)";
+    ctx.lineWidth = half * 1.35;
+    ctx.lineCap = "butt";
+    ctx.beginPath();
+    ctx.moveTo(cx - ux * along, cy - uy * along);
+    ctx.lineTo(cx + ux * along, cy + uy * along);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = "rgba(36, 18, 8, 0.95)";
+  ctx.lineWidth = apron ? 7 : 5.5;
+  ctx.lineCap = "butt";
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(cx - ux * along + px * half * side, cy - uy * along + py * half * side);
+    ctx.lineTo(cx + ux * along + px * half * side, cy + uy * along + py * half * side);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 /** Project the five seamless tiles across a terrain chunk. Same texture continues through each camp. */
@@ -186,6 +267,23 @@ export function projectV2GroundChunk(
     ctx.clip();
     fillPattern(ctx, image, layout, tileW, tileH, originWorldX, originWorldY, group.alpha);
     ctx.restore();
+  }
+
+  const trackScale = new Map<string, number>();
+  for (const feature of state.features) {
+    if (feature.kind !== "track") continue;
+    const key = `${feature.x},${feature.y}`;
+    trackScale.set(key, Math.max(trackScale.get(key) ?? 1, feature.scale || 1));
+  }
+  for (let dy = 0; dy < chunk; dy += 1) {
+    for (let dx = 0; dx < chunk; dx += 1) {
+      const x = startX + dx;
+      const y = startY + dy;
+      if (!track.has(`${x},${y}`)) continue;
+      const topX = layout.originX + (x - y) * (tileW / 2) - originWorldX;
+      const topY = layout.originY + (x + y) * (tileH / 2) - originWorldY;
+      paintTwoTrack(ctx, topX, topY, tileW, tileH, roadScreenDir(track, x, y, tileW, tileH), trackScale.get(`${x},${y}`) ?? 1);
+    }
   }
 
   const key = `v2-ground-chunk-${cx}-${cy}`;
