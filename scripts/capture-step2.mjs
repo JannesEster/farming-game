@@ -1,4 +1,5 @@
-import { mkdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
@@ -22,6 +23,22 @@ function waitForServer(url, timeoutMs = 60000) {
     };
     tick();
   });
+}
+
+async function fileHash(filePath) {
+  const buf = await readFile(filePath);
+  return createHash("sha256").update(buf).digest("hex");
+}
+
+function assertDistinct(hashes, label) {
+  const values = Object.values(hashes);
+  const unique = new Set(values);
+  if (unique.size !== values.length) {
+    const dupes = Object.entries(hashes)
+      .filter(([, h], _i, arr) => arr.filter(([, hh]) => hh === h).length > 1)
+      .map(([name]) => name);
+    throw new Error(`${label}: screenshots not distinct (duplicate: ${dupes.join(", ")})`);
+  }
 }
 
 async function prepPage(page) {
@@ -55,41 +72,71 @@ async function main() {
     ]) {
       const page = await browser.newPage({ viewport });
       await prepPage(page);
+      const hashes = {};
 
       await page.evaluate(() => window.__farmCapture?.prepareFarmhandWalkCapture?.());
       await page.waitForTimeout(500);
-      const farmhandOk = await page.evaluate(() => (window.__farmCapture?.countFarmhandInView?.() ?? 0) >= 1);
-      if (!farmhandOk) throw new Error(`${viewport.name}: farmhand sprite not in camera view`);
-      await page.screenshot({ path: path.join(outDir, `${viewport.name}-farmhand-walking.png`) });
-      checks.push(`${viewport.name}-farmhand-walking: sprite in view`);
+      const farmMeta = await page.evaluate(() => ({
+        inView: window.__farmCapture?.countFarmhandInView?.() ?? 0,
+        heightPx: window.__farmCapture?.farmhandScreenHeightPx?.() ?? 0,
+      }));
+      if (farmMeta.inView < 1) throw new Error(`${viewport.name}: farmhand not in camera view`);
+      if (farmMeta.heightPx < 30) {
+        throw new Error(`${viewport.name}: farmhand too small (${farmMeta.heightPx.toFixed(1)}px, need >= 30)`);
+      }
+      const farmPath = path.join(outDir, `${viewport.name}-farmhand-walking.png`);
+      await page.screenshot({ path: farmPath });
+      hashes.farmhand = await fileHash(farmPath);
+      checks.push(`${viewport.name}-farmhand-walking: ${farmMeta.heightPx.toFixed(0)}px tall`);
 
-      await page.evaluate(() => window.__farmCapture?.openOps?.());
+      await page.evaluate(() => {
+        document.getElementById("ops-sheet")?.setAttribute("hidden", "true");
+        window.__farmCapture?.openOpsWorkGridCapture?.();
+      });
       await page.waitForSelector("#work-grid select", { state: "visible" });
-      await page.screenshot({ path: path.join(outDir, `${viewport.name}-work-grid.png`) });
-      const gridRows = await page.locator(".work-grid-row").count();
-      if (gridRows < 4) throw new Error(`${viewport.name}: work grid missing rows`);
-      checks.push(`${viewport.name}-work-grid: ${gridRows} jobs`);
+      const gridPath = path.join(outDir, `${viewport.name}-work-grid.png`);
+      await page.screenshot({ path: gridPath });
+      hashes.grid = await fileHash(gridPath);
+      checks.push(`${viewport.name}-work-grid: distinct capture`);
 
-      await page.waitForSelector("#lever-lick", { state: "visible" });
-      await page.screenshot({ path: path.join(outDir, `${viewport.name}-lever-choices.png`) });
-      checks.push(`${viewport.name}-lever-choices: levers visible`);
+      await page.evaluate(() => window.__farmCapture?.openOpsLeversCapture?.());
+      await page.waitForSelector("#ops-heading-levers", { state: "visible" });
+      await page.evaluate(() => document.getElementById("ops-heading-levers")?.scrollIntoView({ block: "start" }));
+      await page.waitForTimeout(200);
+      const leverPath = path.join(outDir, `${viewport.name}-lever-choices.png`);
+      await page.screenshot({ path: leverPath });
+      const leverHeading = await page.isVisible("#ops-heading-levers");
+      const lickVisible = await page.isVisible("#lever-lick");
+      if (!leverHeading || !lickVisible) throw new Error(`${viewport.name}: levers not in view`);
+      hashes.levers = await fileHash(leverPath);
+      checks.push(`${viewport.name}-lever-choices: cost levers scrolled in view`);
 
       await page.evaluate(() => window.__farmCapture?.queueDemoPlayerEvent?.());
       await page.waitForSelector("#ops-event-actions button", { state: "visible" });
-      await page.screenshot({ path: path.join(outDir, `${viewport.name}-player-event.png`) });
-      const actionCount = await page.locator("#ops-event-actions button").count();
-      if (actionCount < 2) throw new Error(`${viewport.name}: event actions missing`);
-      checks.push(`${viewport.name}-player-event: ${actionCount} actions`);
+      const eventTitle = await page.textContent("#ops-event-title");
+      if (!eventTitle?.includes("Pump")) throw new Error(`${viewport.name}: pump event title missing`);
+      const eventPath = path.join(outDir, `${viewport.name}-player-event.png`);
+      await page.screenshot({ path: eventPath });
+      const actionLabels = await page.locator("#ops-event-actions button").allTextContents();
+      if (actionLabels.length < 2 || !actionLabels.some((t) => t.includes("N$"))) {
+        throw new Error(`${viewport.name}: event actions with costs not shown`);
+      }
+      hashes.event = await fileHash(eventPath);
+      checks.push(`${viewport.name}-player-event: ${actionLabels.join(" · ")}`);
 
       await page.evaluate(() => {
         document.getElementById("ops-sheet")?.setAttribute("hidden", "true");
         window.__farmCapture?.showMonthDiaryDemo?.();
       });
       await page.waitForSelector("#event-card:not([hidden])", { state: "visible" });
-      await page.screenshot({ path: path.join(outDir, `${viewport.name}-month-diary.png`) });
+      const diaryPath = path.join(outDir, `${viewport.name}-month-diary.png`);
+      await page.screenshot({ path: diaryPath });
       const title = await page.textContent("#event-title");
       if (!title?.includes("Farm diary")) throw new Error(`${viewport.name}: month diary title wrong`);
+      hashes.diary = await fileHash(diaryPath);
       checks.push(`${viewport.name}-month-diary: ${title}`);
+
+      assertDistinct(hashes, viewport.name);
 
       await page.close();
     }

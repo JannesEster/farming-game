@@ -2,6 +2,7 @@ import { CONFIG, type GameConfig } from "./config";
 import { applySale, quoteSale } from "./economy";
 import { STEP2 } from "./step2Config";
 import { appendMonthDiary } from "./monthDiary";
+import { diaryLineForPlayerAction } from "./playCopy";
 import type { GameState } from "./types";
 import { rngFromState } from "./rng";
 
@@ -119,7 +120,7 @@ export function resolvePlayerEvent(
       appendMonthDiary(story, `Predator loss ${loss} calves.`);
     } else {
       message = actionId === "night_guard" ? "Night guard posted." : "Fence gap patched.";
-      appendMonthDiary(story, `Jackal scare handled (${actionId}).`);
+      appendMonthDiary(story, diaryLineForPlayerAction(actionId));
     }
   }
   if (event.kind === "buyer_offer") {

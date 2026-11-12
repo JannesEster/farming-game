@@ -98,6 +98,9 @@ export function mountHud(options: {
           <button type="button" id="speed-x2" aria-label="Speed 2x">${ICONS.x2}</button>
           <button type="button" id="speed-x3" aria-label="Speed 3x">${ICONS.x3}</button>
         </div>
+        <button type="button" class="chip dock-ranch" id="ranch-open" title="Ranch jobs and costs">
+          Ranch <span class="dock-badge" id="ranch-badge" hidden aria-hidden="true">!</span>
+        </button>
         <button type="button" class="icon-btn" id="menu-overflow" aria-label="More actions" aria-expanded="false">${ICONS.menu}</button>
       </div>
       <div class="overflow-menu" id="overflow-menu" hidden>
@@ -113,6 +116,7 @@ export function mountHud(options: {
         <button type="button" id="new-farm">${COPY.newFarmLabel}</button>
       </div>
     </header>
+    <p class="daily-goal-strip" id="daily-goal-strip" hidden></p>
     <aside class="news-rail" id="news-rail" aria-label="News">
       <div class="letter-stack" id="letter-stack" hidden></div>
       <ul class="alert-strip" id="alert-strip" hidden></ul>
@@ -189,6 +193,9 @@ export function mountHud(options: {
   const moveCancelBtn = requiredButton(root, "move-cancel-btn");
   const marketBtn = requiredButton(root, "market-open");
   const opsBtn = requiredButton(root, "ops-open");
+  const ranchBtn = requiredButton(root, "ranch-open");
+  const ranchBadge = required(root, "ranch-badge");
+  const dailyGoalStrip = required(root, "daily-goal-strip");
   const overflowBtn = requiredButton(root, "menu-overflow");
   const eventCard = required(root, "event-card");
   const eventTitle = required(root, "event-title");
@@ -235,6 +242,10 @@ export function mountHud(options: {
     event.stopPropagation();
     overflowMenu.hidden = true;
     overflowBtn.setAttribute("aria-expanded", "false");
+    options.onOpenOps?.();
+  });
+  ranchBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
     options.onOpenOps?.();
   });
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -396,6 +407,16 @@ export function mountHud(options: {
       seasonEl.innerHTML = dry ? ICONS.dry : ICONS.rain;
       seasonEl.title = seasonText;
       cashEl.textContent = formatHudMoney(state.cashNad);
+      const play = state.story?.dailyPlay;
+      if (play) {
+        dailyGoalStrip.hidden = false;
+        dailyGoalStrip.textContent = play.goalMet ? `Goal done: ${play.goalText}` : play.goalText;
+      } else {
+        dailyGoalStrip.hidden = true;
+      }
+      const pendingEvent = state.story?.pendingPlayerEvent;
+      ranchBadge.hidden = !pendingEvent;
+      ranchBadge.setAttribute("aria-hidden", pendingEvent ? "false" : "true");
       rainEl.textContent = formatHudRain(state.seasonRainMm);
       rainEl.classList.toggle("is-raining", state.todayRainMm > 0);
 

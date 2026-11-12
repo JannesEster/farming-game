@@ -8,8 +8,10 @@ import { setWorkPriority, WORK_JOB_LABELS, defaultWorkGrid } from "../sim/workGr
 import { hireFarmhand } from "../sim/workers";
 import type { GameState } from "../sim/types";
 
+export type OpsFocus = "default" | "event" | "grid" | "levers";
+
 export type OpsSheet = {
-  open(): void;
+  open(focus?: OpsFocus): void;
   close(): void;
   isOpen(): boolean;
   refresh(state: GameState): void;
@@ -37,42 +39,42 @@ export function mountOpsSheet(options: {
       <button type="button" class="icon-btn sheet-close" id="ops-close" aria-label="Close ranch ops">×</button>
     </div>
     <div class="sheet-detail" id="ops-detail">
-      <p class="extra" id="ops-goal"></p>
-      <p class="extra" id="ops-farmhand-status"></p>
-      <button type="button" class="pill-btn ghost" id="ops-hire-btn">Hire farmhand (N$${Math.round(CONFIG.economy.farmhandMonthlyCashNad).toLocaleString("en-NA")}/mo)</button>
-      <h3 class="ops-heading">Work grid</h3>
-      <div class="work-grid" id="work-grid"></div>
-      <h3 class="ops-heading">Cost levers</h3>
-      <label class="market-field">Lick type
+      <p class="extra ops-hide-on-event-focus ops-hide-on-lever-focus" id="ops-goal"></p>
+      <p class="extra ops-hide-on-event-focus ops-hide-on-lever-focus" id="ops-farmhand-status"></p>
+      <button type="button" class="pill-btn ghost ops-hide-on-event-focus ops-hide-on-lever-focus" id="ops-hire-btn">Hire farmhand (N$${Math.round(CONFIG.economy.farmhandMonthlyCashNad).toLocaleString("en-NA")}/mo)</button>
+      <h3 class="ops-heading ops-hide-on-event-focus ops-hide-on-lever-focus" id="ops-heading-grid">Work grid</h3>
+      <div class="work-grid ops-hide-on-event-focus ops-hide-on-lever-focus" id="work-grid"></div>
+      <h3 class="ops-heading" id="ops-heading-levers">Cost levers</h3>
+      <label class="market-field ops-hide-on-grid-focus">Lick type
         <select id="lever-lick">
           <option value="summer_phosphate_p6">Summer phosphate P6</option>
           <option value="summer_phosphate_p12">Summer phosphate P12</option>
           <option value="winter_protein_urea">Winter protein urea</option>
         </select>
       </label>
-      <label class="market-field">Water pumping
+      <label class="market-field ops-hide-on-grid-focus">Water pumping
         <select id="lever-pump">
           <option value="windmill">Windmill (low running cost)</option>
           <option value="diesel">Diesel pump (high fuel)</option>
           <option value="solar">Solar pump (upfront + low fuel)</option>
         </select>
       </label>
-      <button type="button" class="pill-btn ghost" id="lever-solar-pay">Pay solar install (N$${STEP2.solarPumpUpfrontNad.toLocaleString("en-NA")})</button>
-      <label class="market-field">Bakkie runs per month
+      <button type="button" class="pill-btn ghost ops-hide-on-grid-focus" id="lever-solar-pay">Pay solar install (N$${STEP2.solarPumpUpfrontNad.toLocaleString("en-NA")})</button>
+      <label class="market-field ops-hide-on-grid-focus">Bakkie runs per month
         <input id="lever-runs" type="number" min="${STEP2.bakkieRunsMin}" max="${STEP2.bakkieRunsMax}" value="${STEP2.bakkieRunsDefault}" />
       </label>
-      <label class="market-field">Maintenance
+      <label class="market-field ops-hide-on-grid-focus">Maintenance
         <select id="lever-maintain">
           <option value="maintain">Routine maintenance</option>
           <option value="defer">Skip maintenance (risky)</option>
         </select>
       </label>
-      <div id="ops-morning" hidden>
+      <div id="ops-morning" class="ops-hide-on-event-focus ops-hide-on-lever-focus ops-hide-on-grid-focus" hidden>
         <h3 class="ops-heading">Morning choice</h3>
         <p class="extra" id="ops-morning-text"></p>
         <div id="ops-morning-actions"></div>
       </div>
-      <div id="ops-event" hidden>
+      <div id="ops-event" class="ops-hide-on-lever-focus ops-hide-on-grid-focus" hidden>
         <h3 class="ops-heading" id="ops-event-title"></h3>
         <p class="extra" id="ops-event-body"></p>
         <p class="extra warn" id="ops-event-ignore"></p>
@@ -263,10 +265,16 @@ export function mountOpsSheet(options: {
   });
 
   return {
-    open() {
+    open(focus: OpsFocus = "default") {
       open = true;
       sheet.hidden = false;
+      sheet.dataset.focus = focus;
       refresh(options.getState());
+      if (focus === "levers") {
+        const anchor = sheet.querySelector("#ops-heading-levers");
+        anchor?.scrollIntoView({ block: "start" });
+        sheet.querySelector("#ops-detail")?.scrollTo({ top: (anchor as HTMLElement)?.offsetTop ?? 0 });
+      }
       options.onOpen?.();
     },
     close,

@@ -404,6 +404,67 @@ body {
   font-size: 0.95rem;
 }
 
+.ops-sheet .sheet-detail {
+  overflow-y: auto;
+}
+
+.ops-sheet[data-focus="event"] .ops-hide-on-event-focus {
+  display: none !important;
+}
+
+.ops-sheet[data-focus="levers"] .ops-hide-on-lever-focus {
+  display: none !important;
+}
+
+.ops-sheet[data-focus="grid"] .ops-hide-on-grid-focus {
+  display: none !important;
+}
+
+.ops-sheet[data-focus="event"] #ops-event {
+  display: block !important;
+}
+
+.top-actions .dock-ranch {
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 6px 10px;
+  border: 1px solid var(--gold);
+  background: rgba(26, 53, 80, 0.92);
+  color: var(--paper);
+  position: relative;
+}
+
+.dock-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #c44b33;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.daily-goal-strip {
+  position: fixed;
+  left: max(8px, env(safe-area-inset-left));
+  right: max(8px, env(safe-area-inset-right));
+  top: calc(var(--hud-top-chrome, 52px) + 4px);
+  z-index: 4;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(20, 36, 54, 0.9);
+  color: var(--paper);
+  font-size: 0.82rem;
+  border: 1px solid rgba(247, 240, 226, 0.14);
+  pointer-events: none;
+}
+
 .market-sheet {
   z-index: 10;
   max-height: min(72vh, calc(100vh - var(--hud-top-chrome, 56px) - 8px));

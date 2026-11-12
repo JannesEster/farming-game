@@ -10,7 +10,7 @@ import { elementVisible, isSimBlocked as simClockBlocked, speedMultiplier, trans
 import { syncAlertStrip } from "../integration/notificationHub";
 import { bfsCampRoute } from "../sim/path";
 import { campIdAt, moveHerd, stepDay } from "../sim/simulation";
-import { setWorkPriority, tickFarmhandWorld } from "../sim/workGrid";
+import { setWorkPriority, tickFarmhandWorld, WORK_JOB_LABELS } from "../sim/workGrid";
 import { hireFarmhand } from "../sim/workers";
 import type { DayLengthSeconds } from "../sim/clock";
 import { herdInTransit, herdWorldTile, pathTangent, tickTransitRealtime } from "../sim/transit";
@@ -82,6 +82,7 @@ import {
   ensureCowDotTexture,
   ensureCowViewTextures,
   ensureFarmhandTexture,
+  FARMHAND_TEXTURE_HEIGHT,
   maybePaintedTermiteAt,
   maybeRockAt,
   paintedSpritesReady,
@@ -109,6 +110,8 @@ export class FarmScene extends Phaser.Scene {
   private market!: MarketSheet;
   private ops!: OpsSheet;
   private farmhandSprite?: Phaser.GameObjects.Image;
+  private farmhandNameTag?: Phaser.GameObjects.Text;
+  private farmhandJobTag?: Phaser.GameObjects.Text;
   private mode: SpeedMode = "x1";
   private nightOverlay?: Phaser.GameObjects.Rectangle;
   private homesteadGlow?: Phaser.GameObjects.Graphics;
@@ -279,8 +282,30 @@ export class FarmScene extends Phaser.Scene {
       onClose: () => getGameFlow().setHudPanel("market", false),
     });
     this.farmhandSprite = this.add.image(0, 0, SPRITE_KEYS.farmhand);
+    this.farmhandSprite.setOrigin(0.5, 0.92);
     this.farmhandSprite.setVisible(false);
-    this.farmhandSprite.setDepth(25000);
+    this.farmhandNameTag = this.add
+      .text(0, 0, "Piet", {
+        fontFamily: "system-ui, sans-serif",
+        fontSize: "14px",
+        color: "#fff6e8",
+        backgroundColor: "#1a3550cc",
+        padding: { x: 6, y: 3 },
+      })
+      .setOrigin(0.5, 1)
+      .setVisible(false)
+      .setDepth(26000);
+    this.farmhandJobTag = this.add
+      .text(0, 0, "", {
+        fontFamily: "system-ui, sans-serif",
+        fontSize: "11px",
+        color: "#2b2118",
+        backgroundColor: "#ffcc66ee",
+        padding: { x: 5, y: 2 },
+      })
+      .setOrigin(0.5, 1)
+      .setVisible(false)
+      .setDepth(26000);
     flow.attachFarmHud(this.hud);
     this.hud.setSpeed(this.mode);
     if (!flow.getTutorialStep()) this.hud.setHint(COPY.hintStart);
@@ -712,8 +737,9 @@ export class FarmScene extends Phaser.Scene {
       canvasMeanLuminance: () => this.canvasMeanLuminance(),
       countCattleInView: () => this.countCattleInView(),
       countFarmhandInView: () => this.countFarmhandInView(),
+      farmhandScreenHeightPx: () => this.farmhandScreenHeightPx(),
       openOps: () => {
-        this.ops.open();
+        this.ops.open("default");
         return true;
       },
       frameFarmhandForCapture: () => this.frameFarmhandForCapture(),
@@ -730,22 +756,33 @@ export class FarmScene extends Phaser.Scene {
             id: "demo-event",
             kind: "pump_fault",
             title: "Pump fault",
-            body: "Water pressure dropped at the main point.",
-            ignoreConsequence: "Emergency repair if ignored.",
+            body: "Water pressure dropped at the main windmill. Fix it today or risk an emergency callout.",
+            ignoreConsequence: "Emergency repair about N$8,500 if you wait.",
             critical: false,
             actions: [
-              { id: "repair_now", label: "Repair now", costNad: 1200 },
-              { id: "defer_fix", label: "Ignore", costNad: 0 },
+              { id: "repair_now", label: "Repair now (N$1,200)", costNad: 1200 },
+              { id: "defer_fix", label: "Ignore for now", costNad: 0 },
             ],
           };
         }
-        this.ops.open();
+        this.ops.open("event");
+        this.ops.refresh(this.state);
+        return true;
+      },
+      openOpsLeversCapture: () => {
+        this.ops.open("levers");
+        this.ops.refresh(this.state);
+        return true;
+      },
+      openOpsWorkGridCapture: () => {
+        this.ops.open("grid");
+        this.ops.refresh(this.state);
         return true;
       },
       showMonthDiaryDemo: () => {
         const body = [
           "What happened",
-          "Jackal scare handled (night_guard).",
+          "Jackal scare: night guard posted.",
           "Cash move: income N$0, spend N$9,200.",
           "Why the bills moved",
           "Diesel N$1,450. About 120 L from 6 bakkie runs and windmill.",
@@ -1393,9 +1430,24 @@ export class FarmScene extends Phaser.Scene {
     );
     this.jumpCameraTo(foot.x, foot.y, true);
     const camera = this.cameras.main;
-    camera.setZoom(clampZoom(1.05, this.minZoom, this.maxZoom));
+    const targetScreenPx = 46;
+    const worldH = FARMHAND_TEXTURE_HEIGHT * this.farmhandTargetScale();
+    const zoom = clampZoom(targetScreenPx / Math.max(8, worldH), this.minZoom, this.maxZoom);
+    camera.setZoom(zoom);
+    camera.centerOn(foot.x, foot.y - 8);
+    this.clampScroll();
     this.placeFarmhand();
-    return this.countFarmhandInView() >= 1;
+    return this.countFarmhandInView() >= 1 && this.farmhandScreenHeightPx() >= 30;
+  }
+
+  private farmhandTargetScale(): number {
+    const cowScale = cattleDisplayScale(1);
+    return cowScale * 2.85;
+  }
+
+  private farmhandScreenHeightPx(): number {
+    if (!this.farmhandSprite?.visible) return 0;
+    return this.farmhandSprite.displayHeight * this.cameras.main.zoom;
   }
 
   private placeFarmhand(): void {
@@ -1404,6 +1456,8 @@ export class FarmScene extends Phaser.Scene {
     const presence = this.state.story?.farmhandPresence;
     if (!hired || !presence) {
       this.farmhandSprite.setVisible(false);
+      this.farmhandNameTag?.setVisible(false);
+      this.farmhandJobTag?.setVisible(false);
       return;
     }
     const foot = tileCenter(
@@ -1417,11 +1471,26 @@ export class FarmScene extends Phaser.Scene {
       presence.walkProgress < 1 && !this.reduceMotion
         ? Math.sin(performance.now() / 200) * 2
         : 0;
-    const scale = cattleDisplayScale(0.55) * 2.4;
-    this.farmhandSprite.setPosition(foot.x, foot.y - 14 + bob);
+    const scale = this.farmhandTargetScale();
+    this.farmhandSprite.setPosition(foot.x, foot.y + bob);
     this.farmhandSprite.setScale(scale);
     this.farmhandSprite.setDepth(20000 + presence.tileX + presence.tileY);
     this.farmhandSprite.setVisible(true);
+    const jobShort =
+      presence.activeJob && WORK_JOB_LABELS[presence.activeJob]
+        ? WORK_JOB_LABELS[presence.activeJob]
+        : "On duty";
+    if (this.farmhandNameTag) {
+      this.farmhandNameTag.setPosition(foot.x, foot.y - this.farmhandSprite.displayHeight - 6 + bob);
+      this.farmhandNameTag.setDepth(this.farmhandSprite.depth + 2);
+      this.farmhandNameTag.setVisible(true);
+    }
+    if (this.farmhandJobTag) {
+      this.farmhandJobTag.setText(jobShort);
+      this.farmhandJobTag.setPosition(foot.x, foot.y - this.farmhandSprite.displayHeight - 28 + bob);
+      this.farmhandJobTag.setDepth(this.farmhandSprite.depth + 2);
+      this.farmhandJobTag.setVisible(true);
+    }
   }
 
   private countFarmhandInView(): number {
