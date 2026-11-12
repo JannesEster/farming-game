@@ -115,6 +115,103 @@ export function ensurePersonWalkTextures(scene: Phaser.Scene, role: "farmer" | "
   }
 }
 
+/** Cab and a slatted livestock trailer, seen from the side the ramp faces. */
+export function paintLivestockTruck(): HTMLCanvasElement {
+  const w = 420;
+  const h = 168;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return canvas;
+  ctx.fillStyle = "rgba(30, 20, 12, 0.28)";
+  ctx.beginPath();
+  ctx.ellipse(210, 150, 180, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#2a3138";
+  ctx.fillRect(28, 108, 360, 10);
+
+  ctx.fillStyle = "#6e5438";
+  ctx.fillRect(118, 48, 268, 62);
+  ctx.fillStyle = "#1a120c";
+  for (let i = 0; i < 9; i += 1) {
+    ctx.fillRect(128 + i * 28, 52, 8, 54);
+  }
+  ctx.strokeStyle = "#3a2a1c";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(118, 48, 268, 62);
+  ctx.beginPath();
+  ctx.moveTo(124, 70);
+  ctx.lineTo(380, 70);
+  ctx.moveTo(124, 88);
+  ctx.lineTo(380, 88);
+  ctx.stroke();
+  ctx.fillStyle = "#5c4632";
+  ctx.fillRect(368, 50, 16, 58);
+  ctx.fillStyle = "#c4b8a4";
+  ctx.fillRect(372, 62, 6, 22);
+
+  ctx.fillStyle = "#e7e2d6";
+  ctx.beginPath();
+  ctx.moveTo(18, 78);
+  ctx.lineTo(46, 70);
+  ctx.lineTo(78, 70);
+  ctx.lineTo(104, 58);
+  ctx.lineTo(118, 58);
+  ctx.lineTo(118, 112);
+  ctx.lineTo(18, 112);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#d4cfc3";
+  ctx.fillRect(24, 84, 88, 28);
+  ctx.fillStyle = "#8ec4e4";
+  ctx.beginPath();
+  ctx.moveTo(48, 64);
+  ctx.lineTo(100, 56);
+  ctx.lineTo(108, 72);
+  ctx.lineTo(50, 80);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#9fd0ea";
+  ctx.fillRect(28, 88, 22, 16);
+  ctx.fillStyle = "#2c3440";
+  ctx.fillRect(16, 96, 16, 8);
+  ctx.fillStyle = "#f2e7a4";
+  ctx.fillRect(18, 98, 8, 4);
+  ctx.fillStyle = "#8a9298";
+  ctx.fillRect(108, 78, 8, 16);
+  ctx.fillStyle = "#222";
+  ctx.beginPath();
+  ctx.moveTo(112, 70);
+  ctx.lineTo(126, 62);
+  ctx.lineTo(126, 78);
+  ctx.lineTo(112, 82);
+  ctx.closePath();
+  ctx.fill();
+
+  const wheel = (x: number, y: number, r: number) => {
+    ctx.fillStyle = "#1c2228";
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#8d98a4";
+    ctx.beginPath();
+    ctx.arc(x, y, r * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  wheel(48, 122, 16);
+  wheel(86, 122, 16);
+  wheel(196, 124, 17);
+  wheel(236, 124, 17);
+  wheel(330, 124, 17);
+  wheel(368, 124, 17);
+  ctx.fillStyle = "#1a1a1a";
+  ctx.fillRect(176, 112, 18, 16);
+  ctx.fillRect(350, 112, 18, 16);
+  return canvas;
+}
+
 export function ensureStep3bPropTextures(scene: Phaser.Scene): void {
   if (!scene.textures.exists(SPRITE_KEYS.reservoir)) {
     const g = scene.make.graphics({ x: 0, y: 0 });
@@ -177,37 +274,7 @@ export function ensureStep3bPropTextures(scene: Phaser.Scene): void {
     g.destroy();
   }
   if (!scene.textures.exists(SPRITE_KEYS.cattleTruck)) {
-    const g = scene.make.graphics({ x: 0, y: 0 });
-    const w = 280;
-    const h = 120;
-    g.fillStyle(0xf4f1ea, 1);
-    g.fillRoundedRect(8, 36, 78, 52, 6);
-    g.fillStyle(0x9ec8e8, 1);
-    g.fillRoundedRect(16, 44, 28, 18, 3);
-    g.fillStyle(0xc45a3a, 1);
-    g.fillRect(70, 58, 16, 8);
-    g.fillStyle(0x2c2118, 1);
-    g.fillRoundedRect(92, 30, 170, 58, 3);
-    for (let i = 0; i < 8; i += 1) {
-      g.fillStyle(i % 2 === 0 ? 0x8d6240 : 0x6e4b30, 1);
-      g.fillRect(98 + i * 20, 34, 12, 50);
-    }
-    g.lineStyle(2, 0x2a1c12, 1);
-    g.strokeRoundedRect(92, 30, 170, 58, 3);
-    g.fillStyle(0x1c2430, 1);
-    g.fillCircle(36, 96, 14);
-    g.fillCircle(70, 96, 14);
-    g.fillCircle(130, 98, 15);
-    g.fillCircle(190, 98, 15);
-    g.fillCircle(240, 98, 15);
-    g.fillStyle(0x8d98a6, 1);
-    g.fillCircle(36, 96, 6);
-    g.fillCircle(70, 96, 6);
-    g.fillCircle(130, 98, 6);
-    g.fillCircle(190, 98, 6);
-    g.fillCircle(240, 98, 6);
-    g.generateTexture(SPRITE_KEYS.cattleTruck, w, h);
-    g.destroy();
+    scene.textures.addCanvas(SPRITE_KEYS.cattleTruck, paintLivestockTruck());
   }
   if (!scene.textures.exists(SPRITE_KEYS.cowDrink)) {
     const g = scene.make.graphics({ x: 0, y: 0 });
@@ -423,8 +490,8 @@ export function propSpriteForKind(kind: string, x: number, y: number, featureSca
       // TODO(A): ramp reads about 7 m, facing the farm road.
       return { key: SPRITE_KEYS.loadingRamp, originX: 0.5, originY: 0.92, scale: scaleToSpanMetres(112, 7) };
     case "cattle_truck":
-      // TODO(A): cab plus trailer about 16 m.
-      return { key: SPRITE_KEYS.cattleTruck, originX: 0.35, originY: 0.92, scale: scaleToSpanMetres(280, 16) };
+      // TODO(A): cab plus slatted livestock trailer about 16 m.
+      return { key: SPRITE_KEYS.cattleTruck, originX: 0.22, originY: 0.9, scale: scaleToSpanMetres(420, 16) };
     case "lick_feeder":
       return { key: SPRITE_KEYS.lickFeeder, originX: 0.5, originY: 0.9, scale: (tileW * 1.1) / 112 };
     case "tree":
@@ -470,12 +537,174 @@ const COW_VIEW_SUFFIX: Record<CowView, string> = {
   away: "a",
 };
 
+/** Screen-space direction. 0 is right, 2 is down the screen, 6 is away from the camera. */
+export function cowOctantFromScreen(sx: number, sy: number): number {
+  if (sx === 0 && sy === 0) return 0;
+  const oct = Math.round(Math.atan2(sy, sx) / (Math.PI / 4));
+  return ((oct % 8) + 8) % 8;
+}
+
+/** Tile-space step converted into the isometric screen octant. */
+export function cowOctantFromTile(ux: number, uy: number): number {
+  const sx = ux - uy;
+  const sy = (ux + uy) * 0.5;
+  return cowOctantFromScreen(sx, sy);
+}
+
+export function cowViewFromOctant(octant: number): CowView {
+  const oct = ((octant % 8) + 8) % 8;
+  if (oct === 2) return "toward";
+  if (oct === 6) return "away";
+  if (oct === 0 || oct === 1 || oct === 7) return "right";
+  return "left";
+}
+
 /** Iso march direction → discrete sprite facing (no rotation). */
 export function cowViewFromVector(ux: number, uy: number): CowView {
-  const sx = ux - uy;
-  const sy = ux + uy;
-  if (Math.abs(sx) >= Math.abs(sy) * 0.55) return sx > 0 ? "right" : "left";
-  return sy > 0 ? "toward" : "away";
+  return cowViewFromOctant(cowOctantFromTile(ux, uy));
+}
+
+export function cattleOctantKey(octant: number, calf = false): string {
+  return `${calf ? "calf" : "cow"}-oct-${((octant % 8) + 8) % 8}`;
+}
+
+/**
+ * TODO(A): the windmill painting includes its tank, so a true 1.45 m shoulder
+ * reads as a speck beside it. This boost keeps a cow believable next to that sprite.
+ */
+export const COW_READABILITY_BOOST = 1.75;
+
+export function cattleOctantScale(calf = false): number {
+  const shoulderMetres = calf ? 0.95 : 1.45;
+  const artShoulderPx = calf ? 34 : 46;
+  return ((shoulderMetres * worldPxPerMetre()) / artShoulderPx) * COW_READABILITY_BOOST;
+}
+
+function paintOctantCow(octant: number, calf: boolean): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 104;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return canvas;
+  const oct = ((octant % 8) + 8) % 8;
+  const angle = (oct * Math.PI) / 4;
+  const dx = Math.cos(angle);
+  const dy = Math.sin(angle);
+  const px = -dy;
+  const py = dx;
+  const s = calf ? 0.72 : 1;
+  const cx = 64;
+  const cy = 50;
+  const bodyLen = 34 * s;
+  const bodyWid = 22 * s;
+  const at = (along: number, across: number, lift = 0): { x: number; y: number } => ({
+    x: cx + dx * bodyLen * along + px * bodyWid * across,
+    y: cy + dy * bodyLen * along * 0.55 + py * bodyWid * across * 0.55 - lift,
+  });
+
+  ctx.fillStyle = "rgba(42, 30, 18, 0.32)";
+  ctx.beginPath();
+  ctx.ellipse(cx, 90, 30 * s, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "#5c5348";
+  ctx.lineWidth = 5 * s;
+  ctx.lineCap = "round";
+  for (const [along, across] of [
+    [-0.32, -0.42],
+    [-0.32, 0.42],
+    [0.28, -0.36],
+    [0.28, 0.36],
+  ] as const) {
+    const hip = at(along, across, 0);
+    ctx.beginPath();
+    ctx.moveTo(hip.x, hip.y);
+    ctx.lineTo(hip.x + px * across * 2, hip.y + 16 * s);
+    ctx.stroke();
+  }
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(Math.atan2(dy * 0.55, dx));
+  ctx.fillStyle = calf ? "#efe4d2" : "#e4d8c6";
+  ctx.strokeStyle = "#3f362c";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, bodyLen, bodyWid * 0.7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  if (!calf) {
+    ctx.fillStyle = "#d5c6b0";
+    ctx.beginPath();
+    ctx.ellipse(bodyLen * 0.22, -bodyWid * 0.62, 14, 9, -0.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  const head = at(1.15, 0, 10 * s);
+  ctx.fillStyle = "#f7f1e6";
+  ctx.strokeStyle = "#3f362c";
+  ctx.lineWidth = 2.6;
+  ctx.beginPath();
+  ctx.ellipse(head.x, head.y, 10 * s + Math.max(0, dy) * 3, 9 * s, Math.atan2(dy, dx), 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "#d9cbb6";
+  for (const side of [-1, 1]) {
+    const ear = at(0.92, side * 0.62, 12 * s);
+    ctx.beginPath();
+    ctx.ellipse(ear.x, ear.y, 6 * s, 3.2 * s, side * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  if (!calf && dy > -0.75) {
+    ctx.strokeStyle = "#8a8072";
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(head.x - 3 * s, head.y - 3 * s);
+    ctx.quadraticCurveTo(head.x - 12 * s, head.y - 14 * s, head.x - 2 * s, head.y - 1 * s);
+    ctx.moveTo(head.x + 3 * s, head.y - 3 * s);
+    ctx.quadraticCurveTo(head.x + 12 * s, head.y - 14 * s, head.x + 2 * s, head.y - 1 * s);
+    ctx.stroke();
+  }
+  if (dy > -0.15) {
+    ctx.fillStyle = "#1b140e";
+    ctx.beginPath();
+    ctx.arc(head.x - 3.2 * s, head.y + 0.5, 1.35, 0, Math.PI * 2);
+    ctx.arc(head.x + 3.2 * s, head.y + 0.5, 1.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#c48b8b";
+    ctx.beginPath();
+    ctx.ellipse(head.x + dx * 6 * s, head.y + 2, 3.2 * s, 2.2 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (dy < 0.25) {
+    const tail = at(-1.05, 0, 2);
+    ctx.strokeStyle = "#5a5044";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(tail.x, tail.y);
+    ctx.quadraticCurveTo(tail.x - dx * 8, tail.y + 10, tail.x - dx * 2, tail.y + 16);
+    ctx.stroke();
+    ctx.fillStyle = "#3f362c";
+    ctx.beginPath();
+    ctx.ellipse(tail.x - dx * 2, tail.y + 16, 3.5, 2.4, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return canvas;
+}
+
+export function ensureCattleOctantTextures(scene: Phaser.Scene): void {
+  for (const calf of [false, true]) {
+    for (let octant = 0; octant < 8; octant += 1) {
+      const key = cattleOctantKey(octant, calf);
+      if (scene.textures.exists(key)) continue;
+      scene.textures.addCanvas(key, paintOctantCow(octant, calf));
+    }
+  }
 }
 
 export function cattleTextureKeyForView(baseKey: string, view: CowView): string {

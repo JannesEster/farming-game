@@ -1,7 +1,7 @@
 import type { CampState, GameState, TilePoint } from "../sim/types";
 import { TILE_HOMESTEAD, TILE_OUTSIDE } from "../sim/types";
 import type { CowView, HerdOffset } from "./art";
-import { cowViewFromVector } from "./sprites";
+import { cowOctantFromScreen, cowOctantFromTile, cowViewFromOctant } from "./sprites";
 
 export function facingFromTileVector(ux: number, uy: number): number {
   const sx = ux - uy;
@@ -218,6 +218,7 @@ export function spreadInCamp(
     coat: Math.floor(next() * 6),
     scale: 0.72 + next() * 0.08,
     view: randomView(next),
+    octant: Math.floor(next() * 8),
   }));
 }
 
@@ -313,7 +314,8 @@ export function fileAlongPath(
       flip: false,
       coat: Math.floor(phase * 6) % 6,
       scale: 0.58 + (phase % 0.1),
-      view: cowViewFromVector(at.ux, at.uy),
+      view: cowViewFromOctant(cowOctantFromScreen(at.ux, at.uy)),
+      octant: cowOctantFromScreen(at.ux, at.uy),
     });
   }
   return offsets;
@@ -456,7 +458,8 @@ export function organicTrekOffsets(
       flip: false,
       coat: Math.floor(phase * 6) % 6,
       scale: (0.52 + (phase % 0.1)) * (nibble ? 0.92 : 1),
-      view: cowViewFromVector(ux, uy),
+      view: cowViewFromOctant(cowOctantFromTile(ux, uy)),
+      octant: cowOctantFromTile(ux, uy),
     });
   }
   return offsets;
@@ -545,6 +548,7 @@ export function blendOffsets(
       coat: s.coat,
       scale: s.scale * (1 - t * 0.08) + m.scale * t * 0.08,
       view: t > 0.5 ? m.view : s.view,
+      octant: t > 0.5 ? m.octant : s.octant,
     };
   });
 }
@@ -560,9 +564,10 @@ export function offsetsForHerd(
   timeMs: number,
   herdX: number,
   herdY: number,
+  countOverride?: number,
 ): HerdOffset[] {
   const track = trackKeys(state);
-  const count = state.herd.headCount;
+  const count = countOverride ?? state.herd.headCount;
   const fromCampId = state.herd.campId;
   const fromCamp = state.camps.find((c) => c.id === fromCampId);
   if (!fromCamp) return [];

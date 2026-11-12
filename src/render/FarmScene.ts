@@ -91,6 +91,10 @@ import { resolveGroundTap, resolveHerdTap } from "./selection";
 import { isoLayout, tileCenter, tileTop, worldToTile, type IsoLayout } from "./iso";
 import { palette } from "./palette";
 import { campLabelTile, offsetsForHerd } from "./herdLayout";
+import { layoutAnimals } from "./animalLayout";
+import { filterAnimals, TOLLY_OVER_300 } from "../sim/animals";
+import { startEscape, tickEscapeWanderRealtime } from "../sim/escapes";
+import { cutOutHerderProgress, cutOutRearProgress, escapedAnimalIds, requestCutOut, tickCutOutRealtime } from "../sim/cutOut";
 import { boundsVisible, chunkCoordsForTile } from "./terrain";
 import { bakeTerrainChunk } from "./groundLayer";
 import { placeGateSprites } from "./fenceDecor";
@@ -103,6 +107,9 @@ import {
   cowPresentationScale,
   ensureCowDotTexture,
   ensureCowViewTextures,
+  ensureCattleOctantTextures,
+  cattleOctantKey,
+  cattleOctantScale,
   ensureFarmhandTexture,
   ensureFarmerTexture,
   ensureWorkerHouseTexture,
@@ -121,6 +128,18 @@ import {
   homesteadSpritePlacementsFromFeatures,
   workerCottagePlacements,
 } from "./homesteadLayout";
+
+function clearHerdTransit(state: GameState): void {
+  state.herd.transit = null;
+}
+
+function clearCutOut(state: GameState): void {
+  if (state.story) state.story.cutOut = null;
+}
+
+function clearSaleConvoy(state: GameState): void {
+  if (state.story) state.story.saleConvoy = null;
+}
 
 type PointerRec = {
   x: number;
@@ -251,6 +270,7 @@ export class FarmScene extends Phaser.Scene {
     ensureStep3bPropTextures(this);
     initStoryPeople(this.state);
     if (this.paintedSprites) ensureCowViewTextures(this);
+    ensureCattleOctantTextures(this);
     this.buildProceduralFallback();
     if (this.paintedSprites) {
       this.bakeAllTerrain();
@@ -311,6 +331,15 @@ export class FarmScene extends Phaser.Scene {
       onHerdLocator: () => {
         const center = this.mobCenter();
         this.jumpCameraTo(center.x, center.y, true);
+      },
+      onToggleAnimal: (id) => this.toggleAnimal(id),
+      onAnimalFilter: (filter) => this.applyAnimalFilter(filter),
+      onCutToCamp: () => this.orderCutToPendingCamp(),
+      onCutToKraal: () => this.orderCutToKraal(),
+      onRoundUp: () => this.orderRoundUp(),
+      onClearAnimalFocus: () => {
+        if (this.state.story) this.state.story.focusedAnimalId = null;
+        this.syncHud();
       },
     });
     this.market = mountMarketSheet({
@@ -979,6 +1008,29 @@ export class FarmScene extends Phaser.Scene {
         if (!cottage) return false;
         return this.state.campIds[cottage.y * this.state.width + cottage.x] === -1;
       },
+      namedSpritesInView: (role: string) => this.namedSpritesInView(role),
+      prepareEscapeCapture: () => this.prepareEscapeCapture(),
+      prepareAnimalDetailCapture: () => this.prepareAnimalDetailCapture(),
+      prepareMultiSelectCapture: () => this.prepareMultiSelectCapture(),
+      prepareCutOutCapture: () => this.prepareCutOutCapture(),
+      prepareFacingCapture: () => this.prepareFacingCapture(),
+      prepareTruckRampCapture: () => this.prepareTruckRampCapture(),
+      animalDetailText: () => ({
+        title: document.getElementById("animal-detail-title")?.textContent ?? "",
+        body: document.getElementById("animal-detail-body")?.textContent ?? "",
+      }),
+      selectedAnimalCount: () => document.querySelectorAll(".animal-row.is-selected").length,
+      debugStep3c: () => ({
+        head: this.state.herd.headCount,
+        animals: this.state.story?.animals?.length ?? 0,
+        out: (this.state.story?.animals ?? []).filter((animal) => animal.whereabouts === "escaped" || animal.whereabouts === "neighbour").length,
+        heavyTollies: filterAnimals(this.state.story?.animals ?? [], TOLLY_OVER_300).length,
+        cutPhase: this.state.story?.cutOut?.phase ?? null,
+        cutProgress: this.state.story?.cutOut?.progress ?? null,
+        salePhase: this.state.story?.saleConvoy?.phase ?? null,
+        transitPhase: this.state.herd.transit?.phase ?? null,
+        transitProgress: this.state.herd.transit?.progress ?? null,
+      }),
     };
     const flowBridge = getGameFlow().exposeCaptureApi();
     (window as Window & { __farmCapture?: typeof bridge & Record<string, unknown> }).__farmCapture = {
@@ -1068,7 +1120,10 @@ export class FarmScene extends Phaser.Scene {
       tickDrinkingRealtime(this.state, delta, spd);
       tickSaleConvoyRealtime(this.state, delta, spd);
       tickBakkieRealtime(this.state, delta, spd);
+      tickCutOutRealtime(this.state, delta, this.mode);
+      tickEscapeWanderRealtime(this.state, delta, spd);
     }
+    this.showCalmEscapeNote();
     this.syncBakkieVisual();
     this.syncCattleTruckVisual();
     this.placeHerd(time);
@@ -2201,6 +2256,290 @@ export class FarmScene extends Phaser.Scene {
     return bestIndex / (path.length - 1);
   }
 
+  private namedSpritesInView(role: string): { count: number; maxScreenPx: number; octants: number[] } {
+    const camera = this.cameras.main;
+    const view = camera.worldView;
+    const sprites: Phaser.GameObjects.Image[] = [];
+    if (role === "cattle-truck" && this.cattleTruck?.visible) sprites.push(this.cattleTruck);
+    else {
+      for (const cow of this.cows) {
+        if (!cow.visible) continue;
+        if (cow.getData("captureRole") === role || cow.name === role) sprites.push(cow);
+      }
+    }
+    let count = 0;
+    let maxScreenPx = 0;
+    const octants = new Set<number>();
+    for (const sprite of sprites) {
+      if (sprite.x < view.x || sprite.x > view.right || sprite.y < view.y || sprite.y > view.bottom) continue;
+      count += 1;
+      maxScreenPx = Math.max(maxScreenPx, sprite.displayHeight * camera.zoom);
+      const octant = sprite.getData("octant");
+      if (typeof octant === "number") octants.add(octant);
+    }
+    return { count, maxScreenPx, octants: [...octants] };
+  }
+
+  private frameWorldPoints(points: { x: number; y: number }[], fill = 0.5): void {
+    if (points.length === 0) return;
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    for (const point of points) {
+      minX = Math.min(minX, point.x);
+      maxX = Math.max(maxX, point.x);
+      minY = Math.min(minY, point.y);
+      maxY = Math.max(maxY, point.y);
+    }
+    const camera = this.cameras.main;
+    const span = Math.max(maxX - minX, maxY - minY, 96);
+    const zoom = clampZoom((Math.min(camera.width, camera.height) * fill) / span, this.minZoom, this.maxZoom);
+    camera.setZoom(zoom);
+    camera.centerOn((minX + maxX) / 2, (minY + maxY) / 2);
+    this.clampScroll();
+    camera.preRender();
+  }
+
+  private expandHerdSheet(): void {
+    const sheet = document.getElementById("herd-sheet");
+    if (sheet?.dataset.expanded === "true") return;
+    document.getElementById("sheet-summary")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  }
+
+  private collapseHerdSheet(): void {
+    const sheet = document.getElementById("herd-sheet");
+    if (sheet?.dataset.expanded !== "true") return;
+    document.getElementById("sheet-summary")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  }
+
+  private prepareEscapeCapture(): boolean {
+    const story = this.state.story;
+    if (!story?.animals?.length) return false;
+    this.state.date.hour = 10;
+    this.captureLightingHour = 10;
+    this.collapseHerdSheet();
+    const animal = story.animals.find((item) => item.whereabouts === "in_camp" && item.stockClass !== "calf");
+    if (!animal || !startEscape(this.state, animal, 3)) return false;
+    tickEscapeWanderRealtime(this.state, 1200, 1);
+    this.placeIndividualAnimals(performance.now());
+    const cow = this.cows.find((sprite) => sprite.getData("animalTag") === animal.tag);
+    if (!cow) return false;
+    const camp = this.state.camps.find((item) => item.id === animal.campId);
+    const outside =
+      camp !== undefined && !camp.tiles.some((tile) => tile.x === Math.round(animal.tileX) && tile.y === Math.round(animal.tileY));
+    const fence = collectFenceSegments(this.state, this.layout, animal.campId, false);
+    let nearFence: { x: number; y: number } | null = null;
+    let nearDist = Number.POSITIVE_INFINITY;
+    for (const segment of fence) {
+      const point = { x: (segment.x1 + segment.x2) / 2, y: (segment.y1 + segment.y2) / 2 };
+      const dist = Math.hypot(point.x - cow.x, point.y - cow.y);
+      if (dist < nearDist) {
+        nearDist = dist;
+        nearFence = point;
+      }
+    }
+    const framed = nearFence ? [{ x: cow.x, y: cow.y }, nearFence] : [{ x: cow.x, y: cow.y }];
+    this.frameWorldPoints(framed, 0.62);
+    this.placeIndividualAnimals(performance.now());
+    const seen = this.namedSpritesInView("escaped-animal");
+    return outside && seen.count >= 1 && seen.maxScreenPx >= 18;
+  }
+
+  private prepareAnimalDetailCapture(): boolean {
+    const animal =
+      this.state.story?.animals?.find((item) => item.whereabouts === "in_camp" && !item.split) ??
+      this.state.story?.animals?.find((item) => item.whereabouts !== "sold");
+    if (!animal) return false;
+    this.selected = true;
+    if (this.state.story) {
+      this.state.story.focusedAnimalId = animal.id;
+      this.state.story.selectedAnimalIds = [animal.id];
+    }
+    this.syncHud();
+    this.expandHerdSheet();
+    this.syncHud();
+    this.hud.clearHint();
+    const sheet = document.getElementById("sheet-detail");
+    if (sheet) sheet.scrollTop = 0;
+    this.placeIndividualAnimals(performance.now());
+    const cow = this.cows.find((sprite) => sprite.getData("animalTag") === animal.tag);
+    if (cow) this.frameWorldPoints([{ x: cow.x, y: cow.y }], 0.38);
+    this.placeIndividualAnimals(performance.now());
+    const title = document.getElementById("animal-detail-title")?.textContent ?? "";
+    const body = document.getElementById("animal-detail-body")?.textContent ?? "";
+    const clean = !/\b(id|campId|stockClass)\b/i.test(`${title} ${body}`);
+    const role = cow?.getData("captureRole");
+    const seen = this.namedSpritesInView(typeof role === "string" ? role : "herd-animal");
+    return title.startsWith("Tag ") && body.length > 8 && clean && seen.count >= 1 && seen.maxScreenPx >= 16;
+  }
+
+  private prepareMultiSelectCapture(): boolean {
+    const story = this.state.story;
+    if (!story?.animals) return false;
+    const matched = filterAnimals(story.animals, TOLLY_OVER_300).filter((animal) => animal.whereabouts === "in_camp");
+    if (matched.length < 2) return false;
+    this.selected = true;
+    this.syncHud();
+    this.expandHerdSheet();
+    document.getElementById("animal-filter-tolly300")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    this.hud.clearHint();
+    const sheet = document.getElementById("sheet-detail");
+    if (sheet) sheet.scrollTop = 0;
+    this.placeIndividualAnimals(performance.now());
+    const cows = this.cows
+      .filter((sprite) => matched.some((animal) => animal.tag === sprite.getData("animalTag")))
+      .slice(0, 6);
+    this.frameWorldPoints(cows.map((sprite) => ({ x: sprite.x, y: sprite.y })), 0.62);
+    this.placeIndividualAnimals(performance.now());
+    const rows = document.querySelectorAll(".animal-row.is-selected").length;
+    return rows >= 2 && this.namedSpritesInView("herd-animal").count >= 2;
+  }
+
+  private prepareCutOutCapture(): boolean {
+    const story = this.state.story;
+    if (!story) return false;
+    hireFarmhand(this.state);
+    ensurePeopleState(this.state);
+    if (!story.workGrid) story.workGrid = defaultWorkGrid();
+    story.workGrid.move_herd_help = 3;
+    this.state.date.hour = 10;
+    this.captureLightingHour = 10;
+    this.collapseHerdSheet();
+    this.hud.clearHint();
+    clearHerdTransit(this.state);
+    clearCutOut(this.state);
+    const group = filterAnimals(story.animals ?? [], TOLLY_OVER_300).slice(0, 6);
+    const use = group.length >= 3 ? group : (story.animals ?? []).filter((animal) => animal.whereabouts === "in_camp").slice(0, 6);
+    if (use.length < 3) return false;
+    const dest = this.state.camps.find((camp) => camp.id !== this.state.herd.campId);
+    if (!dest) return false;
+    story.selectedAnimalIds = use.map((animal) => animal.id);
+    const result = requestCutOut(this.state, story.selectedAnimalIds, { kind: "camp", campId: dest.id });
+    if (!result.ok || result.queued) return false;
+    let guard = 0;
+    while (guard < 120000 && story.cutOut && story.cutOut.phase !== "drive") {
+      tickCutOutRealtime(this.state, 48, "x3");
+      guard += 48;
+    }
+    if (story.cutOut?.phase !== "drive") return false;
+    while (guard < 180000 && story.cutOut && story.cutOut.progress < 0.28) {
+      tickCutOutRealtime(this.state, 48, "x3");
+      guard += 48;
+    }
+    this.placeIndividualAnimals(performance.now());
+    this.placeFarmhand();
+    this.placeFarmer();
+    const cows = this.cows.filter((sprite) => sprite.getData("captureRole") === "cut-out-animal" && sprite.visible);
+    const herder = story.cutOut.herder === "piet" ? this.farmhandSprite : this.farmerSprite;
+    const points = cows.map((sprite) => ({ x: sprite.x, y: sprite.y }));
+    if (herder) points.push({ x: herder.x, y: herder.y });
+    this.frameWorldPoints(points, 0.7);
+    this.placeIndividualAnimals(performance.now());
+    this.placeFarmhand();
+    this.placeFarmer();
+    const seen = this.namedSpritesInView("cut-out-animal");
+    const behind = cutOutHerderProgress(this.state) <= cutOutRearProgress(this.state) + 0.001;
+    const workerSeen = story.cutOut.herder === "piet" ? this.countFarmhandInView() >= 1 : this.countFarmerInView() >= 1;
+    return seen.count >= 3 && seen.maxScreenPx >= 16 && behind && workerSeen && (story.cutOut.progress ?? 0) > 0.05;
+  }
+
+  private prepareFacingCapture(): boolean {
+    this.state.date.hour = 11;
+    this.captureLightingHour = 11;
+    clearHerdTransit(this.state);
+    clearCutOut(this.state);
+    const destId = this.pickLongHerdMoveDestination();
+    if (destId === null || !beginHerdMove(this.state, destId)) return false;
+    let best = 0;
+    let guard = 0;
+    while (guard < 160000) {
+      tickHerdingRealtime(this.state, 60, "x3");
+      guard += 60;
+      const transit = this.state.herd.transit;
+      if (!transit || transit.phase !== "drive") continue;
+      this.syncHerdFromSim();
+      this.placeIndividualAnimals(performance.now());
+      const moving = this.cows.filter((sprite) => sprite.visible && sprite.getData("captureRole") === "herd-animal");
+      let framed = moving.slice(0, 8);
+      let bestVariety = 0;
+      let bestSpan = Number.POSITIVE_INFINITY;
+      for (let index = 0; index < moving.length; index += 1) {
+        const cluster = moving.slice(index, index + 10);
+        if (cluster.length < 4) break;
+        const octants = new Set(cluster.map((cow) => cow.getData("octant")));
+        let minX = Number.POSITIVE_INFINITY;
+        let maxX = Number.NEGATIVE_INFINITY;
+        let minY = Number.POSITIVE_INFINITY;
+        let maxY = Number.NEGATIVE_INFINITY;
+        for (const cow of cluster) {
+          minX = Math.min(minX, cow.x);
+          maxX = Math.max(maxX, cow.x);
+          minY = Math.min(minY, cow.y);
+          maxY = Math.max(maxY, cow.y);
+        }
+        const span = Math.max(maxX - minX, maxY - minY);
+        if (octants.size > bestVariety || (octants.size === bestVariety && span < bestSpan)) {
+          bestVariety = octants.size;
+          bestSpan = span;
+          framed = cluster;
+        }
+      }
+      this.frameWorldPoints(framed.map((sprite) => ({ x: sprite.x, y: sprite.y })), 0.62);
+      this.placeIndividualAnimals(performance.now());
+      const seen = this.namedSpritesInView("herd-animal");
+      best = Math.max(best, seen.octants.length);
+      if (seen.octants.length >= 3 && seen.count >= 4 && seen.maxScreenPx >= 18) {
+        this.collapseHerdSheet();
+        this.hud.clearHint();
+        return true;
+      }
+      if ((transit.progress ?? 0) > 0.92) break;
+    }
+    return best >= 3;
+  }
+
+  private prepareTruckRampCapture(): boolean {
+    const story = this.state.story;
+    if (!story) return false;
+    const stockClass = story.composition.tolly > 2 ? "tolly" : story.composition.ox > 0 ? "ox" : "cow";
+    const count = Math.min(4, story.composition[stockClass] ?? 0);
+    if (count <= 0) return false;
+    const line = quoteSale(this.state, stockClass, count, "auction");
+    if ("reason" in line) return false;
+    this.state.date.hour = 11;
+    this.captureLightingHour = 11;
+    this.collapseHerdSheet();
+    this.hud.clearHint();
+    clearHerdTransit(this.state);
+    clearCutOut(this.state);
+    clearSaleConvoy(this.state);
+    const started = beginSaleConvoy(this.state, stockClass, count, "auction", line);
+    if (!started.ok) return false;
+    let guard = 0;
+    while (guard < 200000 && story.saleConvoy && story.saleConvoy.phase !== "ramp" && story.saleConvoy.phase !== "loading") {
+      tickHerdingRealtime(this.state, 50, "x3");
+      tickSaleConvoyRealtime(this.state, 50, 3);
+      guard += 50;
+    }
+    if (!story.saleConvoy || (story.saleConvoy.phase !== "ramp" && story.saleConvoy.phase !== "loading")) return false;
+    this.syncCattleTruckVisual();
+    const ramp = this.state.features.find((feature) => feature.kind === "loading_ramp");
+    const truck = this.cattleTruck;
+    if (!ramp || !truck?.visible) return false;
+    const rampPos = tileCenter(ramp.x, ramp.y, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
+    this.frameWorldPoints(
+      [
+        { x: truck.x, y: truck.y },
+        { x: rampPos.x, y: rampPos.y },
+      ],
+      0.55,
+    );
+    this.syncCattleTruckVisual();
+    const seen = this.namedSpritesInView("cattle-truck");
+    return seen.count >= 1 && seen.maxScreenPx >= 24 && truck.name === "cattle-truck";
+  }
+
   private prepareHerdDriveCapture(): boolean {
     const story = this.state.story;
     if (!story) return false;
@@ -2430,12 +2769,13 @@ export class FarmScene extends Phaser.Scene {
           ? { x: ramp.x, y: ramp.y }
           : STEP3B.loadingRampTile;
     const pos = tileCenter(tile.x, tile.y, this.layout, tileW, tileH);
-    const truckScale = scaleToSpanMetres(280, 16);
+    const truckScale = scaleToSpanMetres(420, 16);
     if (!this.cattleTruck) {
       this.cattleTruck = this.add
         .image(pos.x, pos.y, SPRITE_KEYS.cattleTruck)
-        .setOrigin(0.35, 0.92)
-        .setScale(truckScale);
+        .setOrigin(0.22, 0.9)
+        .setScale(truckScale)
+        .setName("cattle-truck");
     }
     this.cattleTruck.setScale(truckScale);
     if (ramp) {
@@ -2448,7 +2788,188 @@ export class FarmScene extends Phaser.Scene {
     this.cattleTruck.setData("tileY", tile.y);
   }
 
+  private ensureCowCount(count: number): void {
+    while (this.cows.length < count) {
+      const cow = this.add
+        .image(0, 0, cattleOctantKey(0))
+        .setOrigin(0.5, 0.82);
+      this.cows.push(cow);
+    }
+    while (this.cows.length > count) {
+      this.cows.pop()?.destroy();
+    }
+  }
+
+  private placeIndividualAnimals(time: number): void {
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    const placed = layoutAnimals(this.state, this.layout, tileW, tileH, time);
+    this.ensureCowCount(placed.length);
+    const anchor = tileCenter(
+      herdWorldTile(this.state).x,
+      herdWorldTile(this.state).y,
+      this.layout,
+      tileW,
+      tileH,
+    );
+    this.herdVisual.x = anchor.x;
+    this.herdVisual.y = anchor.y;
+    this.herdOffsets = placed
+      .filter((spot) => spot.role === "herd-animal")
+      .map((spot) => ({
+        x: spot.x - anchor.x,
+        y: spot.y - anchor.y,
+        flip: false,
+        coat: 0,
+        scale: 1,
+        view: "right" as const,
+        octant: spot.octant,
+      }));
+    const selected = new Set(this.state.story?.selectedAnimalIds ?? []);
+    const zoom = this.cameras.main.zoom;
+    const cowLod = this.paintedSprites && zoom <= COW_LOD_ZOOM && !this.captureHideHerdLabel;
+    placed.forEach((spot, index) => {
+      const cow = this.cows[index];
+      if (!cow) return;
+      const bob =
+        spot.animal.activity === "walk" && !this.reduceMotion ? Math.sin(time / 180 + index) * 1.4 : 0;
+      cow.setData("captureRole", spot.role);
+      cow.setData("octant", spot.octant);
+      cow.setData("animalTag", spot.animal.tag);
+      cow.setName(spot.role);
+      if (cowLod) {
+        cow.setTexture(SPRITE_KEYS.cowDot);
+        cow.setScale(1.15);
+      } else if (this.textures.exists(cattleOctantKey(spot.octant, spot.calf))) {
+        cow.setTexture(cattleOctantKey(spot.octant, spot.calf));
+        const grown = spot.animal.stockClass === "calf" ? 1 : spot.animal.weightKg > 420 ? 1.08 : 0.96;
+        cow.setScale(cattleOctantScale(spot.calf) * grown);
+      }
+      const marked = selected.has(spot.animal.id) && spot.role !== "cut-out-animal";
+      if (marked) cow.setTint(0xffc56a);
+      else cow.clearTint();
+      cow.setFlipX(false);
+      cow.setRotation(0);
+      cow.setPosition(spot.x, spot.y + bob);
+      cow.setDepth(20 + spot.y * 0.01);
+      cow.setVisible(true);
+      cow.setData("suppress", false);
+    });
+  }
+
+  private animalAt(worldX: number, worldY: number, radius: number): string | null {
+    let best: { id: string; dist: number } | null = null;
+    for (const cow of this.cows) {
+      if (!cow.visible) continue;
+      const id = this.animalIdForSprite(cow);
+      if (!id) continue;
+      const dist = Math.hypot(worldX - cow.x, worldY - cow.y);
+      if (dist > radius) continue;
+      if (!best || dist < best.dist) best = { id, dist };
+    }
+    return best?.id ?? null;
+  }
+
+  private animalIdForSprite(cow: Phaser.GameObjects.Image): string | null {
+    const tag = cow.getData("animalTag");
+    if (typeof tag !== "string") return null;
+    return this.state.story?.animals?.find((animal) => animal.tag === tag)?.id ?? null;
+  }
+
+  private toggleAnimal(id: string): void {
+    const story = this.state.story;
+    if (!story) return;
+    const selected = new Set(story.selectedAnimalIds ?? []);
+    if (selected.has(id)) selected.delete(id);
+    else selected.add(id);
+    story.selectedAnimalIds = [...selected];
+    story.focusedAnimalId = id;
+    this.selected = true;
+    this.pendingCampId = null;
+    this.pendingCampName = "";
+    const animal = story.animals?.find((item) => item.id === id);
+    if (animal) {
+      const label = animal.whereabouts === "escaped" || animal.whereabouts === "neighbour" ? "out" : "in the herd";
+      this.hud.setHint(`Tag ${animal.tag}, ${label}.`);
+    }
+    this.syncHud();
+    const summary = document.getElementById("sheet-summary");
+    if (document.getElementById("herd-sheet")?.dataset.expanded !== "true") {
+      summary?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    }
+  }
+
+  private applyAnimalFilter(filter: "all" | "tolly300" | "out"): void {
+    const story = this.state.story;
+    if (!story?.animals) return;
+    if (filter === "all") {
+      this.syncHud();
+      return;
+    }
+    const matched =
+      filter === "tolly300"
+        ? filterAnimals(story.animals, TOLLY_OVER_300)
+        : filterAnimals(story.animals, { outOnly: true });
+    story.selectedAnimalIds = matched.map((animal) => animal.id);
+    story.focusedAnimalId = matched[0]?.id ?? null;
+    this.selected = true;
+    const count = matched.length;
+    this.hud.setHint(
+      count === 0 ? "No animals match." : count === 1 ? "1 animal selected." : `${count} animals selected.`,
+    );
+    this.syncHud();
+  }
+
+  private orderCutToPendingCamp(): void {
+    if (this.pendingCampId === null) {
+      this.hud.setHint("Tap the camp you want, then tap To camp.");
+      return;
+    }
+    const ids = this.state.story?.selectedAnimalIds ?? [];
+    const result = requestCutOut(this.state, ids, { kind: "camp", campId: this.pendingCampId });
+    this.hud.setHint(result.message);
+    this.pendingCampId = null;
+    this.pendingCampName = "";
+    this.syncHud();
+  }
+
+  private orderCutToKraal(): void {
+    const ids = this.state.story?.selectedAnimalIds ?? [];
+    const result = requestCutOut(this.state, ids, { kind: "kraal" });
+    this.hud.setHint(result.message);
+    this.syncHud();
+  }
+
+  private orderRoundUp(): void {
+    const selected = this.state.story?.selectedAnimalIds ?? [];
+    const escaped = escapedAnimalIds(this.state);
+    const ids = selected.filter((id) => escaped.includes(id));
+    const use = ids.length > 0 ? ids : escaped;
+    if (use.length === 0) {
+      this.hud.setHint("No animals are out.");
+      return;
+    }
+    const result = requestCutOut(this.state, use, { kind: "camp", campId: this.state.herd.campId });
+    this.hud.setHint(result.message);
+    this.syncHud();
+  }
+
+  private showCalmEscapeNote(): void {
+    const notes = this.state.notifications?.log ?? [];
+    const fresh = notes.find((item) => item.kind === "animal_out" && !item.read);
+    if (!fresh) return;
+    fresh.read = true;
+    this.hud.setHint(fresh.body);
+  }
+
   private placeHerd(time: number): void {
+    const special = this.captureDrinkHeads > 0 || this.captureKraalLineup;
+    const animals = this.state.story?.animals?.filter((animal) => animal.whereabouts !== "sold") ?? [];
+    if (!special && animals.length > 0 && this.textures.exists(cattleOctantKey(0))) {
+      this.placeIndividualAnimals(time);
+      this.refreshHerdLabel();
+      return;
+    }
     this.refreshHerdOffsets(time);
     const tile = worldToTile(
       this.herdVisual.x,
@@ -2570,7 +3091,7 @@ export class FarmScene extends Phaser.Scene {
           cow.setVisible(false);
           continue;
         }
-        const posed = cow.getData("pose") === "drink" || this.captureKraalLineup;
+        const posed = cow.getData("pose") === "drink" || this.captureKraalLineup || Boolean(cow.getData("captureRole"));
         const px = posed ? cow.x : cx;
         const py = posed ? cow.y : cy;
         cow.setVisible(
@@ -2857,6 +3378,11 @@ export class FarmScene extends Phaser.Scene {
       CONFIG.view.herdPickTiles * CONFIG.view.tileWidth,
       CONFIG.view.herdPickMinScreenPx / this.cameras.main.zoom,
     );
+    const animalId = this.animalAt(world.x, world.y, radius);
+    if (animalId) {
+      this.toggleAnimal(animalId);
+      return;
+    }
     if (this.pointerHitsHerd(world.x, world.y, radius)) {
       const action = resolveHerdTap(this.selected);
       if (action === "deselect") {

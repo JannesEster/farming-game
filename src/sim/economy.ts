@@ -11,6 +11,7 @@ import {
   pumpLabel,
   repairCostNad,
 } from "./levers";
+import { reconcileAnimals } from "./animals";
 import type { SaleChannel, SaleLine, StockClass } from "./storyTypes";
 import type { GameState } from "./types";
 
@@ -285,6 +286,24 @@ export function syncHeadFromComposition(state: GameState): void {
   const c = state.story?.composition;
   if (!c) return;
   state.herd.headCount = Math.max(0, totalCompositionHead(c));
+  if (state.story?.animals) reconcileAnimals(state);
+}
+
+/** Pay one or more class lines and drop the loaded animals, then reconcile the herd. */
+export function applySaleLines(state: GameState, lines: SaleLine[], animalIds?: string[]): void {
+  const story = state.story;
+  if (!story) return;
+  for (const line of lines) {
+    story.composition[line.stockClass] = Math.max(0, (story.composition[line.stockClass] ?? 0) - line.count);
+    state.cashNad += line.totalNad;
+    story.ledger.incomeNad += line.totalNad;
+    story.ledger.sales.push(line);
+  }
+  if (animalIds?.length && story.animals) {
+    const drop = new Set(animalIds);
+    story.animals = story.animals.filter((animal) => !drop.has(animal.id));
+  }
+  syncHeadFromComposition(state);
 }
 
 export function chargeMonthlyCosts(state: GameState, config: GameConfig = CONFIG): MonthlyCostBreakdown {

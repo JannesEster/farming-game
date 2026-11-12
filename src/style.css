@@ -1393,3 +1393,99 @@ body {
   background: linear-gradient(90deg, var(--gold), var(--paper));
   border-radius: 2px;
 }
+
+.animal-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.animal-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.animal-filters .chip {
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(247, 240, 226, 0.28);
+  background: transparent;
+  color: var(--paper);
+  font: inherit;
+  font-size: 13px;
+}
+
+.animal-filters .chip.is-on {
+  background: rgba(240, 194, 122, 0.22);
+  border-color: var(--gold);
+}
+
+.animal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 18vh;
+  overflow: auto;
+}
+
+.animal-detail-title,
+#animal-detail h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+#animal-detail p {
+  margin: 2px 0 0;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.animal-row {
+  width: 100%;
+  min-height: 40px;
+  text-align: left;
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 1px solid rgba(247, 240, 226, 0.12);
+  background: transparent;
+  color: var(--paper);
+  font: inherit;
+  font-size: 14px;
+}
+
+.animal-row.is-selected {
+  background: rgba(240, 194, 122, 0.2);
+}
+
+.animal-empty {
+  padding: 8px 2px;
+  font-size: 14px;
+}
+
+.animal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.animal-actions .pill-btn {
+  flex: 1 1 30%;
+  min-height: 40px;
+}
+
+#animal-detail h3,
+#animal-detail p {
+  margin: 0;
+}
+
+#animal-detail h3 {
+  font-size: 16px;
+}
+
+#animal-detail p {
+  font-size: 14px;
+  line-height: 1.35;
+}

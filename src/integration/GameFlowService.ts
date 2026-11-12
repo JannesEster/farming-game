@@ -12,6 +12,7 @@ import {
   getActiveSlotId,
   listSlotSummaries,
   readSlot,
+  SAVE_FORMAT_VERSION,
   setActiveSlotId,
   SLOT_COUNT,
   writeSlot,
@@ -336,7 +337,7 @@ export class GameFlowService {
   persist(): void {
     if (!this.runtime.gameState) return;
     const payload: SavedSlotPayload = {
-      version: 3,
+      version: SAVE_FORMAT_VERSION,
       savedAt: new Date().toISOString(),
       slotId: this.runtime.slotId,
       meta: this.runtime.meta,

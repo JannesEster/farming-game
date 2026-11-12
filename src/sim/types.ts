@@ -107,6 +107,8 @@ export type GameState = {
   /** Shared water installations from farm definition (wagon wheel layout). */
   farmWaterPoints?: FarmWaterPoint[];
   story?: StoryState;
+  /** Save schema written by migrateState. Older saves omit it. */
+  stateVersion?: number;
 };
 
 export type MoveResult =

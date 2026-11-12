@@ -11,10 +11,11 @@ import type { GameState } from "./types";
 import type { FarmWaterPoint, HerdComposition } from "./storyTypes";
 import { STEP3B } from "./step3bConfig";
 
+import { ensureAnimals } from "./animals";
 import { defaultDrinkingTrip } from "./water";
 import { defaultBakkieRun } from "./bakkie";
 
-export const GAME_STATE_VERSION = 7;
+export const GAME_STATE_VERSION = 8;
 
 function deriveWaterPointsFromFeatures(state: GameState): FarmWaterPoint[] {
   const points: FarmWaterPoint[] = [];
@@ -101,7 +102,7 @@ function ensureHandlingYardFeatures(state: GameState): void {
 }
 
 export type LegacySavedGame = {
-  version?: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+  version?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
   savedAt?: string;
   state?: GameState;
 };
@@ -181,6 +182,14 @@ export function migrateState(state: GameState): GameState {
     if (!state.herd.transit.herder) state.herd.transit.herder = "farmer";
     if (state.herd.transit.approachProgress === undefined) state.herd.transit.approachProgress = 1;
   }
+  if (state.story) {
+    if (!state.story.animals) state.story.animals = [];
+    if (state.story.cutOut === undefined) state.story.cutOut = null;
+    if (!state.story.selectedAnimalIds) state.story.selectedAnimalIds = [];
+    if (state.story.focusedAnimalId === undefined) state.story.focusedAnimalId = null;
+    ensureAnimals(state);
+  }
+  state.stateVersion = GAME_STATE_VERSION;
   return state;
 }
 
@@ -195,7 +204,9 @@ export function parseLegacySaved(raw: string): GameState | null {
       data.version !== 3 &&
       data.version !== 4 &&
       data.version !== 5 &&
-      data.version !== 6
+      data.version !== 6 &&
+      data.version !== 7 &&
+      data.version !== 8
     ) {
       return null;
     }

@@ -6,6 +6,7 @@ import {
   grazeableFraction,
   residualDmKgPerHa,
 } from "./pasture";
+import { ensureAnimals } from "./animals";
 import { createStoryState, initStoryPeople } from "./story";
 import { campGateToward } from "./path";
 import { homesteadYardPieces, placeSharedWaterPoints } from "./waterLayout";
@@ -362,6 +363,9 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
     farmWaterPoints,
     story: createStoryState(config.herd.headCount, config),
   };
+  initStoryPeople(state, config);
+  ensureAnimals(state, config);
+  state.stateVersion = 8;
   return { state, score };
 }
 
