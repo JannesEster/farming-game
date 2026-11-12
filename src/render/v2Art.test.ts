@@ -40,12 +40,13 @@ describe("v2 art choices", () => {
     expect(side?.scale).toBeCloseTo(displayScaleForFile("cattle-bonsmara-e.png") ?? 0, 5);
   });
 
-  it("draws a person shorter than the farmhouse door", () => {
-    const pose = personPose("farmhand", 1, 0.4, true);
+  it("keeps the step 3c person height on every pose", () => {
+    const pose = personPose("farmer", 0, 1, false);
     expect(pose).not.toBeNull();
+    expect(pose!.scale).toBeCloseTo(displayScaleForFile("person-farmer-stand-s.png") ?? 0, 5);
     const ratios = keyRatios();
-    expect(ratios.personOverDoor).toBeLessThan(0.92);
-    expect(pose!.scale * 140).toBeLessThan(ratios.door);
+    expect(ratios.person).toBeCloseTo(CONFIG.view.tileWidth * 0.58, 5);
+    expect(ratios.cow).toBeCloseTo(CONFIG.view.tileWidth * 0.62, 5);
   });
 
   it("tells the two fence diagonals apart", () => {

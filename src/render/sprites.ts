@@ -1,9 +1,9 @@
 import {
   BAKKIE_LENGTH_METRES,
   BUSH_DENSE_METRES,
-  CALF_LENGTH_METRES,
+  calfDisplayPx,
   CAMELTHORN_LARGE_METRES,
-  COW_LENGTH_METRES,
+  cowDisplayPx,
   CRUSH_HEIGHT_METRES,
   FARMHOUSE_WIDTH_METRES,
   KRAAL_WIDTH_METRES,
@@ -676,8 +676,8 @@ export function worldPxPerMetre(): number {
   return PIXELS_PER_METRE;
 }
 
-export function scaleToSpanMetres(nativePx: number, metres: number, livestock = false): number {
-  return uniformScale(nativePx, metres, livestock);
+export function scaleToSpanMetres(nativePx: number, metres: number): number {
+  return uniformScale(nativePx, metres);
 }
 
 /** Painted-sprite fallback. Pixel counts are that sheet's size on the measured axis. */
@@ -739,9 +739,9 @@ export function propSpriteForKind(kind: string, x: number, y: number, featureSca
   }
 }
 
-/** Painted herd sheet. The body fills about 131 px of the texture; that span is the cow's length. */
+/** Painted herd sheet. The body fills about 131 px of the texture; that span is the locked cow length. */
 export function cattleDisplayScale(multiplier = 1): number {
-  return uniformScale(131, COW_LENGTH_METRES, true) * multiplier;
+  return (cowDisplayPx() / 131) * multiplier;
 }
 
 export type CowView = "left" | "right" | "toward" | "away";
@@ -818,9 +818,9 @@ export function cattleOctantKey(octant: number, calf = false, coat = 0): string 
 export const COW_ART_BODY_PX = 80;
 
 export function cattleOctantScale(calf = false): number {
-  const metres = calf ? CALF_LENGTH_METRES : COW_LENGTH_METRES;
-  const bodyPx = calf ? COW_ART_BODY_PX * (CALF_LENGTH_METRES / COW_LENGTH_METRES) : COW_ART_BODY_PX;
-  return uniformScale(bodyPx, metres, true);
+  const display = calf ? calfDisplayPx() : cowDisplayPx();
+  const bodyPx = calf ? COW_ART_BODY_PX * (calfDisplayPx() / cowDisplayPx()) : COW_ART_BODY_PX;
+  return display / bodyPx;
 }
 
 function paintOctantCow(octant: number, calf: boolean, coatIndex: number): HTMLCanvasElement {

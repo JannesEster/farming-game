@@ -8,11 +8,14 @@ import {
   DOOR_METRES,
   EAVES_METRES,
   FARMHOUSE_WIDTH_METRES,
+  CALF_OF_COW,
+  COW_BODY_TILES,
+  cowDisplayPx,
   HOLDING_M2_PER_HEAD,
-  LIVESTOCK_READABILITY,
   PEN_ALONG_METRES,
   PEN_DEPTH_METRES,
-  PERSON_HEIGHT_METRES,
+  PERSON_HEIGHT_TILES,
+  personDisplayPx,
   PIXELS_PER_METRE,
   ROAD_TRAIN_METRES,
   SPRITE_SIZES,
@@ -29,9 +32,7 @@ import {
 
 describe("world scale", () => {
   it("keeps one metres-to-pixels factor and grades every size as an assumption", () => {
-    expect(PIXELS_PER_METRE).toBeGreaterThan(0);
-    expect(LIVESTOCK_READABILITY).toBeGreaterThan(1);
-    expect(LIVESTOCK_READABILITY).toBeLessThanOrEqual(1.3);
+    expect(PIXELS_PER_METRE).toBeCloseTo(cowDisplayPx() / COW_LENGTH_METRES, 5);
     expect(SPRITE_SIZES.length).toBeGreaterThan(20);
     for (const row of SPRITE_SIZES) {
       expect(row.grade).toBe("A");
@@ -42,20 +43,18 @@ describe("world scale", () => {
     expect(livestock).toEqual(["person", "cow", "calf"]);
   });
 
-  it("keeps a person under the door and the eaves, and a cow under the bakkie", () => {
+  it("keeps people and cattle at the step 3c size and scales the bakkie from the cow", () => {
     const ratios = keyRatios();
-    expect(ratios.personOverDoor).toBeLessThan(0.92);
-    expect(ratios.personOverDoor).toBeGreaterThan(0.75);
-    expect(ratios.personOverEaves).toBeLessThan(0.75);
-    expect(ratios.person).toBeCloseTo(PERSON_HEIGHT_METRES * LIVESTOCK_READABILITY * PIXELS_PER_METRE, 5);
+    expect(ratios.person).toBeCloseTo(personDisplayPx(), 5);
+    expect(ratios.person).toBeCloseTo(64 * PERSON_HEIGHT_TILES, 5);
+    expect(ratios.cow).toBeCloseTo(cowDisplayPx(), 5);
+    expect(ratios.cow).toBeCloseTo(64 * COW_BODY_TILES, 5);
+    expect(ratios.calf / ratios.cow).toBeCloseTo(CALF_OF_COW, 5);
     expect(ratios.door).toBeCloseTo(DOOR_METRES * PIXELS_PER_METRE, 5);
     expect(ratios.eaves).toBeCloseTo(EAVES_METRES * PIXELS_PER_METRE, 5);
-    expect(ratios.personOverCow).toBeGreaterThan(0.65);
-    expect(ratios.personOverCow).toBeLessThan(0.9);
-    expect(ratios.cowOverBakkie).toBeLessThan(0.6);
+    expect(ratios.cowOverBakkie).toBeCloseTo(COW_LENGTH_METRES / BAKKIE_LENGTH_METRES, 5);
     expect(ratios.cow).toBeLessThan(ratios.bakkie);
-    expect(PERSON_HEIGHT_METRES * LIVESTOCK_READABILITY).toBeLessThan(DOOR_METRES);
-    expect(COW_LENGTH_METRES * LIVESTOCK_READABILITY).toBeLessThan(BAKKIE_LENGTH_METRES);
+    expect(ratios.bakkie / ratios.cow).toBeCloseTo(BAKKIE_LENGTH_METRES / COW_LENGTH_METRES, 5);
   });
 
   it("keeps the bakkie shorter than the road train and the windmill taller than the bakkie", () => {
@@ -65,10 +64,10 @@ describe("world scale", () => {
     expect(ratios.bakkieOverTruck).toBeCloseTo(BAKKIE_LENGTH_METRES / ROAD_TRAIN_METRES, 5);
     expect(ratios.windmillOverBakkie).toBeGreaterThan(1.5);
     expect(ratios.windmill).toBeGreaterThan(ratios.bakkie);
-    expect(ratios.farmhouseOverPerson).toBeGreaterThan(6);
     expect(ratios.farmhouse).toBeCloseTo(FARMHOUSE_WIDTH_METRES * PIXELS_PER_METRE, 5);
     expect(ratios.windmill / WINDMILL_HEIGHT_METRES).toBeCloseTo(PIXELS_PER_METRE, 5);
-    expect(ratios.person / PERSON_HEIGHT_METRES).toBeCloseTo(PIXELS_PER_METRE * LIVESTOCK_READABILITY, 5);
+    expect(ratios.truck / ratios.cow).toBeCloseTo(ROAD_TRAIN_METRES / COW_LENGTH_METRES, 5);
+    expect(ratios.farmhouse / ratios.cow).toBeCloseTo(FARMHOUSE_WIDTH_METRES / COW_LENGTH_METRES, 5);
   });
 
   it("derives the manifest sprites from those metres", () => {

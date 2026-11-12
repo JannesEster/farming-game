@@ -135,7 +135,7 @@ import {
   FARMHOUSE_WIDTH_METRES,
   GARDEN_WIDTH_METRES,
   KRAAL_WIDTH_METRES,
-  PERSON_HEIGHT_METRES,
+  personDisplayPx,
   RESERVOIR_DIAMETER_METRES,
   ROCK_CLUSTER_METRES,
   SHED_WIDTH_METRES,
@@ -163,7 +163,22 @@ import {
   v2Ready,
   vehiclePose,
 } from "./v2Art";
+import { yardGeometry } from "./yardDraw";
 import { ensureV2GroundFillTexture, v2GroundReady } from "./v2Ground";
+
+function pointInPolygon(x: number, y: number, corners: { x: number; y: number }[]): boolean {
+  let inside = false;
+  for (let i = 0, j = corners.length - 1; i < corners.length; i += 1) {
+    const xi = corners[i].x;
+    const yi = corners[i].y;
+    const xj = corners[j].x;
+    const yj = corners[j].y;
+    const crosses = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+    if (crosses) inside = !inside;
+    j = i;
+  }
+  return inside;
+}
 
 function clearHerdTransit(state: GameState): void {
   state.herd.transit = null;
@@ -1667,7 +1682,7 @@ export class FarmScene extends Phaser.Scene {
       const cow = this.add
         .image(0, 0, tex)
         .setOrigin(ART_ORIGIN.cow.x, ART_ORIGIN.cow.y)
-        .setScale(this.paintedSprites ? cattleDisplayScale() : uniformScale(52, COW_LENGTH_METRES, true));
+        .setScale(this.paintedSprites ? cattleDisplayScale() : uniformScale(52, COW_LENGTH_METRES));
       this.cows.push(cow);
     }
     this.refreshHerdOffsets(0);
@@ -1809,7 +1824,7 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private farmhandTargetScale(): number {
-    return uniformScale(FARMHAND_TEXTURE_HEIGHT, PERSON_HEIGHT_METRES, true);
+    return personDisplayPx() / FARMHAND_TEXTURE_HEIGHT;
   }
 
   private farmhandScreenHeightPx(): number {
@@ -1856,7 +1871,7 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private farmerTargetScale(): number {
-    return uniformScale(FARMHAND_TEXTURE_HEIGHT, PERSON_HEIGHT_METRES, true);
+    return personDisplayPx() / FARMHAND_TEXTURE_HEIGHT;
   }
 
   private placeFarmer(): void {
@@ -2881,12 +2896,13 @@ export class FarmScene extends Phaser.Scene {
       const rearY = Number(truck.getData("rearY") ?? truck.y);
       const cabX = Number(truck.getData("cabX") ?? truck.x);
       const cabY = Number(truck.getData("cabY") ?? truck.y);
-      truckOverlapsPens = pens.some((pen) => {
-        const box = pen.getBounds();
+      const geometry = yardGeometry(this.state.features, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
+      const penPolys = geometry?.pens.map((pen) => pen.corners) ?? [];
+      truckOverlapsPens = penPolys.some((corners) => {
         for (let t = 0; t <= 1; t += 0.1) {
           const x = rearX + (cabX - rearX) * t;
           const y = rearY + (cabY - rearY) * t;
-          if (x > box.left && x < box.right && y > box.top && y < box.bottom) return true;
+          if (pointInPolygon(x, y, corners)) return true;
         }
         return false;
       });
@@ -3339,19 +3355,24 @@ export class FarmScene extends Phaser.Scene {
     let shift = 12;
     let pos = depart ? tileCenter(tile.x, tile.y, this.layout, tileW, tileH) : parkedAt(shift);
     if (!depart && ends) {
-      const pens = this.propSprites.filter((sprite) => sprite.getData("featureKind") === "holding_pen");
+      const geometry = yardGeometry(this.state.features, this.layout, tileW, tileH);
+      const penPolys = geometry?.pens.map((pen) => pen.corners) ?? [];
+      const stepX = awayX / awayLen;
+      const stepY = (awayY / awayLen) * 0.55;
+      const lean = this.cattleTruck.displayHeight * 0.55;
+      const leanX = -stepX * lean;
+      const leanY = -stepY * lean;
       const hitsPen = (at: { x: number; y: number }) =>
-        pens.some((pen) => {
-          const box = pen.getBounds();
+        penPolys.some((corners) => {
           for (let t = 0; t <= 1; t += 0.12) {
             const x = at.x + ends.rearX + (ends.cabX - ends.rearX) * t;
             const y = at.y + ends.rearY + (ends.cabY - ends.rearY) * t;
-            if (x > box.left && x < box.right && y > box.top && y < box.bottom) return true;
+            if (pointInPolygon(x, y, corners) || pointInPolygon(x + leanX, y + leanY, corners)) return true;
           }
           return false;
         });
-      while (shift < 80 && hitsPen(pos)) {
-        shift += 8;
+      while (shift < 320 && hitsPen(pos)) {
+        shift += 12;
         pos = parkedAt(shift);
       }
     }
@@ -3363,7 +3384,6 @@ export class FarmScene extends Phaser.Scene {
     this.cattleTruck.setData("rearY", pos.y + (ends?.rearY ?? 0));
     this.cattleTruck.setData("cabX", pos.x + (ends?.cabX ?? 0));
     this.cattleTruck.setData("cabY", pos.y + (ends?.cabY ?? 0));
-    this.cattleTruck.setData("featureKind", "cattle_truck");
     this.cattleTruck.setData("tileX", tile.x);
     this.cattleTruck.setData("tileY", tile.y);
   }
@@ -3611,7 +3631,7 @@ export class FarmScene extends Phaser.Scene {
           ? Math.floor(time / 160 + index * 0.15) % 3
           : Math.floor(time / 420 + index * 0.2) % 2;
         cow.setTexture(cowTextureKey(offset.coat, walking, animFrame));
-        cow.setScale(uniformScale(52, COW_LENGTH_METRES, true));
+        cow.setScale(uniformScale(52, COW_LENGTH_METRES));
         cow.setFlipX(offset.flip);
         cow.setRotation(0);
       }

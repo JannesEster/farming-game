@@ -3,29 +3,42 @@ import type { FeatureKind } from "../sim/types";
 import { V2_SPRITES, type V2SpriteMeta } from "./v2Manifest";
 
 /**
- * One visual scale for every sprite.
+ * People and cattle keep the on-screen size from step 3c. That size is the
+ * anchor. Everything else is scaled in real metres around the cow.
  *
- * The travel map is a different scale: CONFIG.transit.kmPerTile (75 m per tile)
- * is for herding distance and the HUD scale bar. Using it for sprites would
- * draw a person at about a pixel. PIXELS_PER_METRE is the local scale, chosen
- * so a 15 m farmhouse and an 11 m windmill still fit on the 7×6 homestead
- * (their tiles are about 132 px apart on screen).
+ * A standing person is 0.58 tiles tall. An adult cow's side view is 0.62
+ * tiles nose to tail, and a calf is 0.68 of that. Those tile spans are the
+ * sizes Jannes asked to keep. PIXELS_PER_METRE is the cow's length divided
+ * into 2.4 m, so a bakkie, a house, or a windmill is the right number of
+ * cow-lengths. The travel map stays at 75 m per tile for herding and the HUD
+ * bar, and is not used for sprites.
  *
  * Every row is grade A: a stated assumption, with the source of the number.
  */
-export const PIXELS_PER_METRE = 8;
+/** Step 3c standing height, in tiles. Display height is this times the tile width. */
+export const PERSON_HEIGHT_TILES = 0.58;
+/** Step 3c adult side-view length, in tiles. */
+export const COW_BODY_TILES = 0.62;
+/** Step 3c calf length as a fraction of the adult side view. */
+export const CALF_OF_COW = 0.68;
 
-/**
- * People and cattle share this one enlargement so they stay readable.
- * It must stay at or under about 1.3. It is 1.05, not higher, because a
- * 1.8 m adult times 1.3 is 2.34 m and would stand taller than a 2.1 m door.
- * At 1.05 the person is 1.89 m, about a head under that door.
- * Buildings, vehicles, and vegetation do not get this factor.
- */
-export const LIVESTOCK_READABILITY = 1.05;
+export function personDisplayPx(): number {
+  return CONFIG.view.tileWidth * PERSON_HEIGHT_TILES;
+}
+
+export function cowDisplayPx(): number {
+  return CONFIG.view.tileWidth * COW_BODY_TILES;
+}
+
+export function calfDisplayPx(): number {
+  return cowDisplayPx() * CALF_OF_COW;
+}
+
+export const COW_LENGTH_METRES = 2.4;
+/** Cow length on screen, divided into a 2.4 m beast. Buildings and vehicles use this. */
+export const PIXELS_PER_METRE = (CONFIG.view.tileWidth * COW_BODY_TILES) / COW_LENGTH_METRES;
 
 export const PERSON_HEIGHT_METRES = 1.8;
-export const COW_LENGTH_METRES = 2.4;
 export const COW_SHOULDER_METRES = 1.4;
 /** About 0.6 of the adult, the proportion the calf sheet was drawn at. */
 export const CALF_LENGTH_METRES = 1.45;
@@ -360,10 +373,9 @@ export const SPRITE_SIZES: readonly SpriteSize[] = [
 
 const byFile = new Map(V2_SPRITES.map((sprite) => [sprite.file, sprite]));
 
-export function uniformScale(pixels: number, metres: number, livestock = false): number {
+export function uniformScale(pixels: number, metres: number): number {
   if (pixels <= 0) return 1;
-  const boost = livestock ? LIVESTOCK_READABILITY : 1;
-  return (metres * boost * PIXELS_PER_METRE) / pixels;
+  return (metres * PIXELS_PER_METRE) / pixels;
 }
 
 /** Screen length of one isometric tile step, in pixels. */
@@ -376,19 +388,22 @@ export function metresPerTile(): number {
   return isoStepPx() / PIXELS_PER_METRE;
 }
 
-function authoredScale(
-  sprite: V2SpriteMeta,
-  canonical: V2SpriteMeta,
-  metres: number,
-  axis: SizeAxis,
-  livestock: boolean,
-): number {
-  const source = axis === "width" ? sprite.sourceWidth : sprite.sourceHeight;
-  const canon = axis === "width" ? canonical.sourceWidth : canonical.sourceHeight;
-  const web = axis === "width" ? sprite.width : sprite.height;
-  if (canon <= 0 || web <= 0) return 1;
-  const boost = livestock ? LIVESTOCK_READABILITY : 1;
-  return (source * metres * boost * PIXELS_PER_METRE) / (canon * web);
+/** Step 3c authoring scale: the adult side view stays COW_BODY_TILES long when the cow turns. */
+function lockedCattleScale(sprite: V2SpriteMeta, calf: boolean): number {
+  const adult = canonical("cattle-bonsmara-e.png");
+  const adultSource = adult?.sourceWidth ?? 245;
+  const authoring = cowDisplayPx() / adultSource;
+  let scale = authoring * (sprite.sourceWidth / sprite.width);
+  if (calf) {
+    const calfSheet = canonical("cattle-calf-e.png");
+    const calfSource = calfSheet?.sourceWidth ?? sprite.sourceWidth;
+    scale *= (CALF_OF_COW * adultSource) / calfSource;
+  }
+  return scale;
+}
+
+function lockedPersonScale(sprite: V2SpriteMeta): number {
+  return personDisplayPx() / sprite.height;
 }
 
 function canonical(file: string): V2SpriteMeta | undefined {
@@ -403,41 +418,35 @@ function canonical(file: string): V2SpriteMeta | undefined {
 export function displayScaleForSprite(sprite: V2SpriteMeta): number | null {
   if (sprite.category === "ground-tile") return null;
   const file = sprite.file;
-  if (file.startsWith("cattle-")) {
-    const calf = file.includes("calf");
-    const canon = canonical(calf ? "cattle-calf-e.png" : "cattle-bonsmara-e.png");
-    const metres = calf ? CALF_LENGTH_METRES : COW_LENGTH_METRES;
-    if (!canon) return uniformScale(sprite.width, metres, true);
-    return authoredScale(sprite, canon, metres, "width", true);
-  }
-  if (file.startsWith("person-")) return uniformScale(sprite.height, PERSON_HEIGHT_METRES, true);
-  if (file.startsWith("vehicle-bakkie")) return uniformScale(sprite.width, BAKKIE_LENGTH_METRES, false);
-  if (file.startsWith("vehicle-roadtrain")) return uniformScale(sprite.width, ROAD_TRAIN_METRES, false);
-  if (file.startsWith("bldg-farmhouse")) return uniformScale(sprite.width, FARMHOUSE_WIDTH_METRES, false);
-  if (file.startsWith("bldg-worker-cottage")) return uniformScale(sprite.width, COTTAGE_WIDTH_METRES, false);
-  if (file.startsWith("bldg-shed")) return uniformScale(sprite.width, SHED_WIDTH_METRES, false);
-  if (file.startsWith("prop-windmill")) return uniformScale(sprite.height, WINDMILL_HEIGHT_METRES, false);
-  if (file.startsWith("prop-water-tank")) return uniformScale(sprite.height, WATER_TANK_HEIGHT_METRES, false);
-  if (file.startsWith("prop-trough")) return uniformScale(sprite.width, TROUGH_LENGTH_METRES, false);
-  if (file.startsWith("prop-solar")) return uniformScale(sprite.width, SOLAR_WIDTH_METRES, false);
-  if (file.startsWith("prop-lick-drum")) return uniformScale(sprite.height, LICK_DRUM_HEIGHT_METRES, false);
-  if (file.startsWith("prop-lick-trough")) return uniformScale(sprite.width, LICK_TROUGH_LENGTH_METRES, false);
-  if (file.startsWith("prop-lick-roofed")) return uniformScale(sprite.width, LICK_FEEDER_LENGTH_METRES, false);
-  if (file.startsWith("tree-camelthorn-large")) return uniformScale(sprite.height, CAMELTHORN_LARGE_METRES, false);
-  if (file.startsWith("tree-camelthorn-small")) return uniformScale(sprite.height, CAMELTHORN_SMALL_METRES, false);
-  if (file.startsWith("tree-shepherds")) return uniformScale(sprite.height, SHEPHERDS_TREE_METRES, false);
-  if (file.startsWith("bush-thorn-dense")) return uniformScale(sprite.height, BUSH_DENSE_METRES, false);
-  if (file.startsWith("bush-thorn-sparse")) return uniformScale(sprite.height, BUSH_SPARSE_METRES, false);
-  if (file.startsWith("termite-mound")) return uniformScale(sprite.height, TERMITE_HEIGHT_METRES, false);
-  if (file.startsWith("rocks-cluster")) return uniformScale(sprite.width, ROCK_CLUSTER_METRES, false);
-  if (file.startsWith("rock-flat")) return uniformScale(sprite.width, ROCK_FLAT_METRES, false);
+  if (file.startsWith("cattle-")) return lockedCattleScale(sprite, file.includes("calf"));
+  if (file.startsWith("person-")) return lockedPersonScale(sprite);
+  if (file.startsWith("vehicle-bakkie")) return uniformScale(sprite.width, BAKKIE_LENGTH_METRES);
+  if (file.startsWith("vehicle-roadtrain")) return uniformScale(sprite.width, ROAD_TRAIN_METRES);
+  if (file.startsWith("bldg-farmhouse")) return uniformScale(sprite.width, FARMHOUSE_WIDTH_METRES);
+  if (file.startsWith("bldg-worker-cottage")) return uniformScale(sprite.width, COTTAGE_WIDTH_METRES);
+  if (file.startsWith("bldg-shed")) return uniformScale(sprite.width, SHED_WIDTH_METRES);
+  if (file.startsWith("prop-windmill")) return uniformScale(sprite.height, WINDMILL_HEIGHT_METRES);
+  if (file.startsWith("prop-water-tank")) return uniformScale(sprite.height, WATER_TANK_HEIGHT_METRES);
+  if (file.startsWith("prop-trough")) return uniformScale(sprite.width, TROUGH_LENGTH_METRES);
+  if (file.startsWith("prop-solar")) return uniformScale(sprite.width, SOLAR_WIDTH_METRES);
+  if (file.startsWith("prop-lick-drum")) return uniformScale(sprite.height, LICK_DRUM_HEIGHT_METRES);
+  if (file.startsWith("prop-lick-trough")) return uniformScale(sprite.width, LICK_TROUGH_LENGTH_METRES);
+  if (file.startsWith("prop-lick-roofed")) return uniformScale(sprite.width, LICK_FEEDER_LENGTH_METRES);
+  if (file.startsWith("tree-camelthorn-large")) return uniformScale(sprite.height, CAMELTHORN_LARGE_METRES);
+  if (file.startsWith("tree-camelthorn-small")) return uniformScale(sprite.height, CAMELTHORN_SMALL_METRES);
+  if (file.startsWith("tree-shepherds")) return uniformScale(sprite.height, SHEPHERDS_TREE_METRES);
+  if (file.startsWith("bush-thorn-dense")) return uniformScale(sprite.height, BUSH_DENSE_METRES);
+  if (file.startsWith("bush-thorn-sparse")) return uniformScale(sprite.height, BUSH_SPARSE_METRES);
+  if (file.startsWith("termite-mound")) return uniformScale(sprite.height, TERMITE_HEIGHT_METRES);
+  if (file.startsWith("rocks-cluster")) return uniformScale(sprite.width, ROCK_CLUSTER_METRES);
+  if (file.startsWith("rock-flat")) return uniformScale(sprite.width, ROCK_FLAT_METRES);
   if (file.startsWith("yard-panel") || file.startsWith("yard-race") || file.startsWith("yard-gate") || file.startsWith("yard-corner")) {
-    return uniformScale(sprite.height, YARD_PANEL_HEIGHT_METRES, false);
+    return uniformScale(sprite.height, YARD_PANEL_HEIGHT_METRES);
   }
-  if (file.startsWith("yard-crush")) return uniformScale(sprite.height, CRUSH_HEIGHT_METRES, false);
-  if (file.startsWith("yard-loading-ramp")) return uniformScale(sprite.width, RAMP_LENGTH_METRES, false);
-  if (file.startsWith("fence-strainer")) return uniformScale(sprite.height, FENCE_POST_HEIGHT_METRES, false);
-  if (file.startsWith("fence-")) return uniformScale(sprite.height, FENCE_HEIGHT_METRES, false);
+  if (file.startsWith("yard-crush")) return uniformScale(sprite.height, CRUSH_HEIGHT_METRES);
+  if (file.startsWith("yard-loading-ramp")) return uniformScale(sprite.width, RAMP_LENGTH_METRES);
+  if (file.startsWith("fence-strainer")) return uniformScale(sprite.height, FENCE_POST_HEIGHT_METRES);
+  if (file.startsWith("fence-")) return uniformScale(sprite.height, FENCE_HEIGHT_METRES);
   return null;
 }
 
@@ -485,9 +494,9 @@ export type KeyRatios = {
 };
 
 export function keyRatios(): KeyRatios {
-  const person = PERSON_HEIGHT_METRES * LIVESTOCK_READABILITY * PIXELS_PER_METRE;
-  const cow = COW_LENGTH_METRES * LIVESTOCK_READABILITY * PIXELS_PER_METRE;
-  const calf = CALF_LENGTH_METRES * LIVESTOCK_READABILITY * PIXELS_PER_METRE;
+  const person = personDisplayPx();
+  const cow = cowDisplayPx();
+  const calf = calfDisplayPx();
   const door = DOOR_METRES * PIXELS_PER_METRE;
   const eaves = EAVES_METRES * PIXELS_PER_METRE;
   const bakkie = BAKKIE_LENGTH_METRES * PIXELS_PER_METRE;
@@ -518,28 +527,29 @@ export type YardStamp = { kind: FeatureKind; into: number; along: number; scale:
 
 /**
  * Pens in metres (stored on feature.scale) so the drawing uses the same numbers.
- * Centres are integer tiles. 11 m, 9 m and 8 m by 4.2 m deep:
- * 46 m², 38 m² and 34 m², about 25, 21 and 18 head at 1.8 m².
- * The long side is about 32 m, so a 22 m road train is shorter than the yard.
+ * Centres are integer tiles chosen so the metre boxes sit side by side
+ * once a tile is about 2.2 m (the cow's metre). 11 m, 9 m and 8 m by 4.2 m
+ * deep: about 25, 21 and 18 head at 1.8 m². The long side stays longer
+ * than the 22 m road train.
  */
 export const HANDLING_YARD: readonly YardStamp[] = [
   { kind: "loading_ramp", into: 1, along: 2, scale: 1 },
-  { kind: "race", into: 2, along: 3, scale: 1 },
-  { kind: "crush", into: 2, along: 4, scale: 1 },
-  { kind: "handling_roof", into: 2, along: 4, scale: 1 },
-  { kind: "holding_pen", into: 4, along: 2, scale: PEN_ALONG_METRES[0] },
-  { kind: "holding_pen", into: 4, along: 5, scale: PEN_ALONG_METRES[1] },
-  { kind: "holding_pen", into: 4, along: 7, scale: PEN_ALONG_METRES[2] },
+  { kind: "race", into: 2, along: 5, scale: 1 },
+  { kind: "crush", into: 2, along: 7, scale: 1 },
+  { kind: "handling_roof", into: 2, along: 7, scale: 1 },
+  { kind: "holding_pen", into: 3, along: 4, scale: PEN_ALONG_METRES[0] },
+  { kind: "holding_pen", into: 3, along: 9, scale: PEN_ALONG_METRES[1] },
+  { kind: "holding_pen", into: 3, along: 13, scale: PEN_ALONG_METRES[2] },
 ];
 
 export const HANDLING_YARD_COMPACT: readonly YardStamp[] = [
-  { kind: "loading_ramp", into: 1, along: 1, scale: 1 },
-  { kind: "race", into: 2, along: 2, scale: 1 },
-  { kind: "crush", into: 2, along: 3, scale: 1 },
-  { kind: "handling_roof", into: 2, along: 3, scale: 1 },
-  { kind: "holding_pen", into: 3, along: 2, scale: PEN_ALONG_METRES[0] },
-  { kind: "holding_pen", into: 3, along: 5, scale: PEN_ALONG_METRES[1] },
-  { kind: "holding_pen", into: 3, along: 7, scale: PEN_ALONG_METRES[2] },
+  { kind: "loading_ramp", into: 1, along: 2, scale: 1 },
+  { kind: "race", into: 2, along: 5, scale: 1 },
+  { kind: "crush", into: 2, along: 7, scale: 1 },
+  { kind: "handling_roof", into: 2, along: 7, scale: 1 },
+  { kind: "holding_pen", into: 3, along: 4, scale: PEN_ALONG_METRES[0] },
+  { kind: "holding_pen", into: 3, along: 9, scale: PEN_ALONG_METRES[1] },
+  { kind: "holding_pen", into: 3, along: 13, scale: PEN_ALONG_METRES[2] },
 ];
 
 export function yardLongSideMetres(stamps: readonly YardStamp[] = HANDLING_YARD): number {

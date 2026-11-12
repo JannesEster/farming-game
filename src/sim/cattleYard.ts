@@ -76,14 +76,28 @@ export function placeCattleHandlingYard(args: {
           }
           if (!ok) continue;
           const rampStamp = layout.find((piece) => piece.kind === "loading_ramp");
-          const besideRoad = rampStamp ? at(0, rampStamp.along) : at(0, 0);
-          if (!tracks.some((track) => track.x === besideRoad.x && track.y === besideRoad.y)) continue;
+          const rampCell = rampStamp ? at(rampStamp.into, rampStamp.along) : at(1, 0);
+          if (Math.hypot(rampCell.x - house.x, rampCell.y - house.y) < 8) continue;
+          const bay = truckBayTiles();
+          let bayOk = true;
+          for (let along = -bay; along <= alongMax + 2 && bayOk; along += 1) {
+            const cell = at(0, along);
+            if (cell.x < 0 || cell.y < 0 || cell.x >= width || cell.y >= height) continue;
+            if (idAt(cell.x, cell.y) === TILE_HOMESTEAD) {
+              bayOk = false;
+              break;
+            }
+            if (blocked.has(`${cell.x},${cell.y}`)) {
+              bayOk = false;
+              break;
+            }
+          }
+          if (!bayOk) continue;
           const tiles = layout.map((piece) => {
             const cell = at(piece.into, piece.along);
             return { kind: piece.kind, x: cell.x, y: cell.y, scale: piece.scale };
           });
           const gravel: TilePoint[] = [];
-          const bay = truckBayTiles();
           for (let along = -bay; along <= alongMax + 2; along += 1) {
             for (const into of [0, -1]) {
               const cell = at(into, along);
