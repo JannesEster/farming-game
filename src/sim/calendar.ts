@@ -12,6 +12,20 @@ export function daysInMonth(year: number, month: number): number {
   return MONTH_DAYS[month] ?? 30;
 }
 
+/** Game days before the calendar rolls to the next month (FS style setting). */
+export function gameDaysInMonth(state: import("./types").GameState, config: GameConfig = CONFIG): number {
+  const dpm = state.clock?.settings.daysPerMonth ?? config.calendar.daysPerMonthDefault;
+  const cap =
+    dpm > config.calendar.daysPerMonthMax
+      ? config.calendar.daysPerMonthRealism
+      : config.calendar.daysPerMonthMax;
+  return Math.max(config.calendar.daysPerMonthMin, Math.min(cap, Math.floor(dpm)));
+}
+
+export function isLastGameDayOfMonth(state: import("./types").GameState, config: GameConfig = CONFIG): boolean {
+  return state.date.day >= gameDaysInMonth(state, config);
+}
+
 export function addHours(date: CalendarDate, hours: number): CalendarDate {
   if (hours <= 0) return date;
   let { year, month, day, hour } = date;

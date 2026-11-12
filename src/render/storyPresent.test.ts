@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { initialGameState } from "../sim/persist";
 import { presentStoryCard } from "./storyPresent";
 import type { UiCard } from "../sim/storyTypes";
 
@@ -7,29 +8,37 @@ function card(kind: UiCard["kind"]): UiCard {
 }
 
 describe("presentStoryCard", () => {
-  it("shows a month review on the event card only", () => {
+  const state = initialGameState();
+
+  it("routes month review to the letter rail", () => {
     const seen: string[] = [];
-    presentStoryCard(card("summary"), {
+    presentStoryCard(state, card("summary"), {
       showEventCard: (title, body) => seen.push(`card:${title}:${body}`),
       setHint: (text) => seen.push(`hint:${text}`),
+      pushLetter: (item) => seen.push(`letter:${item.title}`),
+      syncAlerts: () => {},
     });
-    expect(seen).toEqual(["card:Month in review:August is closed."]);
+    expect(seen.some((s) => s.startsWith("letter:"))).toBe(true);
   });
 
-  it("shows a season note on the event card so the clock can pause", () => {
+  it("pauses on critical cards", () => {
     const seen: string[] = [];
-    presentStoryCard(card("season"), {
+    presentStoryCard(state, card("critical"), {
       showEventCard: (title, body) => seen.push(`card:${title}:${body}`),
-      setHint: (text) => seen.push(text),
+      setHint: (text) => seen.push(`hint:${text}`),
+      pushLetter: () => {},
+      syncAlerts: () => {},
     });
     expect(seen).toEqual(["card:Month in review:August is closed."]);
   });
 
   it("keeps a weekly note as one hint", () => {
     const seen: string[] = [];
-    presentStoryCard(card("weekly"), {
+    presentStoryCard(state, card("weekly"), {
       showEventCard: () => seen.push("card"),
       setHint: (text) => seen.push(text),
+      pushLetter: () => {},
+      syncAlerts: () => {},
     });
     expect(seen).toEqual(["Month in review: August is closed."]);
   });

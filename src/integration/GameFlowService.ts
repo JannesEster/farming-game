@@ -320,7 +320,7 @@ export class GameFlowService {
   persist(): void {
     if (!this.runtime.gameState) return;
     const payload: SavedSlotPayload = {
-      version: 2,
+      version: 3,
       savedAt: new Date().toISOString(),
       slotId: this.runtime.slotId,
       meta: this.runtime.meta,

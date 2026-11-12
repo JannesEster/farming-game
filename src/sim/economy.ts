@@ -76,6 +76,23 @@ export function monthlyOperatingCosts(state: GameState, config: GameConfig = CON
   return { total, labour, lick, diesel, repairs, other, lines };
 }
 
+/** Player facing hints for month review lines. TODO assumptions where noted. */
+export function monthlyCostExplainers(
+  state: GameState,
+  costs: MonthlyCostBreakdown,
+  config: GameConfig = CONFIG,
+): string[] {
+  const head = state.herd.headCount;
+  const hired = state.story?.farmhand.hired ? "Includes farmhand wage." : "No farmhand on payroll.";
+  return [
+    `Labour N$${Math.round(costs.labour)}. Driven by ranch size and head count share (${hired}). Hint: one farmhand is enough at this herd size until you split camps.`,
+    `Lick N$${Math.round(costs.lick)}. Driven by ${head} head at about N$${config.economy.lickNadPerHeadPerMonth.toFixed(2)}/head/month (NAU feed split). Hint: match summer phosphate vs winter protein lick in Step 2; skip double fills.`,
+    `Diesel N$${Math.round(costs.diesel)}. Driven by water runs and vehicle trips (anchor farm uses about 18% of running costs). Hint: batch lick and water rounds; solar pump cuts trips over time.`,
+    `Repairs N$${Math.round(costs.repairs)}. Driven by fence and windmill wear on camp kilometres. Hint: fix fences before they fail; maintain windmills instead of emergency callouts.`,
+    `Other N$${Math.round(costs.other)}. Vet admin and vaccine levy per head. Hint: keep head count records tidy to avoid rework fees.`,
+  ];
+}
+
 export function droughtSupplementCostNad(state: GameState, config: GameConfig = CONFIG): number {
   const head = state.herd.headCount;
   const days = config.story.droughtSupplementDays;

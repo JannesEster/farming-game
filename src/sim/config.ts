@@ -124,6 +124,13 @@ export type GameConfig = {
     startMonth: number;
     startDay: number;
     startHour: number;
+    /** Game days in one calendar month at default speed. FS style setting. */
+    daysPerMonthDefault: number;
+    daysPerMonthMin: number;
+    daysPerMonthMax: number;
+    daysPerMonthRealism: number;
+    /** A. TODO: ecology was tuned for about this many steps per month. */
+    ecologyReferenceDaysPerMonth: number;
   };
   story: {
     poorFeedIntakeRatio: number;
@@ -211,6 +218,14 @@ export type GameConfig = {
     };
     /** Place the opening herd in the grazing camp beside the homestead yard. */
     herdStartNearYard?: boolean;
+  };
+  time: {
+    dayLengthSecondsDefault: number;
+    dayLengthOptions: number[];
+    daylightSeconds: number;
+    nightSeconds: number;
+    catchUpCapMs: number;
+    fixedSimTickMs: number;
   };
   view: {
     tileWidth: number;
@@ -407,6 +422,20 @@ export const CONFIG: GameConfig = {
     startMonth: 8,
     startDay: 1,
     startHour: 6,
+    daysPerMonthDefault: 3,
+    daysPerMonthMin: 1,
+    daysPerMonthMax: 7,
+    daysPerMonthRealism: 28,
+    ecologyReferenceDaysPerMonth: 30,
+  },
+
+  time: {
+    dayLengthSecondsDefault: 240,
+    dayLengthOptions: [180, 240, 300],
+    daylightSeconds: 160,
+    nightSeconds: 80,
+    catchUpCapMs: 8000,
+    fixedSimTickMs: 50,
   },
 
   story: {
@@ -500,8 +529,8 @@ export const CONFIG: GameConfig = {
     homesteadTilesX: 7,
     homesteadTilesY: 6,
     treeChance: 0.04,
-    bushChanceOpen: 0.03,
-    bushChanceBushy: 0.14,
+    bushChanceOpen: 0.065,
+    bushChanceBushy: 0.22,
     outsidePlantFactor: 0.4,
     treeScaleMin: 0.85,
     treeScaleMax: 1.15,
@@ -523,9 +552,9 @@ export const CONFIG: GameConfig = {
     tileHeight: 32,
     boundsPadPx: 24,
     fitMargin: 0.92,
-    // A. One game day per second at play. Fast is about eight days per second.
-    secondsPerDayPlay: 1,
-    secondsPerDayFast: 0.12,
+    /** Legacy fallbacks; the ranch clock uses config.time day length instead. */
+    secondsPerDayPlay: 240,
+    secondsPerDayFast: 80,
     maxFrameMs: 200,
     maxDaysPerFrame: 3,
     phoneTilePx: 34,

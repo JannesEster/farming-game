@@ -1,6 +1,12 @@
 import type { CampState, GameState, TilePoint } from "../sim/types";
 import { TILE_HOMESTEAD, TILE_OUTSIDE } from "../sim/types";
 import type { HerdOffset } from "./art";
+
+export function facingFromTileVector(ux: number, uy: number): number {
+  const sx = ux - uy;
+  const sy = (ux + uy) * 0.5;
+  return Math.atan2(sy, sx);
+}
 import { tileCenter, worldToTile, type IsoLayout } from "./iso";
 import { trackKeys } from "./colour";
 
@@ -202,6 +208,7 @@ export function spreadInCamp(
     flip: next() > 0.5,
     coat: Math.floor(next() * 6),
     scale: 0.9 + next() * 0.1,
+    facingRad: (next() - 0.5) * 0.35,
   }));
 }
 
@@ -291,12 +298,14 @@ export function fileAlongPath(
     const px = -at.uy;
     const py = at.ux;
     const foot = nudgeInsideCamp(state, at.x + px * lane, at.y + py * lane, layout, tileW, tileH);
+    const facing = facingFromTileVector(at.ux, at.uy);
     offsets.push({
       x: foot.x - herdX,
       y: foot.y - herdY,
-      flip: at.ux > 0,
+      flip: Math.cos(facing) > 0,
       coat: Math.floor(phase * 6) % 6,
       scale: 0.7 + (phase % 0.12),
+      facingRad: facing,
     });
   }
   return offsets;
@@ -433,12 +442,14 @@ export function organicTrekOffsets(
     const nibble = Math.sin(timeMs / 380 + i * 1.65 + phase * 4) > 0.97;
     const nibbleBack = nibble ? -5 : 0;
 
+    const facing = facingFromTileVector(ux, uy);
     offsets.push({
       x: ux * (along + nibbleBack) + px * across,
       y: uy * (along + nibbleBack) + py * across,
-      flip: ux + across * 0.02 > 0,
+      flip: Math.cos(facing) > 0,
       coat: Math.floor(phase * 6) % 6,
       scale: (0.64 + (phase % 0.12)) * (nibble ? 0.92 : 1),
+      facingRad: facing,
     });
   }
   return offsets;
@@ -526,6 +537,7 @@ export function blendOffsets(
       flip: t > 0.5 ? m.flip : s.flip,
       coat: s.coat,
       scale: s.scale * (1 - t * 0.08) + m.scale * t * 0.08,
+      facingRad: s.facingRad * (1 - t) + m.facingRad * t,
     };
   });
 }

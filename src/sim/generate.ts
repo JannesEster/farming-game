@@ -324,6 +324,16 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
   const state: GameState = {
     seed: 0,
     rngState: 0,
+    clock: {
+      settings: {
+        dayLengthSeconds: config.time.dayLengthSecondsDefault as 180 | 240 | 300,
+        daysPerMonth: config.calendar.daysPerMonthDefault,
+        catchUpCapMs: config.time.catchUpCapMs,
+      },
+      bankMs: 0,
+      speed: 1,
+    },
+    notifications: { log: [], letters: [], alerts: [], lastFiredDayKey: {} },
     date: {
       year: config.calendar.startYear,
       month: config.calendar.startMonth,

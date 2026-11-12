@@ -1,7 +1,7 @@
 import { CONFIG, type GameConfig } from "./config";
 import { calvingFromPregnantHeifers } from "./cattleClasses";
 import { addDays, daysInMonth, isRainyMonth } from "./calendar";
-import { chargeMonthlyCosts, syncHeadFromComposition } from "./economy";
+import { chargeMonthlyCosts, monthlyCostExplainers, syncHeadFromComposition } from "./economy";
 import { formatNad } from "./format";
 import type { CalendarDate } from "./types";
 import type { GameState } from "./types";
@@ -124,11 +124,7 @@ export function closeMonth(state: GameState, config: GameConfig = CONFIG): void 
   if (transition) lines.push(transition);
   lines.push(`Income ${formatNad(story.ledger.incomeNad)}. Expenses ${formatNad(story.ledger.expenseNad)}.`);
   lines.push("Costs");
-  lines.push(`Labour ${formatNad(costs.labour)}`);
-  lines.push(`Lick ${formatNad(costs.lick)}`);
-  lines.push(`Diesel ${formatNad(costs.diesel)}`);
-  lines.push(`Repairs ${formatNad(costs.repairs)}`);
-  lines.push(`Other ${formatNad(costs.other)}`);
+  for (const line of monthlyCostExplainers(state, costs, config)) lines.push(line);
   lines.push(`Net ${formatNad(net)}. Rain season-to-date ${Math.round(state.seasonRainMm)} mm.`);
   if (story.ledger.deathCount > 0) lines.push(`${story.ledger.deathCount} deaths logged.`);
   else lines.push("No deaths logged.");

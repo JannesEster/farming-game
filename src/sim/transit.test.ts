@@ -12,7 +12,7 @@ function finishTransitPlay(state: ReturnType<typeof createGame>): void {
   let guard = 0;
   while (herdInTransit(state.herd) && guard < 500) {
     const progress = state.herd.transit?.progress ?? 0;
-    tickTransitRealtime(state, 50, "play", CONFIG);
+    tickTransitRealtime(state, 50, "x1", CONFIG);
     if ((state.herd.transit?.progress ?? 1) === progress) guard += 1;
     else guard = 0;
   }
@@ -55,17 +55,16 @@ describe("herd transit", () => {
       moveHerd(state, camp.id);
       const km = state.herd.transit!.distanceKm;
       maxKm = Math.max(maxKm, km);
-      shortestMs = Math.min(shortestMs, moveDurationMs(km, "play", CONFIG));
-      longestMs = Math.max(longestMs, moveDurationMs(km, "play", CONFIG));
+      shortestMs = Math.min(shortestMs, moveDurationMs(km, "x1", CONFIG));
+      longestMs = Math.max(longestMs, moveDurationMs(km, "x1", CONFIG));
       state.herd.transit = null;
     }
     expect(shortestMs).toBeGreaterThanOrEqual(CONFIG.transit.playMsMin);
     expect(shortestMs).toBeLessThanOrEqual(CONFIG.transit.playMsMax);
     expect(longestMs).toBeLessThanOrEqual(CONFIG.transit.playMsMax);
-    const fastMax = moveDurationMs(maxKm, "fast", CONFIG);
-    const playMax = moveDurationMs(maxKm, "play", CONFIG);
-    expect(fastMax).toBeGreaterThanOrEqual(CONFIG.transit.fastMsMin);
-    expect(playMax - fastMax).toBeGreaterThanOrEqual(4000);
+    const playMax = moveDurationMs(maxKm, "x1", CONFIG);
+    expect(playMax).toBeGreaterThanOrEqual(CONFIG.transit.playMsMin);
+    expect(playMax).toBeLessThanOrEqual(CONFIG.transit.playMsMax);
   });
 
   it("reaches the correct clock after many 16 ms ticks", () => {
@@ -87,7 +86,7 @@ describe("herd transit", () => {
       expect(expectedHours).toBeGreaterThan(0.2);
     }
     while (herdInTransit(state.herd)) {
-      tickTransitRealtime(state, 16, "play", CONFIG);
+      tickTransitRealtime(state, 16, "x1", CONFIG);
     }
     expect(state.date.day).toBe(1);
     expect(Math.floor(state.date.hour)).toBeGreaterThanOrEqual(6 + Math.floor(expectedHours));
@@ -103,7 +102,7 @@ describe("herd transit", () => {
     const expectedHours = walkGameHours(km, CONFIG);
     expect(expectedHours).toBeGreaterThan(0.2);
     const startTicks = state.date.day * 24 + state.date.hour;
-    tickTransitRealtime(state, 2000, "play", CONFIG);
+    tickTransitRealtime(state, 2000, "x1", CONFIG);
     expect(state.date.day * 24 + state.date.hour).toBeGreaterThanOrEqual(startTicks);
     finishTransitPlay(state);
     expect(state.date.day * 24 + state.date.hour).toBeGreaterThanOrEqual(

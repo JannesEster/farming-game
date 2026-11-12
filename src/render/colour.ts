@@ -163,8 +163,15 @@ export function paintedGroundStamps(
   const frac = grazeableFraction(camp);
   const rainy = isRainyMonth(state.date.month, CONFIG);
   const field = veldCoverField(x, y, camp.id * 13.7 + state.seed * 0.001);
-  const cover = clamp(frac * 0.32 + field * 0.58 + (rainy ? 0.08 : -0.04), 0, 1);
-  const stamps: PaintedGroundStamp[] = [dryBase];
+  const campWide = clamp(frac * 0.72 + field * 0.18 + (rainy ? 0.06 : -0.02), 0, 1);
+  const cover = clamp(frac * 0.42 + field * 0.38 + (rainy ? 0.08 : -0.04), 0, 1);
+  const stamps: PaintedGroundStamp[] = [
+    {
+      ...dryBase,
+      alpha: clamp(1.05 - campWide * 0.35, 0.72, 1),
+      tint: grassTint(frac, !rainy),
+    },
+  ];
 
   if (frac < 0.24) {
     stamps.push({
@@ -175,9 +182,9 @@ export function paintedGroundStamps(
     });
   }
 
-  if (cover > 0.16) {
+  if (cover > 0.1) {
     const feather = radialFeather(x, y);
-    const greenAlpha = clamp(0.3 + cover * 0.34, 0.3, 0.58) * feather;
+    const greenAlpha = clamp(0.34 + cover * 0.42, 0.34, 0.72) * feather;
     stamps.push({
       key: SPRITE_KEYS.tileGreenGrass,
       alpha: greenAlpha,

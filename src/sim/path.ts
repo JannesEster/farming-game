@@ -164,21 +164,49 @@ function dedupe(points: TilePoint[]): TilePoint[] {
   return out;
 }
 
-function assemblePath(
-  from: CampState,
-  to: CampState,
-  fromGate: TilePoint,
-  toGate: TilePoint,
-  middle: TilePoint[],
-): TilePoint[] {
-  return dedupe([from.anchor, fromGate, ...middle, toGate, to.anchor]);
+/** Adjacent camps share a fence gate. */
+export function campAdjacencyGraph(state: GameState): Map<number, number[]> {
+  const graph = new Map<number, number[]>();
+  for (const camp of state.camps) graph.set(camp.id, []);
+  for (let i = 0; i < state.camps.length; i += 1) {
+    for (let j = i + 1; j < state.camps.length; j += 1) {
+      const a = state.camps[i];
+      const b = state.camps[j];
+      if (!campGateBetween(a, b)) continue;
+      graph.get(a.id)?.push(b.id);
+      graph.get(b.id)?.push(a.id);
+    }
+  }
+  return graph;
 }
 
-export function planHerdPath(state: GameState, fromCampId: number, toCampId: number): TilePoint[] {
-  const from = state.camps.find((c) => c.id === fromCampId);
-  const to = state.camps.find((c) => c.id === toCampId);
-  if (!from || !to) return [];
+export function bfsCampRoute(state: GameState, fromCampId: number, toCampId: number): number[] | null {
+  if (fromCampId === toCampId) return [fromCampId];
+  const graph = campAdjacencyGraph(state);
+  const queue = [fromCampId];
+  const came = new Map<number, number | null>();
+  came.set(fromCampId, null);
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (current === toCampId) break;
+    for (const next of graph.get(current) ?? []) {
+      if (came.has(next)) continue;
+      came.set(next, current);
+      queue.push(next);
+    }
+  }
+  if (!came.has(toCampId)) return null;
+  const route: number[] = [];
+  let cursor: number | null = toCampId;
+  while (cursor !== null) {
+    route.push(cursor);
+    cursor = came.get(cursor) ?? null;
+  }
+  route.reverse();
+  return route;
+}
 
+function legPath(state: GameState, from: CampState, to: CampState): TilePoint[] {
   const shared = campGateBetween(from, to);
   let fromGate: TilePoint;
   let toGate: TilePoint;
@@ -192,28 +220,44 @@ export function planHerdPath(state: GameState, fromCampId: number, toCampId: num
     toGate = campGateToward(to, fromCenter);
   }
 
-  const directMiddle = straightPath(fromGate, toGate);
-  const directPath = assemblePath(from, to, fromGate, toGate, directMiddle.slice(1, -1));
-
   const tracks = trackTileSet(state);
   const trackStart = nearestTrack(state, fromGate, tracks);
   const trackEnd = nearestTrack(state, toGate, tracks);
-  let trackPath = directPath;
+  let middle = straightPath(fromGate, toGate).slice(1, -1);
   if (trackStart && trackEnd) {
     const along = bfsTrackPath(state, trackStart, trackEnd, tracks);
     if (along && along.length > 0) {
-      trackPath = assemblePath(from, to, fromGate, toGate, [
+      middle = [
         ...straightPath(fromGate, trackStart).slice(1),
         ...along.slice(1, -1),
         ...straightPath(trackEnd, toGate).slice(1),
-      ]);
+      ];
     }
   }
+  return dedupe([from.anchor, fromGate, ...middle, toGate, to.anchor]);
+}
 
-  const directKm = pathLengthKm(directPath);
-  const trackKm = pathLengthKm(trackPath);
-  if (directKm <= trackKm) return directPath;
-  return trackPath;
+export function planHerdPath(state: GameState, fromCampId: number, toCampId: number): TilePoint[] {
+  const from = state.camps.find((c) => c.id === fromCampId);
+  const to = state.camps.find((c) => c.id === toCampId);
+  if (!from || !to) return [];
+  if (fromCampId === toCampId) return [from.anchor];
+
+  const route = bfsCampRoute(state, fromCampId, toCampId);
+  if (!route || route.length < 2) {
+    return legPath(state, from, to);
+  }
+
+  let full: TilePoint[] = [];
+  for (let i = 0; i < route.length - 1; i += 1) {
+    const legFrom = state.camps.find((c) => c.id === route[i]);
+    const legTo = state.camps.find((c) => c.id === route[i + 1]);
+    if (!legFrom || !legTo) continue;
+    const leg = legPath(state, legFrom, legTo);
+    if (full.length === 0) full = leg;
+    else full = dedupe([...full, ...leg.slice(1)]);
+  }
+  return full.length > 0 ? full : legPath(state, from, to);
 }
 
 export function pathLengthKm(path: TilePoint[], config: GameConfig = CONFIG): number {

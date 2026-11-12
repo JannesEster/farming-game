@@ -18,13 +18,15 @@ import { compositionSummaryLine } from "../sim/cattleClasses";
 import { seasonLabelForHud } from "../sim/story";
 import { moveAdvice } from "../sim/grazing";
 import { findCamp } from "../sim/simulation";
+import { formatClockTime } from "../sim/clock";
+import type { NotificationItem } from "../sim/notifications";
 import { grazeableFraction, grazingDaysLeft } from "../sim/pasture";
 import type { GameState } from "../sim/types";
 import type { ViewInsets } from "./camera";
 import { paintMinimap } from "./colour";
 import { grassTint, lerpColour, palette, toCss } from "./palette";
 
-export type SpeedMode = "pause" | "play" | "fast";
+export type SpeedMode = "pause" | "x1" | "x2" | "x3";
 
 export type Hud = {
   update(
@@ -42,6 +44,11 @@ export type Hud = {
   /** Show the newest queued hint once every card is closed. */
   releaseToasts(): void;
   setHerdLocator(visible: boolean, label: string, edge: "left" | "right" | "top" | "bottom"): void;
+  pushLetter(item: NotificationItem): void;
+  syncAlerts(labels: string[]): void;
+  pushNewsLog(lines: string[]): void;
+  setScaleBar(label: string): void;
+  setDaylight(blend: number): void;
   destroy(): void;
 };
 
@@ -49,7 +56,8 @@ const ICONS = {
   pause:
     '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"></rect><rect x="14" y="5" width="4" height="14" rx="1"></rect></svg>',
   play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l12 7-12 7z"></path></svg>',
-  fast: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5l8 7-8 7z"></path><path d="M12 5l8 7-8 7z"></path></svg>',
+  x2: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5l8 7-8 7z"></path><path d="M12 5l8 7-8 7z"></path></svg>',
+  x3: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 5l7 7-7 7z"></path><path d="M9 5l7 7-7 7z"></path><path d="M16 5l7 7-7 7z"></path></svg>',
   menu: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg>',
   dry: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5"></circle><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4 4l1.5 1.5M18.5 18.5L20 20M4 20l1.5-1.5M18.5 5.5L20 4"></path></svg>',
   rain: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 14a6 6 0 0111.3-2.8A4.5 4.5 0 0118 16H7a3 3 0 01-1-2z"></path><path d="M8 18l1 3M12 17l1 3M16 18l1 3"></path></svg>',
@@ -74,6 +82,7 @@ export function mountHud(options: {
     <header class="topbar compact">
       <div class="chips" role="group" aria-label="Farm stats">
         <span class="chip chip-date" id="stat-date"></span>
+        <span class="chip chip-time" id="stat-time" title="Ranch clock"></span>
         <span class="chip chip-icon" id="stat-season" title="Season"></span>
         <span class="chip" id="stat-cash" title="${COPY.cashTitle}"></span>
         <span class="chip" id="stat-rain" title="${COPY.rainTitle}"></span>
@@ -81,8 +90,9 @@ export function mountHud(options: {
       <div class="top-actions">
         <div class="speeds compact" role="group" aria-label="Speed">
           <button type="button" id="speed-pause" aria-label="Pause">${ICONS.pause}</button>
-          <button type="button" id="speed-play" aria-label="Play">${ICONS.play}</button>
-          <button type="button" id="speed-fast" aria-label="Fast">${ICONS.fast}</button>
+          <button type="button" id="speed-x1" aria-label="Speed 1x">${ICONS.play}</button>
+          <button type="button" id="speed-x2" aria-label="Speed 2x">${ICONS.x2}</button>
+          <button type="button" id="speed-x3" aria-label="Speed 3x">${ICONS.x3}</button>
         </div>
         <button type="button" class="icon-btn" id="menu-overflow" aria-label="More actions" aria-expanded="false">${ICONS.menu}</button>
       </div>
@@ -92,7 +102,17 @@ export function mountHud(options: {
         <button type="button" id="new-farm">${COPY.newFarmLabel}</button>
       </div>
     </header>
+    <aside class="news-rail" id="news-rail" aria-label="News">
+      <div class="letter-stack" id="letter-stack" hidden></div>
+      <ul class="alert-strip" id="alert-strip" hidden></ul>
+    </aside>
     <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
+    <aside class="news-log" id="news-log" hidden>
+      <header><strong>News log</strong><button type="button" class="icon-btn" id="news-log-close" aria-label="Close log">×</button></header>
+      <ul id="news-log-list"></ul>
+    </aside>
+    <button type="button" class="chip news-log-btn" id="news-log-open" hidden>News</button>
+    <div class="scale-bar" id="scale-bar" aria-hidden="true"><span id="scale-label"></span><i id="scale-tick"></i></div>
     <article class="event-card" id="event-card" hidden>
       <h3 id="event-title"></h3>
       <p id="event-body"></p>
@@ -128,6 +148,7 @@ export function mountHud(options: {
   `;
 
   const dateEl = required(root, "stat-date");
+  const timeEl = required(root, "stat-time");
   const seasonEl = required(root, "stat-season");
   const cashEl = required(root, "stat-cash");
   const rainEl = required(root, "stat-rain");
@@ -169,10 +190,24 @@ export function mountHud(options: {
   const herdLocator = requiredButton(root, "herd-locator");
   herdLocator.addEventListener("click", () => options.onHerdLocator?.());
 
+  const letterStack = required(root, "letter-stack");
+  const alertStrip = required(root, "alert-strip");
+  const newsLog = required(root, "news-log");
+  const newsLogList = required(root, "news-log-list");
+  const newsLogOpen = requiredButton(root, "news-log-open");
+  const   newsLogClose = requiredButton(root, "news-log-close");
+  newsLogOpen.addEventListener("click", () => {
+    newsLog.hidden = false;
+  });
+  newsLogClose.addEventListener("click", () => {
+    newsLog.hidden = true;
+  });
+  const scaleLabel = required(root, "scale-label");
   const buttons: Record<SpeedMode, HTMLButtonElement> = {
     pause: requiredButton(root, "speed-pause"),
-    play: requiredButton(root, "speed-play"),
-    fast: requiredButton(root, "speed-fast"),
+    x1: requiredButton(root, "speed-x1"),
+    x2: requiredButton(root, "speed-x2"),
+    x3: requiredButton(root, "speed-x3"),
   };
   (Object.keys(buttons) as SpeedMode[]).forEach((mode) => {
     buttons[mode].addEventListener("click", () => options.onSpeed(mode));
@@ -330,6 +365,7 @@ export function mountHud(options: {
       const seasonText = seasonLabelForHud(state);
       const dry = !seasonText.toLowerCase().includes("rain");
       dateEl.textContent = formatHudDate(state.date);
+      timeEl.textContent = formatClockTime(state.date);
       seasonEl.innerHTML = dry ? ICONS.dry : ICONS.rain;
       seasonEl.title = seasonText;
       cashEl.textContent = formatHudMoney(state.cashNad);
@@ -461,6 +497,49 @@ export function mountHud(options: {
       if (!visible) return;
       herdLocator.textContent = label;
       herdLocator.dataset.edge = edge;
+    },
+    pushLetter(item) {
+      letterStack.hidden = false;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "letter-card";
+      btn.textContent = item.title;
+      btn.title = item.body;
+      btn.addEventListener("click", () => {
+        btn.remove();
+        if (letterStack.childElementCount === 0) letterStack.hidden = true;
+        showToast(item.body);
+      });
+      letterStack.prepend(btn);
+    },
+    syncAlerts(labels) {
+      alertStrip.replaceChildren();
+      if (labels.length === 0) {
+        alertStrip.hidden = true;
+        return;
+      }
+      alertStrip.hidden = false;
+      for (const label of labels) {
+        const li = document.createElement("li");
+        li.textContent = label;
+        alertStrip.appendChild(li);
+      }
+    },
+    pushNewsLog(lines) {
+      if (lines.length === 0) return;
+      newsLogOpen.hidden = false;
+      for (const line of lines) {
+        const li = document.createElement("li");
+        li.textContent = line;
+        newsLogList.prepend(li);
+      }
+      while (newsLogList.childElementCount > 200) newsLogList.lastElementChild?.remove();
+    },
+    setScaleBar(label) {
+      scaleLabel.textContent = label;
+    },
+    setDaylight(blend) {
+      root.style.setProperty("--daylight-blend", String(Math.max(0, Math.min(1, blend))));
     },
     destroy() {
       if (toastTimer) clearTimeout(toastTimer);

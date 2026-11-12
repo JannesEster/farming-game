@@ -9,9 +9,9 @@ import {
 import { applyStarvationDay, feedContextForHerd, queueHusbandryWarnings } from "./consequences";
 import { tickDrought, droughtWatchScore } from "./drought";
 import { farmhandWaterBonus, tickFarmhand } from "./workers";
+import { isLastGameDayOfMonth } from "./calendar";
 import {
   closeMonth,
-  isLastDayOfMonth,
   tryCalving,
   tryWeaning,
   weeklyDigest,
@@ -64,7 +64,7 @@ export function createStoryState(headCount: number, config: GameConfig = CONFIG)
   };
 }
 
-const BLOCKING_CARD_KINDS = new Set(["warning", "summary", "drought", "season"]);
+const BLOCKING_CARD_KINDS = new Set(["drought", "critical"]);
 
 /** A card the player must read before the clock may move on. Weekly notes stay as toasts. */
 export function hasBlockingCard(state: GameState): boolean {
@@ -76,6 +76,7 @@ export function afterFeedDay(
   eatenKg: number,
   demandKg: number,
   config: GameConfig = CONFIG,
+  ecologyScale = 1,
 ): void {
   if (!state.story) state.story = createStoryState(state.herd.headCount, config);
   state.story.eatenYesterdayKg = eatenKg;
@@ -83,7 +84,7 @@ export function afterFeedDay(
   queueHusbandryWarnings(state, config);
 
   const intakeRatio = demandKg <= 0 ? 1 : eatenKg / demandKg;
-  applyYoungstockGrowth(state, intakeRatio, config);
+  applyYoungstockGrowth(state, intakeRatio, config, ecologyScale);
 
   if (state.story.supplementDaysLeft > 0) {
     state.story.supplementDaysLeft -= 1;
@@ -109,7 +110,7 @@ export function afterFeedDay(
   if (farmNote) state.story.lastDailyNote = farmNote;
   weeklyDigest(state, config);
 
-  if (isLastDayOfMonth(state.date)) closeMonth(state, config);
+  if (isLastGameDayOfMonth(state, config)) closeMonth(state, config);
 }
 
 export function seasonLabelForHud(state: GameState, config: GameConfig = CONFIG): string {

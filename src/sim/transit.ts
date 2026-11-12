@@ -4,7 +4,14 @@ import { CONFIG, type GameConfig } from "./config";
 import { pointOnPath, planHerdPath, pathLengthKm } from "./path";
 import type { GameState, HerdState, TilePoint } from "./types";
 
-export type TransitSpeed = "pause" | "play" | "fast";
+export type TransitSpeed = "pause" | "x1" | "x2" | "x3";
+
+function transitSpeedMult(mode: TransitSpeed): number {
+  if (mode === "pause") return 0;
+  if (mode === "x3") return 3;
+  if (mode === "x2") return 2;
+  return 1;
+}
 
 export function herdInTransit(herd: HerdState): boolean {
   return herd.transit !== null && herd.transit.progress < 1;
@@ -17,16 +24,12 @@ export function walkGameHours(distanceKm: number, config: GameConfig = CONFIG): 
 
 export function moveDurationMs(
   distanceKm: number,
-  mode: TransitSpeed,
+  _mode: TransitSpeed = "x1",
   config: GameConfig = CONFIG,
 ): number {
   const span = config.transit.maxSpanKm;
   const t = clamp(distanceKm / span, 0, 1);
   const play = config.transit.playMsMin + t * (config.transit.playMsMax - config.transit.playMsMin);
-  if (mode === "fast") {
-    const fast = play * config.transit.fastPlayFraction;
-    return Math.max(config.transit.fastMsMin, fast);
-  }
   return play;
 }
 
@@ -49,8 +52,10 @@ export function tickTransitRealtime(
 ): void {
   const transit = state.herd.transit;
   if (!transit || mode === "pause") return;
-  const duration = moveDurationMs(transit.distanceKm, mode, config);
-  transit.progress = Math.min(1, transit.progress + deltaMs / duration);
+  const mult = transitSpeedMult(mode);
+  if (mult <= 0) return;
+  const duration = moveDurationMs(transit.distanceKm, "x1", config);
+  transit.progress = Math.min(1, transit.progress + (deltaMs * mult) / duration);
   applyWalkHours(state, transit);
   if (transit.progress >= 1) finishTransit(state);
 }

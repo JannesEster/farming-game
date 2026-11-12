@@ -125,9 +125,9 @@ export function propSpriteForKind(kind: string, x: number, y: number, featureSca
   const tw = PAINTED_TILE_NATIVE_W;
   switch (kind) {
     case "house":
-      return { key: SPRITE_KEYS.farmhouse, originX: 0.5, originY: 0.9, scale: (tileW * 3.1) / tw };
+      return { key: SPRITE_KEYS.farmhouse, originX: 0.5, originY: 0.9, scale: (tileW * 2.45) / tw };
     case "windmill":
-      return { key: SPRITE_KEYS.windmill, originX: 0.48, originY: 0.94, scale: (tileW * 2.8) / tw };
+      return { key: SPRITE_KEYS.windmill, originX: 0.48, originY: 0.94, scale: (tileW * 2.2) / tw };
     case "shed":
       return { key: SPRITE_KEYS.shed, originX: 0.5, originY: 0.88, scale: (tileW * 2.2) / tw };
     case "kraal":
@@ -166,7 +166,7 @@ export function cattleDisplayScale(multiplier = 1): number {
   const tileW = CONFIG.view.tileWidth;
   const houseWidthPx = tileW * 2.05;
   const cowBodyPx = 131;
-  const targetBody = houseWidthPx / 5.4;
+  const targetBody = houseWidthPx / 7.2;
   return (targetBody / cowBodyPx) * multiplier;
 }
 

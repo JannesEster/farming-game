@@ -1,5 +1,6 @@
 import { CONFIG, type GameConfig } from "./config";
 import { droughtSupplementCostNad, syncHeadFromComposition } from "./economy";
+import { emitNotification, defaultNotificationState } from "./notifications";
 import type { DroughtChoiceId, StoryState } from "./storyTypes";
 import type { GameState } from "./types";
 
@@ -40,12 +41,18 @@ export function tickDrought(state: GameState, config: GameConfig = CONFIG): void
     month >= config.story.droughtWarnMonth
   ) {
     story.drought.warnedAt = { ...state.date };
-    story.pendingCards.push({
+    const notes = state.notifications ?? defaultNotificationState();
+    state.notifications = notes;
+    emitNotification(notes, {
       id: `drought-warn-${state.date.year}-${month}`,
-      kind: "warning",
+      tier: "letter",
+      kind: "drought_watch",
       title: "Late rains",
       body: `Season rain is ${Math.round(state.seasonRainMm)} mm, below a normal start. The outlook flagged a hot, drier 2026/27 season.`,
       priority: 4,
+      at: { ...state.date },
+      cooldownDays: 14,
+      dedupeKey: "drought_watch",
     });
   }
 

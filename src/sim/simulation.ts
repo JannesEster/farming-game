@@ -1,5 +1,7 @@
 import { CONFIG, type GameConfig } from "./config";
-import { addDays, isSeasonStart } from "./calendar";
+import { defaultRanchClock, ecologyScalePerGameDay, rollGameDay } from "./clock";
+import { defaultNotificationState } from "./notifications";
+import { isSeasonStart, gameDaysInMonth } from "./calendar";
 import { generateFarm } from "./generate";
 import {
   dailyDemandKg,
@@ -34,8 +36,12 @@ export function campIdAt(state: GameState, x: number, y: number): number | null 
  * Herd walk progress is not advanced here; see tickTransitRealtime in transit.ts.
  */
 export function stepDayWithRain(state: GameState, rainMm: number, config: GameConfig = CONFIG): void {
+  if (!state.clock) state.clock = defaultRanchClock();
+  if (!state.notifications) state.notifications = defaultNotificationState();
   if (isSeasonStart(state.date, config)) state.seasonRainMm = 0;
   state.todayRainMm = rainMm;
+  const dpm = gameDaysInMonth(state, config);
+  const eco = ecologyScalePerGameDay(dpm, config.calendar.ecologyReferenceDaysPerMonth);
   state.seasonRainMm += rainMm;
 
   const demand = dailyDemandKg(state.herd, config);
@@ -43,8 +49,8 @@ export function stepDayWithRain(state: GameState, rainMm: number, config: GameCo
   let eaten = 0;
   for (const camp of state.camps) {
     const occupied = !walking && camp.id === state.herd.campId;
-    const soil = nextSoil(camp.soilMoistureMm, rainMm, config);
-    let growth = growthKgPerHa(soil.soilForGrowth, camp.restDays, occupied, config);
+    const soil = nextSoil(camp.soilMoistureMm, rainMm * eco, config);
+    let growth = growthKgPerHa(soil.soilForGrowth, camp.restDays, occupied, config) * eco;
     const droughtMul = state.story?.drought.forageMultiplier ?? 1;
     growth *= droughtMul;
     camp.soilMoistureMm = soil.soilAfter;
@@ -71,10 +77,10 @@ export function stepDayWithRain(state: GameState, rainMm: number, config: GameCo
   if (!walking) {
     state.herd.condition = nextCondition(state.herd.condition, eaten, demand, config);
     state.herd.daysInCamp += 1;
-    afterFeedDay(state, eaten, demand, config);
+    afterFeedDay(state, eaten, demand, config, eco);
   }
 
-  state.date = addDays(state.date, 1);
+  state.date = rollGameDay(state.date, dpm);
 }
 
 export function stepDay(state: GameState, config: GameConfig = CONFIG): void {

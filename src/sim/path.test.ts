@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { CONFIG } from "./config";
 import { createGame } from "./simulation";
 import {
+  bfsCampRoute,
+  campAdjacencyGraph,
   campGateBetween,
   campGateToward,
   pathLengthKm,
@@ -71,6 +73,29 @@ describe("herd paths", () => {
       }
     }
     expect(found).toBe(true);
+  });
+
+  it("finds a multi camp route when camps are not neighbours", () => {
+    const state = createGame(CONFIG.worldSeed);
+    const graph = campAdjacencyGraph(state);
+    const from = state.herd.campId;
+  let farId = state.camps.find((c) => !(graph.get(from) ?? []).includes(c.id))?.id;
+    if (farId === undefined) {
+      for (const camp of state.camps) {
+        const route = bfsCampRoute(state, from, camp.id);
+        if (route && route.length >= 3) {
+          farId = camp.id;
+          break;
+        }
+      }
+    }
+    expect(farId).toBeDefined();
+    const route = bfsCampRoute(state, from, farId!);
+    expect(route).not.toBeNull();
+    expect(route!.length).toBeGreaterThanOrEqual(2);
+    const path = planHerdPath(state, from, farId!);
+    expect(path.length).toBeGreaterThan(2);
+    expect(pathLengthKm(path)).toBeGreaterThan(CONFIG.transit.minDistanceKm);
   });
 
   it("plans a path between two camps on the default farm", () => {

@@ -1,5 +1,6 @@
 import { CONFIG, type GameConfig } from "./config";
 import { moveAdvice } from "./grazing";
+import { emitNotification, defaultNotificationState } from "./notifications";
 import { grazeableFraction } from "./pasture";
 import { findCamp } from "./simulation";
 import { syncHeadFromComposition } from "./economy";
@@ -47,13 +48,29 @@ export function applyStarvationDay(state: GameState, ctx: FeedContext, config: G
         : level === 2
           ? `Herd losing weight. Sale prices will fall while condition stays low.`
           : `Critical feed shortage. Calving stops; deaths loom without rain or feed.`;
-    story.pendingCards.push({
-      id: `starve-warn-${state.date.year}-${state.date.month}-${state.date.day}-${level}`,
-      kind: "warning",
-      title: level === 3 ? "Herd in trouble" : "Feed warning",
-      body: msg,
-      priority: level,
-    });
+  const notesState = state.notifications ?? defaultNotificationState();
+  state.notifications = notesState;
+    if (level >= 3) {
+      story.pendingCards.push({
+        id: `starve-warn-${state.date.year}-${state.date.month}-${state.date.day}-${level}`,
+        kind: "critical",
+        title: "Herd in trouble",
+        body: msg,
+        priority: 8,
+      });
+    } else {
+      emitNotification(notesState, {
+        id: `starve-warn-${state.date.year}-${state.date.month}-${state.date.day}-${level}`,
+        tier: "letter",
+        kind: "feed_warning",
+        title: "Feed warning",
+        body: msg,
+        priority: level,
+        at: { ...state.date },
+        cooldownDays: 3,
+        dedupeKey: "feed_warning",
+      });
+    }
     notes.push(msg);
   }
 
@@ -122,14 +139,22 @@ export function queueHusbandryWarnings(state: GameState, config: GameConfig = CO
   if (!camp) return;
 
   if (story.thirstWarnCampId !== null && story.thirstWarnCampId !== camp.id) story.thirstWarnCampId = null;
+  const notes = state.notifications ?? defaultNotificationState();
+  state.notifications = notes;
   if (!campHasTrough(state, camp) && story.thirstWarnCampId !== camp.id) {
     story.thirstWarnCampId = camp.id;
-    story.pendingCards.push({
-      id: `thirst-${camp.id}-${state.date.year}-${state.date.month}-${state.date.day}`,
-      kind: "warning",
+    emitNotification(notes, {
+      id: `thirst-${camp.id}`,
+      tier: "alert",
+      kind: "water_warning",
       title: "Water warning",
       body: "This camp has no trough. Move the herd to water before you trust this grass.",
       priority: 4,
+      at: { ...state.date },
+      cooldownDays: 5,
+      dedupeKey: `water-${camp.id}`,
+      alertKey: `water-${camp.id}`,
+      alertLabel: `${camp.name} no trough`,
     });
   }
 
@@ -142,12 +167,18 @@ export function queueHusbandryWarnings(state: GameState, config: GameConfig = CO
     advice.reason === "time"
       ? "This camp has had its graze spell. Move the herd so the grass can rest."
       : "This camp is overgrazed. Move the herd before they go hungry.";
-  story.pendingCards.push({
-    id: `move-${camp.id}-${state.date.year}-${state.date.month}-${state.date.day}`,
-    kind: "warning",
+  emitNotification(notes, {
+    id: `move-${camp.id}-${state.date.year}-${state.date.month}`,
+    tier: "alert",
+    kind: "camp_worn",
     title: "Time to move",
     body,
     priority: 4,
+    at: { ...state.date },
+    cooldownDays: 4,
+    dedupeKey: `move-${camp.id}`,
+    alertKey: `worn-${camp.id}`,
+    alertLabel: `${camp.name} worn`,
   });
 }
 

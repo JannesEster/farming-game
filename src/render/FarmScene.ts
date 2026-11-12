@@ -5,7 +5,9 @@ import { clamp } from "../sim/math";
 import { getGameFlow } from "../integration/GameFlowService";
 import { hasBlockingCard, popNextCard } from "../sim/story";
 import { presentStoryCard } from "./storyPresent";
-import { dayStepsThisFrame, elementVisible, isSimBlocked as simClockBlocked, transitMayAdvance } from "./simGate";
+import { daylightBlend, tickRanchClock } from "../sim/clock";
+import { elementVisible, isSimBlocked as simClockBlocked, speedMultiplier, transitMayAdvance } from "./simGate";
+import { syncAlertStrip } from "../integration/notificationHub";
 import { campIdAt, moveHerd, stepDay } from "../sim/simulation";
 import { herdInTransit, herdWorldTile, pathTangent, tickTransitRealtime } from "../sim/transit";
 import {
@@ -96,7 +98,8 @@ export class FarmScene extends Phaser.Scene {
   private layout!: IsoLayout;
   private hud!: Hud;
   private market!: MarketSheet;
-  private mode: SpeedMode = "play";
+  private mode: SpeedMode = "x1";
+  private nightOverlay?: Phaser.GameObjects.Rectangle;
   private selected = false;
   private pendingCampId: number | null = null;
   private pendingCampName = "";
@@ -177,6 +180,11 @@ export class FarmScene extends Phaser.Scene {
     this.redrawFences();
     this.ring = this.add.graphics().setDepth(9);
     this.rain = this.add.graphics().setScrollFactor(0).setDepth(30000);
+    this.nightOverlay = this.add
+      .rectangle(0, 0, this.scale.width, this.scale.height, 0x081018, 0)
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(25000);
     this.syncHerdFromSim();
     this.spawnCows();
     this.herdLabel = this.add
@@ -466,6 +474,55 @@ export class FarmScene extends Phaser.Scene {
         );
         return true;
       },
+      showMonthSummaryDemo: () => {
+        const body = [
+          "Income N$0. Expenses N$8,500.",
+          "Labour N$2,400. Driven by ranch size and head count share (No farmhand on payroll.). Hint: one farmhand is enough at this herd size until you split camps.",
+          "Lick N$1,800. Driven by 120 head at about N$31.25/head/month (NAU feed split). Hint: match summer phosphate vs winter protein lick in Step 2; skip double fills.",
+        ].join("\n");
+        this.hud.showEventCard("Month in review", body);
+        return true;
+      },
+      setNightForCapture: () => {
+        this.state.date.hour = 2;
+        this.hud.setDaylight(0.1);
+        if (this.nightOverlay) this.nightOverlay.setAlpha(0.5);
+        return true;
+      },
+      zoomGrassReadability: () => {
+        const camera = this.cameras.main;
+        camera.setZoom(clampZoom(0.85, this.minZoom, this.maxZoom));
+        this.layoutCamera(false);
+        return camera.zoom;
+      },
+      zoomFullFarm: () => {
+        const camera = this.cameras.main;
+        camera.setZoom(clampZoom(this.minZoom, this.minZoom, this.maxZoom));
+        this.layoutCamera(false);
+        this.clampScroll();
+        return camera.zoom;
+      },
+      triggerHerdMoveDemo: () => {
+        const target = this.state.camps.find((c) => c.id !== this.state.herd.campId);
+        if (target) this.commitMove(target.id);
+        this.setSpeed("x2");
+        return true;
+      },
+      openNotificationsDemo: () => {
+        this.hud.pushLetter({
+          id: "demo-letter",
+          tier: "letter",
+          kind: "drought_watch",
+          title: "Late rains",
+          body: "Season rain is 42 mm, below a normal start.",
+          priority: 2,
+          at: { ...this.state.date },
+          read: false,
+        });
+        this.hud.syncAlerts(["Camp 8 worn", "Camp 3 no trough"]);
+        this.hud.pushNewsLog(["Late rains: Season rain is 42 mm, below a normal start."]);
+        return true;
+      },
       showDroughtChoice: () => {
         if (this.state.story) {
           this.state.story.drought.choicePending = "sell_down";
@@ -485,22 +542,35 @@ export class FarmScene extends Phaser.Scene {
     this.presentQueuedCard();
     const blocked = this.clockBlocked();
     const walking = herdInTransit(this.state.herd);
-    const plan = dayStepsThisFrame({
-      blocked,
-      speed: this.mode,
-      bankMs: this.bank,
-      deltaMs: delta,
-      intervalMs: walking ? null : this.msPerDay(),
-      maxFrameMs: CONFIG.view.maxFrameMs,
-      maxDays: CONFIG.view.maxDaysPerFrame,
-    });
-    let steps = 0;
-    for (let i = 0; i < plan.days; i += 1) {
-      stepDay(this.state);
-      steps += 1;
-      if (hasBlockingCard(this.state)) break;
+    if (!this.state.clock) {
+      this.state.clock = {
+        settings: {
+          dayLengthSeconds: CONFIG.time.dayLengthSecondsDefault as 180 | 240 | 300,
+          daysPerMonth: CONFIG.calendar.daysPerMonthDefault,
+          catchUpCapMs: CONFIG.time.catchUpCapMs,
+        },
+        bankMs: this.bank,
+        speed: speedMultiplier(this.mode),
+      };
     }
-    this.bank = steps < plan.days ? 0 : plan.bankMs;
+    this.state.clock.speed = speedMultiplier(this.mode);
+    let steps = 0;
+    if (!walking) {
+      const tick = tickRanchClock(
+        this.state.date,
+        this.state.clock,
+        delta,
+        blocked,
+      );
+      this.state.date = tick.date;
+      this.bank = tick.bankMs;
+      this.state.clock.bankMs = tick.bankMs;
+      for (let i = 0; i < tick.daySteps && i < CONFIG.view.maxDaysPerFrame; i += 1) {
+        stepDay(this.state);
+        steps += 1;
+        if (hasBlockingCard(this.state)) break;
+      }
+    }
     if (steps > 0) {
       this.refreshGrass();
       this.syncHud();
@@ -508,6 +578,16 @@ export class FarmScene extends Phaser.Scene {
       this.persist();
       getGameFlow().onSimDayAdvanced(this.state);
     }
+    const daylight = daylightBlend(this.state.date.hour);
+    this.hud.setDaylight(daylight);
+    if (this.nightOverlay) this.nightOverlay.setAlpha(0.55 * (1 - daylight));
+  this.updateScaleBar();
+    syncAlertStrip(this.state, {
+      pushMessage: (t) => this.hud.setHint(t),
+      pushLetter: (item) => this.hud.pushLetter(item),
+      pushCritical: (title, body) => this.hud.showEventCard(title, body),
+      syncAlerts: (labels) => this.hud.syncAlerts(labels),
+    });
     if (walking && transitMayAdvance(blocked, this.mode)) {
       const was = this.state.herd.transit?.progress ?? 0;
       tickTransitRealtime(this.state, delta, this.mode);
@@ -577,20 +657,30 @@ export class FarmScene extends Phaser.Scene {
     if (this.clockBlocked()) return;
     const card = popNextCard(this.state);
     if (!card) return;
-    presentStoryCard(card, this.hud);
+    presentStoryCard(this.state, card, this.hud);
+    if (this.state.notifications?.log.length) {
+      this.hud.pushNewsLog(
+        this.state.notifications.log.slice(0, 3).map((item) => `${item.title}: ${item.body}`),
+      );
+    }
   }
 
   private setSpeed(mode: SpeedMode): void {
     this.mode = mode;
     if (mode === "pause") this.bank = 0;
     this.hud.setSpeed(mode);
-    if (mode === "fast") getGameFlow().notifySim("speedFast");
+    if (mode === "x3") getGameFlow().notifySim("speedFast");
+    if (this.state.clock) this.state.clock.speed = speedMultiplier(mode);
   }
 
-  private msPerDay(): number | null {
-    if (this.mode === "pause") return null;
-    const seconds = this.mode === "fast" ? CONFIG.view.secondsPerDayFast : CONFIG.view.secondsPerDayPlay;
-    return seconds * 1000;
+  private updateScaleBar(): void {
+    const zoom = this.cameras.main.zoom;
+    const tileW = CONFIG.view.tileWidth * zoom;
+    const metresPerTile = CONFIG.transit.kmPerTile * 1000;
+    const barPx = 120;
+    const metres = (barPx / tileW) * metresPerTile;
+    const label = metres >= 1000 ? `${(metres / 1000).toFixed(1)} km` : `${Math.round(metres / 50) * 50} m`;
+    this.hud.setScaleBar(label);
   }
 
   private buildProceduralFallback(): void {
@@ -997,7 +1087,14 @@ export class FarmScene extends Phaser.Scene {
     const zoom = this.cameras.main.zoom;
     const cowLod = this.paintedSprites && zoom <= COW_LOD_ZOOM;
     this.cows.forEach((cow, index) => {
-      const offset = this.herdOffsets[index] ?? { x: 0, y: 0, flip: false, coat: 0, scale: 0.5 };
+      const offset = this.herdOffsets[index] ?? {
+        x: 0,
+        y: 0,
+        flip: false,
+        coat: 0,
+        scale: 0.5,
+        facingRad: 0,
+      };
       const walk =
         walking && !this.reduceMotion
           ? Math.sin(time / 220 + index * 0.7) * 1.6
@@ -1015,9 +1112,10 @@ export class FarmScene extends Phaser.Scene {
         const squash = walking && !this.reduceMotion ? 1 + Math.sin(time / 170 + index * 0.9) * 0.03 : 1;
         const s = base * zoomComp;
         cow.setScale(s, s * squash);
-        cow.setFlipX(offset.flip);
+        const tilt = walking ? offset.facingRad * 0.92 : offset.facingRad * 0.35;
         const grazeTilt =
-          walking || this.reduceMotion ? 0 : Math.sin(time / 520 + index * 1.1) * 0.04;
+          walking || this.reduceMotion ? tilt : tilt + Math.sin(time / 520 + index * 1.1) * 0.04;
+        cow.setFlipX(offset.flip);
         cow.setRotation(grazeTilt);
       } else {
         const animFrame = walking
@@ -1297,12 +1395,12 @@ export class FarmScene extends Phaser.Scene {
     this.input.keyboard?.on("keydown-SPACE", (event: KeyboardEvent) => {
       if (event.target instanceof HTMLElement && event.target.tagName === "BUTTON") return;
       event.preventDefault();
-      this.setSpeed(this.mode === "pause" ? "play" : "pause");
+      this.setSpeed(this.mode === "pause" ? "x1" : "pause");
     });
-    this.input.keyboard?.on("keydown-F", () => this.setSpeed("fast"));
     this.input.keyboard?.on("keydown-ONE", () => this.setSpeed("pause"));
-    this.input.keyboard?.on("keydown-TWO", () => this.setSpeed("play"));
-    this.input.keyboard?.on("keydown-THREE", () => this.setSpeed("fast"));
+    this.input.keyboard?.on("keydown-TWO", () => this.setSpeed("x1"));
+    this.input.keyboard?.on("keydown-THREE", () => this.setSpeed("x2"));
+    this.input.keyboard?.on("keydown-FOUR", () => this.setSpeed("x3"));
     this.input.keyboard?.on("keydown-ESC", () => this.deselectHerd());
     this.input.keyboard?.on("keydown-ESCAPE", () => this.deselectHerd());
   }
