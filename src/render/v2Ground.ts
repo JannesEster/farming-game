@@ -349,8 +349,35 @@ function pointAlong(points: RoadPoint[], lengths: number[], distance: number): R
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
 }
 
-/** Dusty brown, only a little lighter than the Kalahari sand (about rgb 194, 107, 38). */
-const RUT_RGB = [198, 118, 48] as const;
+/**
+ * Pale dust, a step lighter than Kalahari sand (about rgb 194, 106, 37).
+ * Close enough to stay a dirt track, light enough to read at a few hundred metres.
+ */
+const RUT_RGB = [220, 162, 96] as const;
+const FAR_LINE_RGB = [230, 180, 118] as const;
+const RUT_WIDTH_METRES = 0.4;
+const RUT_CENTRE_METRES = 1.6;
+/** When each rut would be thinner than this on screen, draw one soft line instead. */
+const RUT_MIN_SCREEN_PX = 2;
+/** Far-zoom line, a little over the 2 px minimum so it stays readable after antialiasing. */
+const FAR_LINE_SCREEN_PX = 2.6;
+
+export function roadDrawMode(zoom: number): "tracks" | "line" {
+  const safe = Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+  return RUT_WIDTH_METRES * PIXELS_PER_METRE * safe < RUT_MIN_SCREEN_PX ? "line" : "tracks";
+}
+
+/** Stable paint bucket. Track mode ignores zoom; the far line rebuilds when zoom changes. */
+export function roadPaintKey(zoom: number): string {
+  if (roadDrawMode(zoom) === "tracks") return "tracks";
+  const bucket = Math.max(0.05, Math.round(zoom * 40) / 40);
+  return `line:${bucket.toFixed(3)}`;
+}
+
+function paintZoom(zoom: number): number {
+  if (roadDrawMode(zoom) === "tracks") return Math.max(zoom, 0.05);
+  return Math.max(0.05, Math.round(zoom * 40) / 40);
+}
 
 function strokeFaded(
   ctx: CanvasRenderingContext2D,
@@ -361,6 +388,7 @@ function strokeFaded(
   fadeStart: boolean,
   fadeEnd: boolean,
   fadePx: number,
+  rgb: readonly [number, number, number] = RUT_RGB,
 ): void {
   if (points.length < 2) return;
   const lengths = [0];
@@ -382,7 +410,7 @@ function strokeFaded(
     if (fadeStart) fade = Math.min(fade, dist / fadePx);
     if (fadeEnd) fade = Math.min(fade, (total - dist) / fadePx);
     fade = Math.max(0, Math.min(1, fade));
-    const paint = `rgba(${RUT_RGB[0]}, ${RUT_RGB[1]}, ${RUT_RGB[2]}, ${(alpha * fade).toFixed(3)})`;
+    const paint = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${(alpha * fade).toFixed(3)})`;
     ctx.strokeStyle = paint;
     ctx.shadowColor = paint;
     ctx.beginPath();
@@ -398,11 +426,14 @@ function strokeFaded(
  * apron where the truck turns. Drawn once in world space so chunk edges cannot cut it.
  * Each rut is 0.4 m wide and the ruts are 1.6 m centre to centre. The grass between
  * them is unpainted ground. Ends of the track fade over about 3.5 m.
+ * When a rut would be under 2 screen pixels, the pair becomes one soft pale line
+ * at least 2 px wide so the road stays readable when the camera is far out.
  */
 export function renderFarmRoad(
   scene: Phaser.Scene,
   state: GameState,
   layout: IsoLayout,
+  cameraZoom = 1,
 ): Phaser.GameObjects.Image | null {
   const tileW = CONFIG.view.tileWidth;
   const tileH = CONFIG.view.tileHeight;
@@ -469,10 +500,13 @@ export function renderFarmRoad(
   const samples = [...polylines.flat(), ...apron];
   if (samples.length === 0) return null;
 
-  const rutWidth = 0.4 * PIXELS_PER_METRE;
-  const rutOffset = 0.8 * PIXELS_PER_METRE;
+  const zoom = paintZoom(cameraZoom);
+  const far = roadDrawMode(cameraZoom) === "line";
+  const rutWidth = RUT_WIDTH_METRES * PIXELS_PER_METRE;
+  const rutOffset = (RUT_CENTRE_METRES / 2) * PIXELS_PER_METRE;
   const fadePx = 3.5 * PIXELS_PER_METRE;
-  const pad = Math.ceil(rutOffset * 2 + rutWidth + fadePx * 0.35);
+  const lineWorld = FAR_LINE_SCREEN_PX / zoom;
+  const pad = Math.ceil((far ? lineWorld * 0.5 + 8 : rutOffset * 2 + rutWidth) + fadePx * 0.35);
   let minX = Number.POSITIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
   let maxX = Number.NEGATIVE_INFINITY;
@@ -500,9 +534,9 @@ export function renderFarmRoad(
     const x = point.x - minX;
     const y = point.y - minY;
     const paint = ctx.createRadialGradient(x, y, apronRadius * 0.15, x, y, apronRadius);
-    paint.addColorStop(0, "rgba(176, 112, 46, 0.22)");
-    paint.addColorStop(0.55, "rgba(170, 104, 42, 0.08)");
-    paint.addColorStop(1, "rgba(170, 104, 42, 0)");
+    paint.addColorStop(0, "rgba(210, 150, 78, 0.36)");
+    paint.addColorStop(0.55, "rgba(200, 140, 70, 0.16)");
+    paint.addColorStop(1, "rgba(200, 140, 70, 0)");
     ctx.fillStyle = paint;
     ctx.beginPath();
     ctx.arc(x, y, apronRadius, 0, Math.PI * 2);
@@ -516,15 +550,38 @@ export function renderFarmRoad(
     const keys = chains[chainIndex];
     const fadeStart = (degree.get(keys[0]) ?? 0) <= 1;
     const fadeEnd = (degree.get(keys[keys.length - 1]) ?? 0) <= 1;
-    const shifted = [-rutOffset, rutOffset].map((distance) => local(offsetChain(line, distance)));
-    for (const rut of shifted) {
-      strokeFaded(ctx, rut, rutWidth + 1.4, 0.16, 0.7, fadeStart, fadeEnd, fadePx);
-      strokeFaded(ctx, rut, rutWidth, 0.48, 0, fadeStart, fadeEnd, fadePx);
+    if (far) {
+      const centre = local(line);
+      const core = Math.max(lineWorld, RUT_MIN_SCREEN_PX / zoom);
+      strokeFaded(ctx, centre, core + FAR_LINE_SCREEN_PX / zoom, 0.36, 1.2, fadeStart, fadeEnd, fadePx, FAR_LINE_RGB);
+      strokeFaded(ctx, centre, core, 0.82, 0, fadeStart, fadeEnd, fadePx, FAR_LINE_RGB);
+    } else {
+      const shifted = [-rutOffset, rutOffset].map((distance) => local(offsetChain(line, distance)));
+      for (const rut of shifted) {
+        strokeFaded(ctx, rut, rutWidth + 2, 0.32, 0.8, fadeStart, fadeEnd, fadePx, RUT_RGB);
+        strokeFaded(ctx, rut, rutWidth, 0.7, 0, fadeStart, fadeEnd, fadePx, RUT_RGB);
+      }
     }
   }
 
   const key = "v2-farm-road";
   if (scene.textures.exists(key)) scene.textures.remove(key);
   scene.textures.addCanvas(key, canvas);
-  return scene.add.image(minX, minY, key).setOrigin(0, 0).setDepth(0.2);
+  const image = scene.add.image(minX, minY, key).setOrigin(0, 0).setDepth(0.2);
+  image.setData("roadPaintKey", roadPaintKey(cameraZoom));
+  return image;
+}
+
+/** Repaint the road when the camera crosses the far-zoom line, or the line width changes. */
+export function syncFarmRoadLod(
+  scene: Phaser.Scene,
+  current: Phaser.GameObjects.Image | undefined,
+  state: GameState,
+  layout: IsoLayout,
+  cameraZoom: number,
+): Phaser.GameObjects.Image | undefined {
+  const key = roadPaintKey(cameraZoom);
+  if (current?.active && current.getData("roadPaintKey") === key) return current;
+  current?.destroy();
+  return renderFarmRoad(scene, state, layout, cameraZoom) ?? undefined;
 }

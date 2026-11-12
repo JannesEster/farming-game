@@ -164,7 +164,7 @@ import {
   vehiclePose,
 } from "./v2Art";
 import { yardGeometry } from "./yardDraw";
-import { ensureV2GroundFillTexture, renderFarmRoad, v2GroundReady } from "./v2Ground";
+import { ensureV2GroundFillTexture, renderFarmRoad, syncFarmRoadLod, v2GroundReady } from "./v2Ground";
 
 function pointInPolygon(x: number, y: number, corners: { x: number; y: number }[]): boolean {
   let inside = false;
@@ -1617,6 +1617,9 @@ export class FarmScene extends Phaser.Scene {
     const metres = (barPx / tileW) * metresPerTile;
     const label = metres >= 1000 ? `${(metres / 1000).toFixed(1)} km` : `${Math.round(metres / 50) * 50} m`;
     this.hud.setScaleBar(label);
+    if (v2GroundReady(this.textures)) {
+      this.roadDecal = syncFarmRoadLod(this, this.roadDecal, this.state, this.layout, zoom);
+    }
   }
 
   private buildProceduralFallback(): void {
@@ -1669,7 +1672,7 @@ export class FarmScene extends Phaser.Scene {
     if (v2GroundReady(this.textures)) {
       const fillKey = ensureV2GroundFillTexture(this, this.layout);
       if (fillKey) this.groundFill = this.add.tileSprite(0, 0, 64, 64, fillKey).setOrigin(0, 0).setDepth(-2);
-      this.roadDecal = renderFarmRoad(this, this.state, this.layout) ?? undefined;
+      this.roadDecal = renderFarmRoad(this, this.state, this.layout, this.cameras.main.zoom) ?? undefined;
     }
   }
 

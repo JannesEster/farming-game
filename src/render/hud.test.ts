@@ -114,6 +114,31 @@ describe("compact phone HUD", () => {
     hud.destroy();
   });
 
+  it("shows the herd name once when the card is open, without the summary line", () => {
+    const state = initialGameState();
+    const hud = mountHud({
+      onSpeed: () => {},
+      onMinimap: () => {},
+      onNewFarm: () => {},
+      onHome: () => {},
+      onDeselect: () => {},
+      onConfirmMove: () => {},
+      onCancelMove: () => {},
+      onOpenMarket: () => {},
+    });
+    hud.update(state, { selected: true, expanded: true, pendingCampId: null, pendingCampName: "" });
+    const sheet = document.getElementById("herd-sheet");
+    const name = document.getElementById("herd-name");
+    const line = document.getElementById("sheet-line");
+    expect(sheet?.dataset.expanded).toBe("true");
+    expect(name?.textContent).toBe(state.herd.name);
+    expect(name?.hidden).toBe(false);
+    expect(line?.hidden).toBe(true);
+    expect(line?.textContent).toContain("Herd");
+    expect(document.querySelectorAll("#herd-name").length).toBe(1);
+    hud.destroy();
+  });
+
   it("keeps the market sheet after the HUD mounts", () => {
     const hud = mountHud({
       onSpeed: () => {},
