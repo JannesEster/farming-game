@@ -177,6 +177,16 @@ export type StoryState = {
   bakkieRun?: BakkieRunState;
   /** Visible bakkie trips this month (feeds diesel accounting hooks). */
   bakkieDieselLitresMonth?: number;
+  /** One record per head. Missing on older saves until migration. */
+  animals?: AnimalRecord[];
+  /** Next ear tag to hand out. */
+  nextAnimalTag?: number;
+  /** Animals the player has tapped or filtered. */
+  selectedAnimalIds?: string[];
+  /** Animal shown on the detail card. */
+  focusedAnimalId?: string | null;
+  /** Separate a few animals and drive them. Null when idle. */
+  cutOut?: CutOutOrder | null;
 };
 
 export type SellRequest = {
@@ -219,12 +229,59 @@ export type SaleConvoyState = {
   count: number;
   channel: SaleChannel;
   quoted: SaleLine;
+  /** Set when a cut-out group is sold. Each line is one class. */
+  lines?: SaleLine[];
+  /** Animals loaded on this truck. Removed when the truck is paid. */
+  animalIds?: string[];
   phase: SaleConvoyPhase;
   phaseProgress: number;
   paid: boolean;
   herder: "farmer" | "piet";
   toCampId: number;
   driveStarted?: boolean;
+};
+
+export type AnimalWhereabouts = "in_camp" | "escaped" | "neighbour" | "cut_out" | "sold";
+
+export type AnimalRecord = {
+  /** Internal. Never show this in player text. */
+  id: string;
+  /** Ear tag the player sees, for example 142. */
+  tag: string;
+  stockClass: StockClass;
+  weightKg: number;
+  condition: number;
+  campId: number;
+  whereabouts: AnimalWhereabouts;
+  tileX: number;
+  tileY: number;
+  /** 0 to 7, screen facing while moving. */
+  facing: number;
+  activity: "idle" | "graze" | "walk";
+  escapeHours: number;
+  escapeReason: "broken_fence" | "open_gate" | null;
+  neighbourCharged: boolean;
+  /** True once this animal has been driven to a different camp from the main herd. */
+  split: boolean;
+};
+
+export type CutOutDestination = { kind: "camp"; campId: number } | { kind: "kraal" };
+
+export type CutOutPhase = "queued" | "approach" | "drive" | "done";
+
+export type CutOutOrder = {
+  animalIds: string[];
+  destination: CutOutDestination;
+  channel: SaleChannel | null;
+  herder: "farmer" | "piet" | null;
+  phase: CutOutPhase;
+  queueReason?: "night" | "no_herder";
+  path: TilePoint[];
+  progress: number;
+  approachProgress: number;
+  distanceKm: number;
+  walkGameHours: number;
+  hoursApplied: number;
 };
 
 export type BakkieRunState = {

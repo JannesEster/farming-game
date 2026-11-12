@@ -51,9 +51,16 @@ export function tileAlongRoad(state: GameState, steps: number): TilePoint {
   return { x: cur.x, y: cur.y };
 }
 
-/** Camp nearest the homestead kraal for sale drives. */
+/** First holding pen, or the old homestead kraal on a saved farm that still has one. */
+export function handlingPenTile(state: GameState): TilePoint | null {
+  const pen = state.features.find((f) => f.kind === "holding_pen");
+  if (pen) return { x: pen.x, y: pen.y };
+  return saleFeatureTile(state, "kraal");
+}
+
+/** Camp that holds the cattle yards, for sale drives along the road. */
 export function kraalDestinationCampId(state: GameState): number | null {
-  const kraal = state.features.find((f) => f.kind === "kraal");
+  const kraal = state.features.find((f) => f.kind === "holding_pen") ?? state.features.find((f) => f.kind === "kraal");
   if (!kraal) return state.camps[0]?.id ?? null;
   const at = state.campIds[kraal.y * state.width + kraal.x];
   if (at !== undefined && at >= 0) return at;

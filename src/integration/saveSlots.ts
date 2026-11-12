@@ -4,7 +4,7 @@ import { migrateState, parseLegacySaved } from "../sim/stateMigrate";
 import type { FlowMeta } from "./types";
 import { defaultFlowMeta } from "./metaDefaults";
 
-export const SAVE_FORMAT_VERSION = 3;
+export const SAVE_FORMAT_VERSION = 4;
 export const SLOT_COUNT = 3;
 const SLOT_PREFIX = "farming-game-slot-";
 const ACTIVE_SLOT_KEY = "farming-game-active-slot";
@@ -74,8 +74,14 @@ export function anySlotOccupied(): boolean {
 
 export function parseSlotPayload(raw: string): SavedSlotPayload | null {
   try {
-    const data = JSON.parse(raw) as Partial<SavedSlotPayload> & { version?: number; state?: GameState };
-    if (data.version === 1 as number) {
+    const data = JSON.parse(raw) as {
+      version?: number;
+      savedAt?: string;
+      slotId?: number;
+      meta?: FlowMeta;
+      state?: GameState;
+    };
+    if (data.version === 1) {
       const state = data.state;
       if (!state) return null;
       return {
@@ -86,10 +92,11 @@ export function parseSlotPayload(raw: string): SavedSlotPayload | null {
         state,
       };
     }
-    if (data.version !== SAVE_FORMAT_VERSION || !data.state || !data.meta) return null;
+    if (data.version !== 3 && data.version !== SAVE_FORMAT_VERSION) return null;
+    if (!data.state || !data.meta) return null;
     if (!data.meta.tutorial || !data.meta.milestones) return null;
     data.state = migrateState(data.state);
-    return data as SavedSlotPayload;
+    return { ...(data as SavedSlotPayload), version: SAVE_FORMAT_VERSION, state: data.state };
   } catch {
     return null;
   }

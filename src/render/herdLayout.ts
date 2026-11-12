@@ -1,7 +1,7 @@
 import type { CampState, GameState, TilePoint } from "../sim/types";
 import { TILE_HOMESTEAD, TILE_OUTSIDE } from "../sim/types";
 import type { CowView, HerdOffset } from "./art";
-import { cowViewFromVector } from "./sprites";
+import { cowOctantFromScreen, cowOctantFromTile, cowViewFromOctant } from "./sprites";
 
 export function facingFromTileVector(ux: number, uy: number): number {
   const sx = ux - uy;
@@ -121,6 +121,25 @@ function campInsetDepth(camp: CampState): Map<string, number> {
   return depth;
 }
 
+function homesteadTiles(state: GameState): TilePoint[] {
+  const tiles: TilePoint[] = [];
+  for (let y = 0; y < state.height; y += 1) {
+    for (let x = 0; x < state.width; x += 1) {
+      if (state.campIds[y * state.width + x] === TILE_HOMESTEAD) tiles.push({ x, y });
+    }
+  }
+  return tiles;
+}
+
+function yardsAway(tile: TilePoint, yards: TilePoint[]): number {
+  if (yards.length === 0) return 99;
+  let best = 99;
+  for (const yard of yards) {
+    best = Math.min(best, Math.max(Math.abs(tile.x - yard.x), Math.abs(tile.y - yard.y)));
+  }
+  return best;
+}
+
 /** Interior tile near the camp anchor, inset from the fence and from the yard. */
 export function grazingCenterTile(camp: CampState): TilePoint {
   if (camp.tiles.length === 0) return camp.anchor;
@@ -155,8 +174,8 @@ function onCampTile(
 }
 
 /**
- * Loose grazing mob. Animals stand on interior tiles of the camp, with
- * spacing, instead of stacking on the anchor tile at the fence.
+ * Loose grazing mob. Animals stand on interior tiles of the camp, clear of
+ * the homestead, with enough space to read each animal.
  */
 export function spreadInCamp(
   camp: CampState,
@@ -165,51 +184,85 @@ export function spreadInCamp(
   layout: IsoLayout,
   tileW: number,
   tileH: number,
+  state?: GameState,
 ): HerdOffset[] {
   const next = rng(seed + camp.id * 997);
   if (count <= 0) return [];
-  const members = new Set(camp.tiles.map((tile) => `${tile.x},${tile.y}`));
-  const centerTile = grazingCenterTile(camp);
-  const center = tileCenter(centerTile.x, centerTile.y, layout, tileW, tileH);
-  const anchor = tileCenter(camp.anchor.x, camp.anchor.y, layout, tileW, tileH);
-  let reachX = tileW;
-  let reachY = tileH;
-  for (const tile of camp.tiles) {
+  const yards = state ? homesteadTiles(state) : [];
+  const grazeTiles = camp.tiles.filter((tile) => yardsAway(tile, yards) >= 4);
+  const members = new Set((grazeTiles.length > 0 ? grazeTiles : camp.tiles).map((tile) => `${tile.x},${tile.y}`));
+  const yardPoints = yards.map((tile) => tileCenter(tile.x, tile.y, layout, tileW, tileH));
+  const yardCenter = yardPoints.length
+    ? {
+        x: yardPoints.reduce((sum, point) => sum + point.x, 0) / yardPoints.length,
+        y: yardPoints.reduce((sum, point) => sum + point.y, 0) / yardPoints.length,
+      }
+    : tileCenter(camp.anchor.x, camp.anchor.y, layout, tileW, tileH);
+  let center = yardCenter;
+  let centerDist = -1;
+  for (const tile of grazeTiles.length > 0 ? grazeTiles : camp.tiles) {
     const point = tileCenter(tile.x, tile.y, layout, tileW, tileH);
-    reachX = Math.max(reachX, Math.abs(point.x - center.x));
-    reachY = Math.max(reachY, Math.abs(point.y - center.y));
+    const dist = Math.hypot(point.x - yardCenter.x, point.y - yardCenter.y);
+    if (dist > centerDist) {
+      centerDist = dist;
+      center = point;
+    }
   }
-  const radiusX = Math.min(tileW * 3.6, Math.max(tileW * 1.55, reachX * 0.62));
-  const radiusY = Math.min(tileH * 4.5, Math.max(tileH * 1.75, reachY * 0.62));
-  const points: { x: number; y: number }[] = [];
-  let minDist = Math.min(radiusX, radiusY) * 0.16;
-  for (let round = 0; round < 7 && points.length < count; round += 1) {
-    let guard = 0;
-    while (points.length < count && guard < count * 36) {
-      guard += 1;
-      const angle = next() * Math.PI * 2;
-      const radial = Math.sqrt(next());
-      const x = center.x + Math.cos(angle) * radiusX * radial;
-      const y = center.y + Math.sin(angle) * radiusY * radial;
-      if (!onCampTile(x, y, layout, tileW, tileH, members)) continue;
+  const anchor = tileCenter(camp.anchor.x, camp.anchor.y, layout, tileW, tileH);
+  const candidates: { x: number; y: number; rank: number }[] = [];
+  for (const key of members) {
+    const [tx, ty] = key.split(",").map(Number);
+    const spot = tileCenter(tx, ty, layout, tileW, tileH);
+    const jitterA = next() * Math.PI * 2;
+    const x = spot.x + Math.cos(jitterA) * tileW * 0.12;
+    const y = spot.y + Math.sin(jitterA) * tileH * 0.12;
+    if (!onCampTile(x, y, layout, tileW, tileH, members)) continue;
+    const dx = x - center.x;
+    const dy = y - center.y;
+    candidates.push({ x, y, rank: Math.hypot(dx, dy) });
+  }
+  candidates.sort((a, b) => a.rank - b.rank);
+  const grazing = candidates;
+  const safe: typeof grazing = [];
+  const covers = (extra: { x: number; y: number }) => {
+    let minX = extra.x;
+    let maxX = extra.x;
+    let minY = extra.y;
+    let maxY = extra.y;
+    for (const point of safe) {
+      minX = Math.min(minX, point.x);
+      maxX = Math.max(maxX, point.x);
+      minY = Math.min(minY, point.y);
+      maxY = Math.max(maxY, point.y);
+    }
+    return yardPoints.some((yard) => yard.x >= minX && yard.x <= maxX && yard.y >= minY && yard.y <= maxY);
+  };
+  for (const candidate of grazing) {
+    if (!covers(candidate)) safe.push(candidate);
+  }
+  const take = (gap: number) => {
+    const chosen: { x: number; y: number }[] = [];
+    const gap2 = gap * gap;
+    for (const candidate of (safe.length >= count ? safe : grazing)) {
+      if (chosen.length >= count) break;
       let spaced = true;
-      for (const placed of points) {
-        const dx = placed.x - x;
-        const dy = placed.y - y;
-        if (dx * dx + dy * dy < minDist * minDist) {
+      for (const placed of chosen) {
+        const dx = placed.x - candidate.x;
+        const dy = placed.y - candidate.y;
+        if (dx * dx + dy * dy < gap2) {
           spaced = false;
           break;
         }
       }
-      if (spaced) points.push({ x, y });
+      if (spaced) chosen.push(candidate);
     }
-    minDist *= 0.7;
-  }
-  while (points.length < count) {
-    points.push({
-      x: center.x + (next() - 0.5) * tileW * 0.4,
-      y: center.y + (next() - 0.5) * tileH * 0.4,
-    });
+    return chosen;
+  };
+  let gap = tileW * 0.92;
+  let points = take(gap);
+  while (points.length < count && gap > tileW * 0.42) {
+    gap *= 0.94;
+    points = take(gap);
   }
   return points.map((point) => ({
     x: point.x - anchor.x,
@@ -218,6 +271,7 @@ export function spreadInCamp(
     coat: Math.floor(next() * 6),
     scale: 0.72 + next() * 0.08,
     view: randomView(next),
+    octant: Math.floor(next() * 8),
   }));
 }
 
@@ -279,7 +333,14 @@ export function fileAlongPath(
     lengths.push(lengths[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y));
   }
   const total = lengths[lengths.length - 1] || 1;
-  const spacing = Math.min(18, (total * 0.92) / Math.max(1, count - 1));
+  const body = tileW * 0.82;
+  let lanes = 1;
+  const columnLength = (laneCount: number, gap: number) => Math.max(1, Math.ceil(count / laneCount) - 1) * gap;
+  let spacing = body;
+  while (columnLength(lanes, spacing) > total * 0.9 && lanes < 3) lanes += 1;
+  if (columnLength(lanes, spacing) > total * 0.9) {
+    spacing = (total * 0.9) / Math.max(1, Math.ceil(count / lanes) - 1);
+  }
   const centerDist = progress * total;
 
   const pointAt = (distance: number): { x: number; y: number; ux: number; uy: number } => {
@@ -300,10 +361,13 @@ export function fileAlongPath(
   const offsets: HerdOffset[] = [];
   for (let i = 0; i < count; i += 1) {
     const phase = cowPhase(seed, i);
-    const rank = count <= 1 ? 0 : i - (count - 1) / 2;
-    const wobble = Math.sin(timeMs / 700 + phase * 9) * 3;
-    const at = pointAt(centerDist + rank * spacing + wobble);
-    const lane = (i % 2 === 0 ? -1 : 1) * 3;
+    const laneIndex = i % lanes;
+    const rank = Math.floor(i / lanes);
+    const ranks = Math.ceil(count / lanes);
+    const along = ranks <= 1 ? 0 : rank - (ranks - 1) / 2;
+    const wobble = Math.sin(timeMs / 700 + phase * 9) * 2;
+    const at = pointAt(centerDist + along * spacing + wobble);
+    const lane = (laneIndex - (lanes - 1) / 2) * 8;
     const px = -at.uy;
     const py = at.ux;
     const foot = nudgeInsideCamp(state, at.x + px * lane, at.y + py * lane, layout, tileW, tileH);
@@ -313,7 +377,8 @@ export function fileAlongPath(
       flip: false,
       coat: Math.floor(phase * 6) % 6,
       scale: 0.58 + (phase % 0.1),
-      view: cowViewFromVector(at.ux, at.uy),
+      view: cowViewFromOctant(cowOctantFromScreen(at.ux, at.uy)),
+      octant: cowOctantFromScreen(at.ux, at.uy),
     });
   }
   return offsets;
@@ -456,7 +521,8 @@ export function organicTrekOffsets(
       flip: false,
       coat: Math.floor(phase * 6) % 6,
       scale: (0.52 + (phase % 0.1)) * (nibble ? 0.92 : 1),
-      view: cowViewFromVector(ux, uy),
+      view: cowViewFromOctant(cowOctantFromTile(ux, uy)),
+      octant: cowOctantFromTile(ux, uy),
     });
   }
   return offsets;
@@ -545,6 +611,7 @@ export function blendOffsets(
       coat: s.coat,
       scale: s.scale * (1 - t * 0.08) + m.scale * t * 0.08,
       view: t > 0.5 ? m.view : s.view,
+      octant: t > 0.5 ? m.octant : s.octant,
     };
   });
 }
@@ -560,9 +627,10 @@ export function offsetsForHerd(
   timeMs: number,
   herdX: number,
   herdY: number,
+  countOverride?: number,
 ): HerdOffset[] {
   const track = trackKeys(state);
-  const count = state.herd.headCount;
+  const count = countOverride ?? state.herd.headCount;
   const fromCampId = state.herd.campId;
   const fromCamp = state.camps.find((c) => c.id === fromCampId);
   if (!fromCamp) return [];
@@ -570,7 +638,7 @@ export function offsetsForHerd(
   if (inTransit && progress > 0.85 && state.herd.transit) {
     spreadCamp = state.camps.find((c) => c.id === state.herd.transit!.toCampId) ?? fromCamp;
   }
-  let spread = spreadInCamp(spreadCamp, count, state.seed, layout, tileW, tileH);
+  let spread = spreadInCamp(spreadCamp, count, state.seed, layout, tileW, tileH, state);
   if (inTransit) {
     const file = fileAlongPath(state, layout, tileW, tileH, count, state.seed, timeMs, herdX, herdY);
     let fileWeight = 1;

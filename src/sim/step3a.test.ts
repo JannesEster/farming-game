@@ -4,7 +4,7 @@ import { createGame, findCamp, moveHerd, primeDefaultFarmCache } from "./simulat
 import defaultFarm from "../../public/farms/default-farm.json";
 import { countWorkerHouses, freeWorkerHouseSlots, workerHouseForFarmhand } from "./housing";
 import { requestHerdMove, syncHerderOnDrive, tickHerdingRealtime } from "./herding";
-import { herderPathProgressBehindTail } from "./convoy";
+import { columnMetrics, herderPathProgressBehindTail } from "./convoy";
 import { tickPeopleSchedule, workerAtHomeAtNight } from "./people";
 import { farmerDisplayName } from "./playerName";
 import { migrateState } from "./stateMigrate";
@@ -115,6 +115,18 @@ describe("step 3a living farm", () => {
     const farmer = s.story?.farmerPresence;
     expect(farmer?.onHerdingDuty).toBe(true);
     expect(behind).toBeLessThanOrEqual(progress);
+  });
+
+  it("keeps a full herd at the tight spacing and the herder clear of the last animal", () => {
+    const path = [
+      { x: 0, y: 0 },
+      { x: 30, y: 0 },
+    ];
+    const full = columnMetrics(path, 0.5, 40);
+    expect(full.spacingTiles).toBeCloseTo(0.42, 2);
+    const rear = full.rearProgress * full.total;
+    const herder = full.herderProgress * full.total;
+    expect(rear - herder).toBeGreaterThanOrEqual(1.5);
   });
 
   it("keeps Piet within one tile of his cottage between dusk and dawn", () => {

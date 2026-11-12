@@ -48,16 +48,33 @@ describe("organicTrekOffsets", () => {
     const offsets = offsetsForHerd(state, layout, tileW, tileH, false, 0, { x: 1, y: 0 }, 0, anchor.x, anchor.y);
     const span = mobSpanPx(offsets);
     expect(offsets).toHaveLength(120);
-    expect(span.width).toBeGreaterThan(140);
-    expect(span.height).toBeGreaterThan(60);
-    expect(span.width).toBeLessThan(tileW * 9);
+    expect(span.width).toBeGreaterThan(tileW * 4);
+    expect(span.height).toBeGreaterThan(tileH * 3);
+    expect(span.width).toBeLessThan(tileW * 30);
     let onCamp = 0;
-    for (const offset of offsets) {
+    let nearest = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < offsets.length; i += 1) {
+      const offset = offsets[i];
       const tile = worldToTile(anchor.x + offset.x, anchor.y + offset.y, layout, tileW, tileH);
-      const id = state.campIds[Math.round(tile.y) * state.width + Math.round(tile.x)];
+      const tx = Math.round(tile.x);
+      const ty = Math.round(tile.y);
+      const id = state.campIds[ty * state.width + tx];
       if (id === camp.id) onCamp += 1;
+      expect(id).not.toBe(TILE_HOMESTEAD);
+      for (let dy = -2; dy <= 2; dy += 1) {
+        for (let dx = -2; dx <= 2; dx += 1) {
+          const px = tx + dx;
+          const py = ty + dy;
+          if (px < 0 || py < 0 || px >= state.width || py >= state.height) continue;
+          expect(state.campIds[py * state.width + px]).not.toBe(TILE_HOMESTEAD);
+        }
+      }
+      for (let j = i + 1; j < offsets.length; j += 1) {
+        nearest = Math.min(nearest, Math.hypot(offset.x - offsets[j].x, offset.y - offsets[j].y));
+      }
     }
     expect(onCamp).toBe(120);
+    expect(nearest).toBeGreaterThan(tileW * 0.4);
   });
 
   it("files a walking herd along the path and keeps them on camp or track tiles", () => {

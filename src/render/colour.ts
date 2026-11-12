@@ -37,7 +37,7 @@ function radialFeather(x: number, y: number): number {
 }
 
 function dryGoldenTint(x: number, y: number): number {
-  const jitter = (veldCoverField(x, y, 18.2) - 0.5) * 10;
+  const jitter = (veldCoverField(x, y, 18.2) - 0.5) * 4;
   const r = clamp(Math.round(242 + jitter), 232, 252);
   const g = clamp(Math.round(226 + jitter * 0.55), 214, 238);
   const b = clamp(Math.round(198 + jitter * 0.35), 186, 214);
@@ -184,7 +184,7 @@ export function paintedGroundStamps(
 
   if (cover > 0.1) {
     const feather = radialFeather(x, y);
-    const greenAlpha = clamp(0.34 + cover * 0.42, 0.34, 0.72) * feather;
+    const greenAlpha = clamp(0.16 + cover * 0.22, 0.14, 0.36) * feather;
     stamps.push({
       key: SPRITE_KEYS.tileGreenGrass,
       alpha: greenAlpha,

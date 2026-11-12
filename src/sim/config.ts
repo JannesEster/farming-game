@@ -92,6 +92,10 @@ export type GameConfig = {
     stoorWeightMaxKg: number;
     oxWeightMinKg: number;
     /** S: Jannes and Reuben, farm data, 12 Nov 2026. Open heifer slaughter. */
+    /**
+     * Prices below are market-driven stand-ins. In the real app farmers enter
+     * their own prices per kg or per head.
+     */
     heiferOpenNadPerKgLive: number;
     /** S: Jannes and Reuben, farm data, 12 Nov 2026. Pregnant heifer slaughter. */
     heiferPregnantNadPerKgLive: number;
@@ -105,8 +109,12 @@ export type GameConfig = {
     stoorNadPerKgLive: number;
     /** S: Jannes and Reuben, farm data, 12 Nov 2026. Finished oxen. */
     oxNadPerKgLive: number;
-    /** A. kg/day liveweight gain for heifers and steers when intake is adequate. */
+    /** A. kg/day liveweight gain for heifers and steers under 250 kg when intake is adequate. */
     dailyYoungstockGainKg: number;
+    /** S: Reuben, 12 Nov 2026. Healthy cattle of 250 kg and over gain about 600 g/day in good conditions. */
+    gainKgPerDayFrom250: number;
+    /** Liveweight where Reuben's 600 g/day figure starts. */
+    gainFromKg: number;
     /** A. Month before calving when open heifers are marked pregnant. */
     heiferBreedingMonth: number;
     /** A. Fraction of open heifers marked pregnant each season. */
@@ -401,6 +409,8 @@ export const CONFIG: GameConfig = {
     stoorNadPerKgLive: 37,
     oxNadPerKgLive: 40,
     dailyYoungstockGainKg: 0.45,
+    gainKgPerDayFrom250: 0.6,
+    gainFromKg: 250,
     heiferBreedingMonth: 8,
     heiferPregnancyFraction: 0.35,
     heiferCalvingFraction: 0.9,
@@ -567,7 +577,7 @@ export const CONFIG: GameConfig = {
     herdPickMinScreenPx: 56,
     grassColourMidpoint: 0.62,
     soilMixAtBare: 0.55,
-    tileShadeSpread: 14,
+    tileShadeSpread: 6,
     cowBobPx: 0.8,
     fencePostSpacingPx: 18,
     terrainChunkTiles: 16,

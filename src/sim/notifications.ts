@@ -14,6 +14,7 @@ export type NotificationKind =
   | "season"
   | "weekly"
   | "camp_worn"
+  | "animal_out"
   | "generic";
 
 export type NotificationItem = {

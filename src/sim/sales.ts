@@ -1,5 +1,5 @@
 import { CONFIG, type GameConfig } from "./config";
-import { applySale } from "./economy";
+import { applySale, applySaleLines } from "./economy";
 import { beginHerdMove, herderIsBusy } from "./herding";
 import { findCamp } from "./simulation";
 import { STEP3B } from "./step3bConfig";
@@ -131,7 +131,8 @@ export function tickSaleConvoyRealtime(
   if (convoy.phaseProgress < 1) return;
 
   if (convoy.phase === "truck_depart" && !convoy.paid) {
-    applySale(state, convoy.quoted);
+    if (convoy.lines && convoy.lines.length > 0) applySaleLines(state, convoy.lines, convoy.animalIds);
+    else applySale(state, convoy.quoted);
     convoy.paid = true;
   }
 

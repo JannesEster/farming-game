@@ -42,10 +42,16 @@ function pietCanHerde(state: GameState): boolean {
   return (story.workGrid?.move_herd_help ?? 0) > 0;
 }
 
-function pickHerder(state: GameState): HerderId | null {
+/** Farmer, or Piet when he is hired to help move stock. Null at night or when a drive is already on. */
+export function chooseAvailableHerder(state: GameState): HerderId | null {
+  if (!isDaylightHour(state.date.hour)) return null;
   if (herderIsBusy(state)) return null;
   if (pietCanHerde(state) && (state.story?.workGrid?.move_herd_help ?? 0) >= 3) return "piet";
   return "farmer";
+}
+
+function pickHerder(state: GameState): HerderId | null {
+  return chooseAvailableHerder(state);
 }
 
 export function tryDispatchHerdQueue(state: GameState, config: GameConfig = CONFIG): void {

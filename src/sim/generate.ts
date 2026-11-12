@@ -6,8 +6,10 @@ import {
   grazeableFraction,
   residualDmKgPerHa,
 } from "./pasture";
+import { ensureAnimals } from "./animals";
 import { createStoryState, initStoryPeople } from "./story";
 import { campGateToward } from "./path";
+import { placeCattleHandlingYard } from "./cattleYard";
 import { homesteadYardPieces, placeSharedWaterPoints } from "./waterLayout";
 import { createRng, type Rng } from "./rng";
 import {
@@ -292,7 +294,18 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
     config,
   });
 
+  const house = features.find((feature) => feature.kind === "house") ?? { x: hx + 1, y: hy + 1 };
+  const yardTiles = placeCattleHandlingYard({
+    grid: finalGrid,
+    width,
+    height,
+    features,
+    house,
+    avoidCampId: start.id,
+  });
+
   const occupied = new Set(features.map((feature) => `${feature.x},${feature.y}`));
+  for (const tile of yardTiles) occupied.add(`${tile.x},${tile.y}`);
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const id = finalGrid[idx(x, y, width)];
@@ -362,6 +375,9 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
     farmWaterPoints,
     story: createStoryState(config.herd.headCount, config),
   };
+  initStoryPeople(state, config);
+  ensureAnimals(state, config);
+  state.stateVersion = 8;
   return { state, score };
 }
 

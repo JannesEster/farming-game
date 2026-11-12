@@ -16,6 +16,7 @@ import {
   tickLickCondition,
 } from "./levers";
 import { refreshDailyGoal, rollMorningDecision } from "./morningPlay";
+import { tickDailyEscapes } from "./escapes";
 import { tickPlayerEvents } from "./playerEvents";
 import { defaultFarmerPresence } from "./herding";
 import { DEFAULT_PLAYER_DISPLAY_NAME } from "./playerName";
@@ -128,6 +129,7 @@ export function afterFeedDay(
   }
 
   tickInfrastructureWear(state, config);
+  tickDailyEscapes(state);
   tickLickCondition(state, config);
   tickFarmhandWorld(state, config);
   tickPeopleSchedule(state, config);

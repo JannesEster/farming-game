@@ -128,7 +128,7 @@ function strokeDoubleWire(
 ): void {
   const { ox, oy } = wireStrandOffset(segment.x1, segment.y1, segment.x2, segment.y2);
   graphics.lineStyle(width, colour, alpha);
-  for (const sign of [-1, 1]) {
+  for (const sign of [-1, 0, 1]) {
     graphics.beginPath();
     graphics.moveTo(segment.x1 + ox * sign, segment.y1 + oy * sign);
     graphics.lineTo(segment.x2 + ox * sign, segment.y2 + oy * sign);
@@ -187,29 +187,19 @@ export function drawFences(
       const t = i / count;
       const px = segment.x1 + dx * t;
       const py = segment.y1 + dy * t;
+      const post = (segment.gate ? 3.2 : 2.6) * Math.min(zoomBoost, 2);
+      graphics.fillStyle(0x4a3a28, 1);
+      graphics.fillRect(px - post * 0.45, py - post * 2.4, post * 0.9, post * 3.1);
       graphics.fillStyle(palette.fencePost, 1);
-      graphics.fillCircle(px, py, (segment.gate ? 3.6 : 3) * Math.min(zoomBoost, 2.2));
-      if (!segment.gate) {
-        graphics.lineStyle(1.4, palette.fencePost, 1);
+      graphics.fillRect(px - post * 0.7, py - post * 2.6, post * 1.4, post * 0.55);
+      if (!segment.gate && i > 0 && i < count) {
+        const dropT = i / count;
+        const dpx = segment.x1 + dx * (dropT - 0.5 / count);
+        const dpy = segment.y1 + dy * (dropT - 0.5 / count);
+        graphics.lineStyle(1, palette.fenceWire, 0.75);
         graphics.beginPath();
-        graphics.moveTo(px, py - 5);
-        graphics.lineTo(px, py + 4);
-        graphics.strokePath();
-        if (i > 0 && i < count) {
-          const dropT = i / count;
-          const dpx = segment.x1 + dx * (dropT - 0.5 / count);
-          const dpy = segment.y1 + dy * (dropT - 0.5 / count);
-          graphics.lineStyle(1, palette.fenceWire, 0.75);
-          graphics.beginPath();
-          graphics.moveTo(dpx, dpy - 4);
-          graphics.lineTo(dpx, dpy + 3);
-          graphics.strokePath();
-        }
-      } else if (i === 0 || i === count) {
-        graphics.lineStyle(2.2, palette.fencePost, 1);
-        graphics.beginPath();
-        graphics.moveTo(px, py - 6);
-        graphics.lineTo(px, py + 5);
+        graphics.moveTo(dpx, dpy - 4);
+        graphics.lineTo(dpx, dpy + 3);
         graphics.strokePath();
       }
     }

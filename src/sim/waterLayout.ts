@@ -6,8 +6,8 @@ import type { FarmWaterPoint } from "./storyTypes";
  * Shared water and the homestead yard for a generated farm.
  * Lesson (docs/research/camps-water-infrastructure-lesson.md): camps share a water
  * point on a fence corner, some camps have no water, lick sits with some of the
- * water, and the kraal, crush and loading ramp sit beside the homestead on the
- * farm road. The owner asked for 2 to 4 camps per point.
+ * water. Cattle loading sits in a camp beside the farm road, not in the
+ * homestead yard. The owner asked for 2 to 4 camps per point.
  */
 
 const DIRS4: ReadonlyArray<readonly [number, number]> = [
@@ -19,7 +19,7 @@ const DIRS4: ReadonlyArray<readonly [number, number]> = [
 
 type YardPiece = { kind: Feature["kind"]; x: number; y: number };
 
-/** Local tiles inside the homestead block. Ramp sits on the road edge, facing the track. */
+/** Local tiles inside the homestead block. Loading yards are placed out by the road. */
 export function homesteadYardPieces(blockW: number, blockH: number, roadSouth: boolean): YardPiece[] {
   const row = (depthFromRoad: number) => (roadSouth ? blockH - 1 - depthFromRoad : depthFromRoad);
   const mid = Math.floor(blockW / 2);
@@ -29,9 +29,6 @@ export function homesteadYardPieces(blockW: number, blockH: number, roadSouth: b
     { kind: "reservoir", x: mid + 2, y: row(blockH - 1) },
     { kind: "shed", x: mid + 2, y: row(2) },
     { kind: "worker_house", x: blockW - 1, y: row(1) },
-    { kind: "kraal", x: 0, y: row(1) },
-    { kind: "crush", x: mid - 1, y: row(1) },
-    { kind: "loading_ramp", x: mid, y: row(0) },
     { kind: "trough", x: mid, y: row(Math.min(3, blockH - 1)) },
     { kind: "lick_feeder", x: 0, y: row(Math.min(2, blockH - 1)) },
   ];
@@ -40,16 +37,11 @@ export function homesteadYardPieces(blockW: number, blockH: number, roadSouth: b
   for (const piece of wanted) {
     let x = Math.max(0, Math.min(blockW - 1, piece.x));
     let y = Math.max(0, Math.min(blockH - 1, piece.y));
-    if (piece.kind === "loading_ramp") {
-      x = mid;
-      y = row(0);
-    }
     if (used.has(`${x},${y}`)) {
       let found = false;
       for (let yy = 0; yy < blockH && !found; yy += 1) {
         for (let xx = 0; xx < blockW; xx += 1) {
           if (used.has(`${xx},${yy}`)) continue;
-          if (piece.kind !== "loading_ramp" && xx === mid && yy === row(0)) continue;
           x = xx;
           y = yy;
           found = true;

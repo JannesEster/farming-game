@@ -54,6 +54,38 @@ describe("cattle class weights", () => {
       state.story.composition.stoor + state.story.composition.ox,
     ).toBeGreaterThan(0);
   });
+
+  it("gains about 600 g a day from 250 kg when grass and condition are good", () => {
+    const state = createGame(7);
+    state.story = createStoryState(4);
+    state.herd.condition = 80;
+    state.story.animals = [
+      {
+        id: "a-1",
+        tag: "1",
+        stockClass: "ox",
+        weightKg: 250,
+        condition: 80,
+        campId: 0,
+        whereabouts: "in_camp",
+        tileX: 1,
+        tileY: 1,
+        facing: 0,
+        activity: "graze",
+        escapeHours: 0,
+        escapeReason: null,
+        neighbourCharged: false,
+        split: false,
+      },
+    ];
+    applyYoungstockGrowth(state, 1, CONFIG);
+    expect(state.story.animals[0].weightKg).toBeCloseTo(250.6, 2);
+    state.story.animals[0].weightKg = 250;
+    state.story.animals[0].condition = 40;
+    applyYoungstockGrowth(state, 0.4, CONFIG);
+    expect(state.story.animals[0].weightKg).toBeLessThan(250.4);
+    expect(state.story.animals[0].weightKg).toBeGreaterThan(250);
+  });
 });
 
 describe("heifer breeding", () => {

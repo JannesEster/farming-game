@@ -20,7 +20,7 @@ import { ensurePeopleState, tickPeopleSchedule, workerAtHomeAtNight } from "../s
 import { farmerDisplayName, DEFAULT_PLAYER_DISPLAY_NAME } from "../sim/playerName";
 import { herdRearPathProgress, herderPathProgressBehindTail } from "../sim/convoy";
 import { tickDrinkingRealtime, herdDrinkingAtTrough, campHasWaterAccess } from "../sim/water";
-import { tileAlongRoad, truckParkTile } from "../sim/yard";
+import { roadTileBesideRamp, tileAlongRoad, truckParkTile } from "../sim/yard";
 import {
   beginSaleConvoy,
   tickSaleConvoyRealtime,
@@ -91,6 +91,10 @@ import { resolveGroundTap, resolveHerdTap } from "./selection";
 import { isoLayout, tileCenter, tileTop, worldToTile, type IsoLayout } from "./iso";
 import { palette } from "./palette";
 import { campLabelTile, offsetsForHerd } from "./herdLayout";
+import { layoutAnimals } from "./animalLayout";
+import { filterAnimals, TOLLY_OVER_300 } from "../sim/animals";
+import { startEscape, tickEscapeWanderRealtime } from "../sim/escapes";
+import { cutOutHerderProgress, cutOutRearProgress, escapedAnimalIds, requestCutOut, tickCutOutRealtime } from "../sim/cutOut";
 import { boundsVisible, chunkCoordsForTile } from "./terrain";
 import { bakeTerrainChunk } from "./groundLayer";
 import { placeGateSprites } from "./fenceDecor";
@@ -103,6 +107,11 @@ import {
   cowPresentationScale,
   ensureCowDotTexture,
   ensureCowViewTextures,
+  ensureCattleOctantTextures,
+  cattleOctantKey,
+  cattleOctantScale,
+  cattleCoatIndex,
+  cowOctantFromScreen,
   ensureFarmhandTexture,
   ensureFarmerTexture,
   ensureWorkerHouseTexture,
@@ -114,13 +123,51 @@ import {
   maybePaintedTermiteAt,
   maybeRockAt,
   paintedSpritesReady,
-  preloadPaintedSprites,
   propSpriteForKind,
 } from "./sprites";
 import {
   homesteadSpritePlacementsFromFeatures,
   workerCottagePlacements,
 } from "./homesteadLayout";
+import {
+  cattlePose,
+  ensureSoftShadow,
+  personPose,
+  placeShadow,
+  placeV2Fences,
+  placeV2Props,
+  preloadV2,
+  roadtrainEndOffsets,
+  roadtrainFile,
+  v2Ready,
+  vehiclePose,
+} from "./v2Art";
+import { ensureV2GroundFillTexture, v2GroundReady } from "./v2Ground";
+
+function clearHerdTransit(state: GameState): void {
+  state.herd.transit = null;
+}
+
+function clearCutOut(state: GameState): void {
+  if (state.story) state.story.cutOut = null;
+}
+
+/** Put a capture drive back in the grazing herd so the next shot starts clean. */
+function releaseCutOutAnimals(state: GameState): void {
+  clearCutOut(state);
+  const campId = state.herd.campId;
+  for (const animal of state.story?.animals ?? []) {
+    if (animal.whereabouts !== "cut_out") continue;
+    animal.whereabouts = "in_camp";
+    animal.split = false;
+    animal.campId = campId;
+    animal.activity = "graze";
+  }
+}
+
+function clearSaleConvoy(state: GameState): void {
+  if (state.story) state.story.saleConvoy = null;
+}
 
 type PointerRec = {
   x: number;
@@ -164,7 +211,11 @@ export class FarmScene extends Phaser.Scene {
   private track = new Set<string>();
   private tileSprites: Phaser.GameObjects.Image[] = [];
   private chunkRoots = new Map<string, Phaser.GameObjects.Container>();
-  private chunkRenderTextures = new Map<string, Phaser.GameObjects.RenderTexture>();
+  private chunkRenderTextures = new Map<string, Phaser.GameObjects.RenderTexture | Phaser.GameObjects.Image>();
+  private groundFill?: Phaser.GameObjects.TileSprite;
+  private fenceArt: Phaser.GameObjects.Image[] = [];
+  private fenceSig = "";
+  private cowShadows: Phaser.GameObjects.Image[] = [];
   private paintedSprites = false;
   private fenceGates: Phaser.GameObjects.Image[] = [];
   private shownPct = new Map<number, number>();
@@ -180,6 +231,8 @@ export class FarmScene extends Phaser.Scene {
   private captureDrinkHeads = 0;
   private captureKraalLineup = false;
   private capturePin: { x: number; y: number; zoom: number } | null = null;
+  private captureWhy = "";
+  private captureHideStaff = false;
   private yardBakkie?: Phaser.GameObjects.Image;
   private cattleTruck?: Phaser.GameObjects.Image;
   private bakkieDust?: Phaser.GameObjects.Graphics;
@@ -217,7 +270,7 @@ export class FarmScene extends Phaser.Scene {
   }
 
   preload(): void {
-    preloadPaintedSprites(this.load);
+    preloadV2(this.load);
   }
 
   create(): void {
@@ -243,14 +296,18 @@ export class FarmScene extends Phaser.Scene {
     const tileH = CONFIG.view.tileHeight;
     this.layout = isoLayout(this.state.width, this.state.height, tileW, tileH, CONFIG.view.boundsPadPx);
     this.track = trackKeys(this.state);
-    this.paintedSprites = paintedSpritesReady(this.textures);
+    this.paintedSprites = v2Ready(this.textures) || paintedSpritesReady(this.textures);
     ensureCowDotTexture(this);
-    ensureFarmhandTexture(this);
-    ensureFarmerTexture(this);
-    ensureWorkerHouseTexture(this);
-    ensureStep3bPropTextures(this);
+    ensureSoftShadow(this);
+    if (!v2Ready(this.textures)) {
+      ensureFarmhandTexture(this);
+      ensureFarmerTexture(this);
+      ensureWorkerHouseTexture(this);
+      ensureStep3bPropTextures(this);
+      if (this.paintedSprites) ensureCowViewTextures(this);
+      ensureCattleOctantTextures(this);
+    }
     initStoryPeople(this.state);
-    if (this.paintedSprites) ensureCowViewTextures(this);
     this.buildProceduralFallback();
     if (this.paintedSprites) {
       this.bakeAllTerrain();
@@ -311,6 +368,15 @@ export class FarmScene extends Phaser.Scene {
       onHerdLocator: () => {
         const center = this.mobCenter();
         this.jumpCameraTo(center.x, center.y, true);
+      },
+      onToggleAnimal: (id) => this.toggleAnimal(id),
+      onAnimalFilter: (filter) => this.applyAnimalFilter(filter),
+      onCutToCamp: () => this.orderCutToPendingCamp(),
+      onCutToKraal: () => this.orderCutToKraal(),
+      onRoundUp: () => this.orderRoundUp(),
+      onClearAnimalFocus: () => {
+        if (this.state.story) this.state.story.focusedAnimalId = null;
+        this.syncHud();
       },
     });
     this.market = mountMarketSheet({
@@ -734,6 +800,7 @@ export class FarmScene extends Phaser.Scene {
         this.captureLightingHour = null;
         this.captureSkipCowCull = false;
         this.captureHoldTransit = false;
+        this.captureHideStaff = false;
         this.setSpeed("pause");
         this.hud.hideEventCard();
         this.hud.clearHint();
@@ -979,6 +1046,37 @@ export class FarmScene extends Phaser.Scene {
         if (!cottage) return false;
         return this.state.campIds[cottage.y * this.state.width + cottage.x] === -1;
       },
+      namedSpritesInView: (role: string) => this.namedSpritesInView(role),
+      pictureAudit: () => this.pictureAudit(),
+      prepareEscapeCapture: () => this.prepareEscapeCapture(),
+      prepareAnimalDetailCapture: () => this.prepareAnimalDetailCapture(),
+      prepareMultiSelectCapture: () => this.prepareMultiSelectCapture(),
+      prepareCutOutCapture: () => this.prepareCutOutCapture(),
+      prepareFacingCapture: () => this.prepareFacingCapture(),
+      prepareTruckRampCapture: () => this.prepareTruckRampCapture(),
+      prepareHandlingCapture: () => this.prepareHandlingCapture(),
+      prepareOverviewCapture: () => this.prepareOverviewCapture(),
+      prepareHomesteadCapture: () => this.prepareHomesteadCapture(),
+      v2ArtAudit: () => this.v2ArtAudit(),
+      gameFps: () => this.game.loop.actualFps,
+      yardCaptureAudit: () => this.yardCaptureAudit(),
+      animalDetailText: () => ({
+        title: document.getElementById("animal-detail-title")?.textContent ?? "",
+        body: document.getElementById("animal-detail-body")?.textContent ?? "",
+      }),
+      selectedAnimalCount: () => document.querySelectorAll(".animal-row.is-selected").length,
+      debugStep3c: () => ({
+        head: this.state.herd.headCount,
+        animals: this.state.story?.animals?.length ?? 0,
+        out: (this.state.story?.animals ?? []).filter((animal) => animal.whereabouts === "escaped" || animal.whereabouts === "neighbour").length,
+        heavyTollies: filterAnimals(this.state.story?.animals ?? [], TOLLY_OVER_300).length,
+        cutPhase: this.state.story?.cutOut?.phase ?? null,
+        cutProgress: this.state.story?.cutOut?.progress ?? null,
+        salePhase: this.state.story?.saleConvoy?.phase ?? null,
+        captureWhy: this.captureWhy,
+        transitPhase: this.state.herd.transit?.phase ?? null,
+        transitProgress: this.state.herd.transit?.progress ?? null,
+      }),
     };
     const flowBridge = getGameFlow().exposeCaptureApi();
     (window as Window & { __farmCapture?: typeof bridge & Record<string, unknown> }).__farmCapture = {
@@ -1068,7 +1166,10 @@ export class FarmScene extends Phaser.Scene {
       tickDrinkingRealtime(this.state, delta, spd);
       tickSaleConvoyRealtime(this.state, delta, spd);
       tickBakkieRealtime(this.state, delta, spd);
+      tickCutOutRealtime(this.state, delta, this.mode);
+      tickEscapeWanderRealtime(this.state, delta, spd);
     }
+    this.showCalmEscapeNote();
     this.syncBakkieVisual();
     this.syncCattleTruckVisual();
     this.placeHerd(time);
@@ -1076,6 +1177,7 @@ export class FarmScene extends Phaser.Scene {
     this.placeFarmer();
     this.refreshCampLabelScale();
     this.cullProps();
+    this.syncGroundFill();
     this.cullChunks();
     if (this.blades && !this.reduceMotion && !this.paintedSprites) {
       this.blades.rotation += (delta / 1000) * CONFIG.view.windmillRadiansPerSecond;
@@ -1091,6 +1193,10 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private syncHerdLocator(): void {
+    if (this.captureHideStaff) {
+      this.hud.setHerdLocator(false, "", "right");
+      return;
+    }
     const camera = this.cameras.main;
     const insets = viewportCameraInsets();
     const view = visibleContentBounds(
@@ -1191,7 +1297,9 @@ export class FarmScene extends Phaser.Scene {
   private bakeAllTerrain(): void {
     for (const rt of this.chunkRenderTextures.values()) rt.destroy();
     this.chunkRenderTextures.clear();
-  this.chunkRoots.forEach((root) => root.destroy());
+    this.groundFill?.destroy();
+    this.groundFill = undefined;
+    this.chunkRoots.forEach((root) => root.destroy());
     this.chunkRoots.clear();
     const size = CONFIG.view.terrainChunkTiles;
     for (let cy = 0; cy * size < this.state.height; cy += 1) {
@@ -1201,6 +1309,10 @@ export class FarmScene extends Phaser.Scene {
     }
     for (const camp of this.state.camps) {
       this.shownPct.set(camp.id, Math.round(grazeableFraction(camp) * 100));
+    }
+    if (v2GroundReady(this.textures)) {
+      const fillKey = ensureV2GroundFillTexture(this, this.layout);
+      if (fillKey) this.groundFill = this.add.tileSprite(0, 0, 64, 64, fillKey).setOrigin(0, 0).setDepth(-2);
     }
   }
 
@@ -1254,6 +1366,18 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private paintProps(): void {
+    if (v2Ready(this.textures)) {
+      const placed = placeV2Props(this, this.state, this.layout);
+      this.propSprites.push(...placed.images);
+      this.yardBakkie = placed.bakkie;
+      if (placed.bakkieParked) this.parkedBakkie = placed.bakkieParked;
+      if (placed.homesteadLight) this.homesteadLight = placed.homesteadLight;
+      this.workerCottageSprites.push(...placed.cottages);
+      for (const cottage of placed.cottages) {
+        this.workerCottageLights.push(this.add.graphics().setDepth(cottage.depth - 0.1));
+      }
+      return;
+    }
     if (this.paintedSprites) {
       const tileW = CONFIG.view.tileWidth;
       const tileH = CONFIG.view.tileHeight;
@@ -1304,7 +1428,10 @@ export class FarmScene extends Phaser.Scene {
         "trough",
         "lick_feeder",
         "kraal",
+        "holding_pen",
+        "race",
         "crush",
+        "handling_roof",
         "loading_ramp",
       ]);
       for (const feature of this.state.features) {
@@ -1313,11 +1440,12 @@ export class FarmScene extends Phaser.Scene {
           if (!this.textures.exists(def.key)) continue;
           const center = tileCenter(feature.x, feature.y, this.layout, tileW, tileH);
           const nudge = this.stackedInfraNudge(feature);
+          const roofLift = feature.kind === "handling_roof" ? 18 : 0;
           const image = this.add
-            .image(center.x + nudge.x, center.y + nudge.y, def.key)
+            .image(center.x + nudge.x, center.y + nudge.y - roofLift, def.key)
             .setOrigin(def.originX, def.originY)
             .setScale(def.scale)
-            .setDepth(9 + center.y * 0.04);
+            .setDepth(9 + center.y * 0.04 + (feature.kind === "handling_roof" ? 0.8 : 0));
           image.setData("featureKind", feature.kind);
           image.setData("tileX", feature.x);
           image.setData("tileY", feature.y);
@@ -1560,13 +1688,19 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private redrawFences(): void {
-    const herdCamp =
-      this.state.herd.transit?.toCampId !== undefined && herdInTransit(this.state.herd)
-        ? this.state.herd.campId
-        : this.state.herd.campId;
+    const herdCamp = this.state.herd.campId;
     this.fenceGates.forEach((gate) => gate.destroy());
     this.fenceGates = [];
     const segments = collectFenceSegments(this.state, this.layout, herdCamp, this.selected);
+    if (v2Ready(this.textures)) {
+      const sig = `${segments.length}:${herdCamp}:${this.selected ? 1 : 0}`;
+      if (sig === this.fenceSig) return;
+      this.fenceSig = sig;
+      this.fenceArt.forEach((sprite) => sprite.destroy());
+      this.fenceArt = placeV2Fences(this, segments);
+      this.fences.clear();
+      return;
+    }
     drawFences(this.fences, segments, this.cameras.main.zoom);
     this.fenceGates = placeGateSprites(this, segments, this.paintedSprites);
   }
@@ -1646,7 +1780,7 @@ export class FarmScene extends Phaser.Scene {
 
   private farmhandTargetScale(): number {
     const cowScale = cattleDisplayScale(1);
-    return cowScale * 2.85;
+    return cowScale * 4.4;
   }
 
   private farmhandScreenHeightPx(): number {
@@ -1673,23 +1807,35 @@ export class FarmScene extends Phaser.Scene {
     const dx = foot.x - lastPos.x;
     const dy = foot.y - lastPos.y;
     const moving = Math.hypot(dx, dy) > 0.4 || presence.walkProgress < 0.95;
-    const dir = inferPersonDir(dx || 0, dy || 0.01);
-  const frame = moving ? Math.floor(performance.now() / 180) % 2 : 0;
-    const tex = personTextureKey(role, dir, frame);
-    if (this.textures.exists(tex)) sprite.setTexture(tex);
+    const v2Person = v2Ready(this.textures) ? personPose(role, dx || 0.2, dy || 0.2, moving) : null;
+    if (v2Person && this.textures.exists(v2Person.key)) {
+      sprite.setTexture(v2Person.key);
+      sprite.setOrigin(v2Person.originX, v2Person.originY);
+      sprite.setScale(v2Person.scale);
+    } else {
+      const dir = inferPersonDir(dx || 0, dy || 0.01);
+      const frame = moving ? Math.floor(performance.now() / 180) % 2 : 0;
+      const tex = personTextureKey(role, dir, frame);
+      if (this.textures.exists(tex)) sprite.setTexture(tex);
+      sprite.setScale(scale);
+    }
     sprite.setPosition(foot.x, foot.y + bob);
-    sprite.setScale(scale);
-    sprite.setDepth(20000 + presence.tileX + presence.tileY);
+    sprite.setDepth(8 + foot.y * 0.04 + 0.45);
     lastPos.x = foot.x;
     lastPos.y = foot.y;
     return { x: foot.x, y: foot.y, bob, scale };
   }
 
   private farmerTargetScale(): number {
-    return cattleDisplayScale(1) * 2.85;
+    return cattleDisplayScale(1) * 4.4;
   }
 
   private placeFarmer(): void {
+    if (this.captureHideStaff) {
+      this.farmerSprite?.setVisible(false);
+      this.farmerNameTag?.setVisible(false);
+      return;
+    }
     if (!this.farmerSprite) return;
     const presence = this.state.story?.farmerPresence;
     if (!presence) {
@@ -1811,7 +1957,7 @@ export class FarmScene extends Phaser.Scene {
   private auditKind(kind: string): { count: number; inView: number; maxScreenPx: number } {
     const sprites: Phaser.GameObjects.Image[] = [];
     for (const sprite of this.propSprites) {
-      if (sprite.getData("featureKind") === kind) sprites.push(sprite);
+      if (sprite.getData("featureKind") === kind || sprite.getData("alsoKind") === kind) sprites.push(sprite);
     }
     if (kind === "cattle_truck" && this.cattleTruck) sprites.push(this.cattleTruck);
     if (kind === "bakkie" && this.yardBakkie && !sprites.includes(this.yardBakkie)) sprites.push(this.yardBakkie);
@@ -1920,6 +2066,7 @@ export class FarmScene extends Phaser.Scene {
     this.capturePin = null;
     this.panVel = null;
     this.captureHideHerdLabel = false;
+    this.captureHideStaff = false;
     this.setCampLabelsShown(true);
     if (this.state.story?.saleConvoy) this.state.story.saleConvoy.phase = "done";
     if (this.state.story?.bakkieRun) this.state.story.bakkieRun.active = false;
@@ -1999,7 +2146,9 @@ export class FarmScene extends Phaser.Scene {
 
   private prepareSaleKraalCapture(): boolean {
     this.clearLogisticsForCapture();
-    const kraal = this.state.features.find((f) => f.kind === "kraal");
+    const kraal =
+      this.state.features.find((f) => f.kind === "holding_pen") ??
+      this.state.features.find((f) => f.kind === "kraal");
     const ramp = this.state.features.find((f) => f.kind === "loading_ramp");
     const crush = this.state.features.find((f) => f.kind === "crush");
     if (!kraal || !ramp || !crush || !this.state.story) return false;
@@ -2017,19 +2166,8 @@ export class FarmScene extends Phaser.Scene {
     this.syncCattleTruckVisual();
     this.syncHerdFromSim();
     this.placeHerd(performance.now());
-    const yardKinds = new Set([
-      "house",
-      "windmill",
-      "reservoir",
-      "shed",
-      "worker_house",
-      "kraal",
-      "crush",
-      "loading_ramp",
-    ]);
-    const tiles = this.state.features.filter(
-      (feature) => yardKinds.has(feature.kind) && this.state.campIds[feature.y * this.state.width + feature.x] === -1,
-    );
+    const yardKinds = new Set(["holding_pen", "race", "crush", "handling_roof", "loading_ramp", "kraal"]);
+    const tiles = this.state.features.filter((feature) => yardKinds.has(feature.kind));
     const bay = truckParkTile(this.state);
     if (bay) tiles.push({ kind: "track", x: bay.x, y: bay.y, scale: 1 });
     this.frameFeatureCluster(tiles.length > 0 ? tiles : [kraal], { x: 110, top: 100, bottom: 48 }, 1.45);
@@ -2079,10 +2217,10 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private truckOnRoad(): { awayTiles: number; screenPx: number } {
-    const kraal = this.state.features.find((f) => f.kind === "kraal");
+    const ramp = this.state.features.find((f) => f.kind === "loading_ramp");
     const tx = (this.cattleTruck?.getData("tileX") as number) ?? 0;
     const ty = (this.cattleTruck?.getData("tileY") as number) ?? 0;
-    const away = kraal ? Math.hypot(tx - kraal.x, ty - kraal.y) : 0;
+    const away = ramp ? Math.hypot(tx - ramp.x, ty - ramp.y) : 0;
     const screenPx = this.cattleTruck?.visible ? this.screenHeightOf(this.cattleTruck) : 0;
     return { awayTiles: away, screenPx };
   }
@@ -2201,6 +2339,574 @@ export class FarmScene extends Phaser.Scene {
     return bestIndex / (path.length - 1);
   }
 
+  private namedSpritesInView(role: string): { count: number; maxScreenPx: number; octants: number[]; textureKeys: string[] } {
+    const camera = this.cameras.main;
+    const view = camera.worldView;
+    const sprites: Phaser.GameObjects.Image[] = [];
+    if (role === "cattle-truck" && this.cattleTruck?.visible) sprites.push(this.cattleTruck);
+    else {
+      for (const cow of this.cows) {
+        if (!cow.visible) continue;
+        if (cow.getData("captureRole") === role || cow.name === role) sprites.push(cow);
+      }
+    }
+    let count = 0;
+    let maxScreenPx = 0;
+    const octants = new Set<number>();
+    for (const sprite of sprites) {
+      if (sprite.x < view.x || sprite.x > view.right || sprite.y < view.y || sprite.y > view.bottom) continue;
+      count += 1;
+      maxScreenPx = Math.max(maxScreenPx, sprite.displayHeight * camera.zoom);
+      const octant = sprite.getData("octant");
+      if (typeof octant === "number") octants.add(octant);
+    }
+    const textureKeys = [...new Set(sprites.filter((sprite) => sprite.x >= view.x && sprite.x <= view.right && sprite.y >= view.y && sprite.y <= view.bottom).map((sprite) => sprite.texture.key))];
+    return { count, maxScreenPx, octants: [...octants], textureKeys };
+  }
+
+  private pictureAudit(): {
+    overlapFraction: number;
+    herdOverlapFraction: number;
+    herdCoversHomestead: boolean;
+    cowCount: number;
+    herdCount: number;
+  } {
+    const bodyOf = (sprite: Phaser.GameObjects.Image) => {
+      const w = Math.max(8, sprite.displayWidth * 0.42);
+      const h = Math.max(8, sprite.displayHeight * 0.36);
+      return { x: sprite.x - w * 0.5, y: sprite.y - h * 0.78, w, h };
+    };
+    const overlaps = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
+      a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    const fraction = (sprites: Phaser.GameObjects.Image[]) => {
+      const bodies = sprites.map(bodyOf);
+      const hit = new Set<number>();
+      for (let i = 0; i < bodies.length; i += 1) {
+        for (let j = i + 1; j < bodies.length; j += 1) {
+          if (!overlaps(bodies[i], bodies[j])) continue;
+          hit.add(i);
+          hit.add(j);
+        }
+      }
+      return bodies.length === 0 ? 0 : hit.size / bodies.length;
+    };
+    const camera = this.cameras.main;
+    const view = camera.worldView;
+    const inShot = (sprite: Phaser.GameObjects.Image) =>
+      sprite.visible && sprite.x >= view.x && sprite.x <= view.right && sprite.y >= view.y && sprite.y <= view.bottom;
+    const visibleCows = this.cows.filter((cow) => inShot(cow) && typeof cow.getData("captureRole") === "string");
+    const herd = this.cows.filter((cow) => cow.getData("captureRole") === "herd-animal");
+    const house =
+      this.propSprites.find((sprite) => sprite.texture.key === SPRITE_KEYS.farmhouse) ??
+      this.propSprites.find((sprite) => sprite.getData("featureKind") === "house");
+    const cottage = this.workerCottageSprites[0];
+    const yard = [house, cottage].filter((sprite): sprite is Phaser.GameObjects.Image => Boolean(sprite));
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    for (const cow of herd) {
+      minX = Math.min(minX, cow.x);
+      maxX = Math.max(maxX, cow.x);
+      minY = Math.min(minY, cow.y);
+      maxY = Math.max(maxY, cow.y);
+    }
+    const herdCoversHomestead = yard.some(
+      (building) => building.x >= minX && building.x <= maxX && building.y >= minY && building.y <= maxY,
+    );
+    return {
+      overlapFraction: fraction(visibleCows),
+      herdOverlapFraction: fraction(herd),
+      herdCoversHomestead,
+      cowCount: visibleCows.length,
+      herdCount: herd.length,
+    };
+  }
+
+  private frameWorldPoints(points: { x: number; y: number }[], fill = 0.5): void {
+    if (points.length === 0) return;
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    for (const point of points) {
+      minX = Math.min(minX, point.x);
+      maxX = Math.max(maxX, point.x);
+      minY = Math.min(minY, point.y);
+      maxY = Math.max(maxY, point.y);
+    }
+    const camera = this.cameras.main;
+    const span = Math.max(maxX - minX, maxY - minY, 96);
+    const zoom = clampZoom((Math.min(camera.width, camera.height) * fill) / span, this.minZoom, this.maxZoom);
+    camera.setZoom(zoom);
+    this.pinCapture((minX + maxX) / 2, (minY + maxY) / 2, zoom);
+    camera.preRender();
+  }
+
+  private expandHerdSheet(): void {
+    const sheet = document.getElementById("herd-sheet");
+    if (sheet?.dataset.expanded === "true") return;
+    document.getElementById("sheet-summary")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  }
+
+  private collapseHerdSheet(): void {
+    const sheet = document.getElementById("herd-sheet");
+    if (sheet?.dataset.expanded !== "true") return;
+    document.getElementById("sheet-summary")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  }
+
+  private prepareEscapeCapture(): boolean {
+    const story = this.state.story;
+    if (!story?.animals?.length) return false;
+    this.state.date.hour = 10;
+    this.captureLightingHour = 10;
+    this.collapseHerdSheet();
+    const animal = story.animals.find((item) => item.whereabouts === "in_camp" && item.stockClass !== "calf");
+    if (!animal || !startEscape(this.state, animal, 3)) return false;
+    tickEscapeWanderRealtime(this.state, 1200, 1);
+    this.placeIndividualAnimals(performance.now());
+    const cow = this.cows.find((sprite) => sprite.getData("animalTag") === animal.tag);
+    if (!cow) return false;
+    const camp = this.state.camps.find((item) => item.id === animal.campId);
+    const outside =
+      camp !== undefined && !camp.tiles.some((tile) => tile.x === Math.round(animal.tileX) && tile.y === Math.round(animal.tileY));
+    const fence = collectFenceSegments(this.state, this.layout, animal.campId, false);
+    let nearFence: { x: number; y: number } | null = null;
+    let nearDist = Number.POSITIVE_INFINITY;
+    for (const segment of fence) {
+      const point = { x: (segment.x1 + segment.x2) / 2, y: (segment.y1 + segment.y2) / 2 };
+      const dist = Math.hypot(point.x - cow.x, point.y - cow.y);
+      if (dist < nearDist) {
+        nearDist = dist;
+        nearFence = point;
+      }
+    }
+    const framed = nearFence ? [{ x: cow.x, y: cow.y }, nearFence] : [{ x: cow.x, y: cow.y }];
+    this.frameWorldPoints(framed, 0.62);
+    this.placeIndividualAnimals(performance.now());
+    const seen = this.namedSpritesInView("escaped-animal");
+    return outside && seen.count >= 1 && seen.maxScreenPx >= 18;
+  }
+
+  private prepareAnimalDetailCapture(): boolean {
+    const animal =
+      this.state.story?.animals?.find((item) => item.whereabouts === "in_camp" && !item.split) ??
+      this.state.story?.animals?.find((item) => item.whereabouts !== "sold");
+    if (!animal) return false;
+    this.selected = true;
+    if (this.state.story) {
+      this.state.story.focusedAnimalId = animal.id;
+      this.state.story.selectedAnimalIds = [animal.id];
+    }
+    this.syncHud();
+    this.expandHerdSheet();
+    this.syncHud();
+    this.hud.clearHint();
+    const sheet = document.getElementById("sheet-detail");
+    if (sheet) sheet.scrollTop = 0;
+    this.placeIndividualAnimals(performance.now());
+    const cow = this.cows.find((sprite) => sprite.getData("animalTag") === animal.tag);
+    if (cow) this.frameWorldPoints([{ x: cow.x, y: cow.y }], 0.38);
+    this.placeIndividualAnimals(performance.now());
+    const title = document.getElementById("animal-detail-title")?.textContent ?? "";
+    const body = document.getElementById("animal-detail-body")?.textContent ?? "";
+    const clean = !/\b(id|campId|stockClass)\b/i.test(`${title} ${body}`);
+    const role = cow?.getData("captureRole");
+    const seen = this.namedSpritesInView(typeof role === "string" ? role : "herd-animal");
+    return title.startsWith("Tag ") && body.length > 8 && clean && seen.count >= 1 && seen.maxScreenPx >= 16;
+  }
+
+  private prepareMultiSelectCapture(): boolean {
+    const story = this.state.story;
+    if (!story?.animals) return false;
+    const matched = filterAnimals(story.animals, TOLLY_OVER_300).filter((animal) => animal.whereabouts === "in_camp");
+    if (matched.length < 2) return false;
+    this.selected = true;
+    this.syncHud();
+    this.expandHerdSheet();
+    document.getElementById("animal-filter-tolly300")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    this.hud.clearHint();
+    const sheet = document.getElementById("sheet-detail");
+    if (sheet) sheet.scrollTop = 0;
+    this.placeIndividualAnimals(performance.now());
+    const cows = this.cows
+      .filter((sprite) => matched.some((animal) => animal.tag === sprite.getData("animalTag")))
+      .slice(0, 6);
+    this.frameWorldPoints(cows.map((sprite) => ({ x: sprite.x, y: sprite.y })), 0.62);
+    this.placeIndividualAnimals(performance.now());
+    const rows = document.querySelectorAll(".animal-row.is-selected").length;
+    return rows >= 2 && this.namedSpritesInView("herd-animal").count >= 2;
+  }
+
+  private prepareCutOutCapture(): boolean {
+    const story = this.state.story;
+    if (!story) return false;
+    hireFarmhand(this.state);
+    ensurePeopleState(this.state);
+    if (!story.workGrid) story.workGrid = defaultWorkGrid();
+    story.workGrid.move_herd_help = 3;
+    this.state.date.hour = 10;
+    this.captureLightingHour = 10;
+    this.collapseHerdSheet();
+    this.hud.clearHint();
+    clearHerdTransit(this.state);
+    releaseCutOutAnimals(this.state);
+    const group = filterAnimals(story.animals ?? [], TOLLY_OVER_300).slice(0, 6);
+    const use = group.length >= 3 ? group : (story.animals ?? []).filter((animal) => animal.whereabouts === "in_camp").slice(0, 6);
+    if (use.length < 3) return false;
+    const dest = this.state.camps.find((camp) => camp.id !== this.state.herd.campId);
+    if (!dest) return false;
+    story.selectedAnimalIds = use.map((animal) => animal.id);
+    const result = requestCutOut(this.state, story.selectedAnimalIds, { kind: "camp", campId: dest.id });
+    if (!result.ok || result.queued) return false;
+    let guard = 0;
+    while (guard < 120000 && story.cutOut && story.cutOut.phase !== "drive") {
+      tickCutOutRealtime(this.state, 48, "x3");
+      guard += 48;
+    }
+    if (story.cutOut?.phase !== "drive") return false;
+    while (guard < 180000 && story.cutOut && story.cutOut.progress < 0.42) {
+      tickCutOutRealtime(this.state, 48, "x3");
+      guard += 48;
+    }
+    this.placeIndividualAnimals(performance.now());
+    this.placeFarmhand();
+    this.placeFarmer();
+    const cows = this.cows.filter((sprite) => sprite.getData("captureRole") === "cut-out-animal" && sprite.visible);
+    const herder = story.cutOut.herder === "piet" ? this.farmhandSprite : this.farmerSprite;
+    const points = cows.map((sprite) => ({ x: sprite.x, y: sprite.y }));
+    if (herder) points.push({ x: herder.x, y: herder.y });
+    this.frameWorldPoints(points, 0.7);
+    this.placeIndividualAnimals(performance.now());
+    this.placeFarmhand();
+    this.placeFarmer();
+    const seen = this.namedSpritesInView("cut-out-animal");
+    const behind = cutOutHerderProgress(this.state) <= cutOutRearProgress(this.state) + 0.001;
+    const workerSeen = story.cutOut.herder === "piet" ? this.countFarmhandInView() >= 1 : this.countFarmerInView() >= 1;
+    return seen.count >= 3 && seen.maxScreenPx >= 16 && behind && workerSeen && (story.cutOut.progress ?? 0) > 0.05;
+  }
+
+  private prepareFacingCapture(): boolean {
+    const story = this.state.story;
+    if (!story?.animals) return false;
+    this.state.date.hour = 11;
+    this.captureLightingHour = 11;
+    this.collapseHerdSheet();
+    this.hud.clearHint();
+    clearHerdTransit(this.state);
+    releaseCutOutAnimals(this.state);
+    const destId = this.pickCornerHerdDestination();
+    const group = story.animals.filter((animal) => animal.whereabouts === "in_camp" && !animal.split && animal.stockClass !== "calf").slice(0, 8);
+    if (destId === null || group.length < 8) return false;
+    story.selectedAnimalIds = group.map((animal) => animal.id);
+    const result = requestCutOut(this.state, story.selectedAnimalIds, { kind: "camp", campId: destId });
+    if (!result.ok || result.queued) return false;
+    const bend = this.cornerProgress(story.cutOut?.path ?? []);
+    let guard = 0;
+    while (guard < 220000 && story.cutOut && story.cutOut.phase !== "done") {
+      tickCutOutRealtime(this.state, 40, "x3");
+      guard += 40;
+      const order = story.cutOut;
+      if (!order || order.phase !== "drive") continue;
+      if (bend !== null && Math.abs(order.progress - bend) > 0.04) {
+        if (order.progress > bend + 0.06) break;
+        continue;
+      }
+      if (order.progress < 0.18 || order.progress > 0.8) continue;
+      this.placeIndividualAnimals(performance.now());
+      const ordered = this.cutOutSpritesInOrder();
+      if (ordered.length < 6) continue;
+      const framed = ordered;
+      if (new Set(framed.map((cow) => cow.getData("octant"))).size < 3) continue;
+      this.placeFarmhand();
+      this.placeFarmer();
+      const herder = story.cutOut?.herder === "piet" ? this.farmhandSprite : this.farmerSprite;
+      const points = framed.map((sprite) => ({ x: sprite.x, y: sprite.y }));
+      if (herder?.visible) points.push({ x: herder.x, y: herder.y });
+      this.frameWorldPoints(points, 0.78);
+      this.placeIndividualAnimals(performance.now());
+      this.placeFarmhand();
+      this.placeFarmer();
+      const seen = this.namedSpritesInView("cut-out-animal");
+      const workerPx = Math.max(this.farmhandScreenHeightPx(), this.farmerSprite?.visible ? this.farmerSprite.displayHeight * this.cameras.main.zoom : 0);
+      const workerIn = story.cutOut?.herder === "piet" ? this.countFarmhandInView() >= 1 : this.countFarmerInView() >= 1;
+      if (seen.octants.length >= 3 && seen.count >= 4 && seen.maxScreenPx >= 16 && workerIn && workerPx >= 22) {
+        this.collapseHerdSheet();
+        this.hud.clearHint();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private cornerProgress(path: { x: number; y: number }[]): number | null {
+    if (path.length < 6) return null;
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    const octants: number[] = [];
+    for (let index = 1; index < path.length; index += 1) {
+      const from = tileCenter(path[index - 1].x, path[index - 1].y, this.layout, tileW, tileH);
+      const to = tileCenter(path[index].x, path[index].y, this.layout, tileW, tileH);
+      octants.push(cowOctantFromScreen(to.x - from.x, to.y - from.y));
+    }
+    let bestLength = 99;
+    let bestProgress: number | null = null;
+    for (let length = 3; length <= 10; length += 1) {
+      for (let index = 0; index + length <= octants.length; index += 1) {
+        if (new Set(octants.slice(index, index + length)).size < 3) continue;
+        const progress = (index + length / 2) / path.length;
+        if (progress < 0.4 || progress > 0.72) continue;
+        if (length < bestLength) {
+          bestLength = length;
+          bestProgress = progress;
+        }
+      }
+    }
+    return bestProgress;
+  }
+
+  private cutOutSpritesInOrder(): Phaser.GameObjects.Image[] {
+    const ids = this.state.story?.cutOut?.animalIds ?? [];
+    const animals = this.state.story?.animals ?? [];
+    const sprites: Phaser.GameObjects.Image[] = [];
+    for (const id of ids) {
+      const animal = animals.find((item) => item.id === id);
+      if (!animal) continue;
+      const sprite = this.cows.find((cow) => cow.visible && cow.getData("animalTag") === animal.tag);
+      if (sprite) sprites.push(sprite);
+    }
+    return sprites;
+  }
+
+  private pickCornerHerdDestination(): number | null {
+    let bestId: number | null = null;
+    let bestScore = -1;
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    for (const camp of this.state.camps) {
+      if (camp.id === this.state.herd.campId) continue;
+      const path = planHerdPath(this.state, this.state.herd.campId, camp.id);
+      if (path.length < 8) continue;
+      const octants = new Set<number>();
+      for (let index = 1; index < path.length; index += 1) {
+        const from = tileCenter(path[index - 1].x, path[index - 1].y, this.layout, tileW, tileH);
+        const to = tileCenter(path[index].x, path[index].y, this.layout, tileW, tileH);
+        octants.add(cowOctantFromScreen(to.x - from.x, to.y - from.y));
+      }
+      const score = octants.size * 100 + path.length;
+      if (score > bestScore) {
+        bestScore = score;
+        bestId = camp.id;
+      }
+    }
+    return bestId ?? this.pickLongHerdMoveDestination();
+  }
+
+  private prepareTruckRampCapture(): boolean {
+    const story = this.state.story;
+    if (!story) return false;
+    this.state.date.hour = 11;
+    this.captureLightingHour = 11;
+    this.captureHideStaff = true;
+    this.collapseHerdSheet();
+    this.hud.clearHint();
+    this.syncHud();
+    clearHerdTransit(this.state);
+    releaseCutOutAnimals(this.state);
+    clearSaleConvoy(this.state);
+    const group = filterAnimals(story.animals ?? [], TOLLY_OVER_300).filter((animal) => animal.whereabouts === "in_camp").slice(0, 8);
+    const use = group.length >= 5 ? group : (story.animals ?? []).filter((animal) => animal.whereabouts === "in_camp" && animal.stockClass !== "calf").slice(0, 8);
+    if (use.length < 2) return false;
+    story.selectedAnimalIds = use.map((animal) => animal.id);
+    const started = requestCutOut(this.state, story.selectedAnimalIds, { kind: "kraal" });
+    if (!started.ok || started.queued) return false;
+    let guard = 0;
+    while (guard < 240000 && story.cutOut && story.cutOut.phase !== "done") {
+      tickCutOutRealtime(this.state, 40, "x3");
+      guard += 40;
+    }
+    if (!story.saleConvoy || story.cutOut?.phase !== "done") return false;
+    story.saleConvoy.phase = "ramp";
+    story.saleConvoy.phaseProgress = 0.35;
+    clearHerdTransit(this.state);
+    this.placeIndividualAnimals(performance.now());
+    this.syncCattleTruckVisual();
+    const ramp = this.state.features.find((feature) => feature.kind === "loading_ramp");
+    const truck = this.cattleTruck;
+    if (!ramp || !truck?.visible) return false;
+    const saleCows = this.cows.filter((sprite) => sprite.visible && sprite.getData("captureRole") === "cut-out-animal");
+    const rampPos = tileCenter(ramp.x, ramp.y, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
+    this.frameWorldPoints(
+      this.padYardFrame([
+        { x: truck.x, y: truck.y },
+        ...this.truckExtentPoints(),
+        { x: rampPos.x, y: rampPos.y },
+        ...this.handlingPoints(),
+        ...saleCows.map((sprite) => ({ x: sprite.x, y: sprite.y })),
+      ]),
+      0.86,
+    );
+    this.placeIndividualAnimals(performance.now());
+    this.syncCattleTruckVisual();
+    this.cullProps();
+    this.setCampLabelsShown(false);
+    this.placeFarmer();
+    this.placeFarmhand();
+    const herdOnYard = this.pictureAudit().herdCoversHomestead;
+    const yard = this.yardCaptureAudit();
+    this.captureWhy = `${truck.name}|herd:${herdOnYard}|px:${yard.truckPx.toFixed(0)}|pens:${yard.pens}|cattle:${yard.cattle}|over:${yard.truckOverlapsPens}`;
+    return truck.name === "cattle-truck" && !herdOnYard && yard.truckPx >= 14 && yard.pens >= 3 && yard.cattle >= 5 && !yard.truckOverlapsPens;
+  }
+
+  /** Nose and tail of the parked truck, so the frame keeps the whole road train in view. */
+  private truckExtentPoints(): { x: number; y: number }[] {
+    const truck = this.cattleTruck;
+    if (!truck?.visible) return [];
+    const rearX = truck.getData("rearX");
+    const rearY = truck.getData("rearY");
+    const cabX = truck.getData("cabX");
+    const cabY = truck.getData("cabY");
+    if (typeof rearX === "number" && typeof rearY === "number" && typeof cabX === "number" && typeof cabY === "number") {
+      return [
+        { x: rearX, y: rearY },
+        { x: cabX, y: cabY },
+      ];
+    }
+    const half = truck.displayWidth / 2;
+    const alongX = Number(truck.getData("alongX") ?? 1);
+    const alongY = Number(truck.getData("alongY") ?? 0);
+    const alongLen = Math.hypot(alongX, alongY) || 1;
+    const dx = (alongX / alongLen) * half;
+    const dy = (alongY / alongLen) * half;
+    return [
+      { x: truck.x - dx, y: truck.y - dy },
+      { x: truck.x + dx, y: truck.y + dy },
+    ];
+  }
+
+  /** Extra corners so the rails and the truck stay inside the frame, not on the crop. */
+  private padYardFrame(points: { x: number; y: number }[]): { x: number; y: number }[] {
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    for (const point of points) {
+      minX = Math.min(minX, point.x);
+      maxX = Math.max(maxX, point.x);
+      minY = Math.min(minY, point.y);
+      maxY = Math.max(maxY, point.y);
+    }
+    const pad = 48;
+    return [
+      ...points,
+      { x: minX - pad, y: minY - pad },
+      { x: maxX + pad, y: maxY + pad },
+    ];
+  }
+
+  private handlingPoints(): { x: number; y: number }[] {
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    const kinds = new Set(["holding_pen", "race", "crush", "loading_ramp", "handling_roof"]);
+    return this.state.features
+      .filter((feature) => kinds.has(feature.kind))
+      .map((feature) => tileCenter(feature.x, feature.y, this.layout, tileW, tileH));
+  }
+
+  private prepareHandlingCapture(): boolean {
+    if (!this.prepareTruckRampCapture()) return false;
+    const saleCows = this.cows.filter((sprite) => sprite.visible && sprite.getData("captureRole") === "cut-out-animal");
+    const truck = this.cattleTruck;
+    const points = [
+      ...this.handlingPoints(),
+      ...(truck ? [{ x: truck.x, y: truck.y }, ...this.truckExtentPoints()] : []),
+      ...saleCows.map((sprite) => ({ x: sprite.x, y: sprite.y })),
+    ];
+    this.frameWorldPoints(this.padYardFrame(points), 0.84);
+    this.placeIndividualAnimals(performance.now());
+    this.syncCattleTruckVisual();
+    this.cullProps();
+    this.setCampLabelsShown(false);
+    const crush = this.auditKind("crush").inView;
+    const ramp = this.auditKind("loading_ramp").inView;
+    const truckSeen = this.namedSpritesInView("cattle-truck");
+    const yard = this.yardCaptureAudit();
+    return crush >= 1 && ramp >= 1 && truckSeen.count >= 1 && yard.truckPx >= 14 && yard.pens >= 3 && yard.cattle >= 5 && !yard.truckOverlapsPens;
+  }
+
+  /** Pens and sale cattle in frame, and the truck's bounds clear of the pen sprites. */
+  private yardCaptureAudit(): { pens: number; cattle: number; truckOverlapsPens: boolean; truckPx: number } {
+    const pens = this.propSprites.filter(
+      (sprite) => sprite.visible && sprite.getData("featureKind") === "holding_pen" && this.spriteInView(sprite),
+    );
+    const cattle = this.cows.filter(
+      (sprite) => sprite.visible && sprite.getData("captureRole") === "cut-out-animal" && this.spriteInView(sprite),
+    );
+    const truck = this.cattleTruck;
+    let truckOverlapsPens = false;
+    let truckPx = 0;
+    if (truck?.visible && this.spriteInView(truck)) {
+      truckPx = this.screenHeightOf(truck);
+      const rearX = Number(truck.getData("rearX") ?? truck.x);
+      const rearY = Number(truck.getData("rearY") ?? truck.y);
+      const cabX = Number(truck.getData("cabX") ?? truck.x);
+      const cabY = Number(truck.getData("cabY") ?? truck.y);
+      truckOverlapsPens = pens.some((pen) => {
+        const box = pen.getBounds();
+        for (let t = 0; t <= 1; t += 0.1) {
+          const x = rearX + (cabX - rearX) * t;
+          const y = rearY + (cabY - rearY) * t;
+          if (x > box.left && x < box.right && y > box.top && y < box.bottom) return true;
+        }
+        return false;
+      });
+    }
+    return { pens: pens.length, cattle: cattle.length, truckOverlapsPens, truckPx };
+  }
+
+  private prepareHomesteadCapture(): boolean {
+    this.captureHideStaff = false;
+    const kinds = ["house", "worker_house", "shed", "windmill"] as const;
+    const points = kinds
+      .map((kind) => this.state.features.find((feature) => feature.kind === kind))
+      .filter((feature): feature is NonNullable<typeof feature> => Boolean(feature))
+      .map((feature) => tileCenter(feature.x, feature.y, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight));
+    if (points.length === 0) return false;
+    this.frameWorldPoints(points, 0.38);
+    this.cullProps();
+    return this.auditKind("house").inView >= 1;
+  }
+
+  private v2ArtAudit(): { cattle: boolean; yard: boolean; fence: boolean; ground: boolean; building: boolean; sample: string } {
+    const cow = this.cows.find((sprite) => sprite.visible && sprite.texture.key.startsWith("v2-cattle"));
+    return {
+      cattle: Boolean(cow),
+      yard: this.propSprites.some((sprite) => sprite.texture.key.startsWith("v2-yard") || sprite.texture.key.startsWith("v2-pen-floor")),
+      fence: this.fenceArt.some((sprite) => sprite.texture.key.startsWith("v2-fence")),
+      ground: [...this.chunkRenderTextures.values()].some(
+        (chunk) => chunk instanceof Phaser.GameObjects.Image && chunk.texture.key.startsWith("v2-ground"),
+      ),
+      building: this.propSprites.some((sprite) => sprite.texture.key.startsWith("v2-bldg")),
+      sample: cow?.texture.key ?? "",
+    };
+  }
+
+  private prepareOverviewCapture(): boolean {
+    this.captureHideStaff = false;
+    const house = this.state.features.find((feature) => feature.kind === "house");
+    const ramp = this.state.features.find((feature) => feature.kind === "loading_ramp");
+    if (!house || !ramp) return false;
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    const housePos = tileCenter(house.x, house.y, this.layout, tileW, tileH);
+    const rampPos = tileCenter(ramp.x, ramp.y, this.layout, tileW, tileH);
+    this.frameWorldPoints([housePos, rampPos], 0.2);
+    const view = this.cameras.main.worldView;
+    const inside = (point: { x: number; y: number }) =>
+      point.x >= view.x && point.x <= view.right && point.y >= view.y && point.y <= view.bottom;
+    return inside(housePos) && inside(rampPos) && this.auditKind("loading_ramp").inView >= 1;
+  }
+
   private prepareHerdDriveCapture(): boolean {
     const story = this.state.story;
     if (!story) return false;
@@ -2312,6 +3018,12 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private placeFarmhand(): void {
+    if (this.captureHideStaff) {
+      this.farmhandSprite?.setVisible(false);
+      this.farmhandNameTag?.setVisible(false);
+      this.farmhandJobTag?.setVisible(false);
+      return;
+    }
     if (!this.farmhandSprite) return;
     const hired = this.state.story?.farmhand.hired;
     const presence = this.state.story?.farmhandPresence;
@@ -2378,6 +3090,10 @@ export class FarmScene extends Phaser.Scene {
     if (!bakkieOnRoad(this.state)) {
       this.bakkieDust?.clear();
       this.bakkieDust?.setData("active", false);
+      const parked = v2Ready(this.textures) ? vehiclePose("bakkie", 1, 1) : null;
+      if (parked && this.textures.exists(parked.key)) {
+        this.yardBakkie.setTexture(parked.key).setOrigin(parked.originX, parked.originY).setScale(parked.scale).setAngle(0);
+      }
       this.yardBakkie.setPosition(this.parkedBakkie.x, this.parkedBakkie.y).setVisible(true);
       this.yardBakkie.setData("tileX", null);
       return;
@@ -2386,6 +3102,11 @@ export class FarmScene extends Phaser.Scene {
     const steps = Math.max(4, Math.round((run?.progress ?? 0.4) * 14));
     const tile = tileAlongRoad(this.state, steps);
     const pos = tileCenter(tile.x, tile.y, this.layout, tileW, tileH);
+    const ahead = tileCenter(tileAlongRoad(this.state, steps + 1).x, tileAlongRoad(this.state, steps + 1).y, this.layout, tileW, tileH);
+    const facing = v2Ready(this.textures) ? vehiclePose("bakkie", ahead.x - pos.x, ahead.y - pos.y) : null;
+    if (facing && this.textures.exists(facing.key)) {
+      this.yardBakkie.setTexture(facing.key).setOrigin(facing.originX, facing.originY).setScale(facing.scale).setAngle(0);
+    }
     this.yardBakkie.setPosition(pos.x, pos.y).setVisible(true).setDepth(9.1 + pos.y * 0.04);
     this.yardBakkie.setData("featureKind", "bakkie");
     this.yardBakkie.setData("tileX", tile.x);
@@ -2410,6 +3131,29 @@ export class FarmScene extends Phaser.Scene {
     dust.setData("active", true);
   }
 
+  /** Screen step along the farm road, so the truck sits parallel to it. */
+  private truckRoadScreenStep(
+    bay: { x: number; y: number },
+    ramp: { x: number; y: number } | undefined,
+  ): { x: number; y: number } {
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    const tracks = new Set(this.state.features.filter((feature) => feature.kind === "track").map((feature) => `${feature.x},${feature.y}`));
+    const intoX = ramp ? ramp.x - bay.x : 0;
+    const intoY = ramp ? ramp.y - bay.y : 1;
+    const options = [
+      { x: bay.x + intoY, y: bay.y - intoX },
+      { x: bay.x - intoY, y: bay.y + intoX },
+    ];
+    const along = options.find((tile) => tracks.has(`${tile.x},${tile.y}`)) ?? options[0];
+    const from = tileCenter(bay.x, bay.y, this.layout, tileW, tileH);
+    const to = tileCenter(along.x, along.y, this.layout, tileW, tileH);
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    if (Math.hypot(dx, dy) < 1) return { x: tileW / 2, y: tileH / 2 };
+    return { x: dx, y: dy };
+  }
+
   private syncCattleTruckVisual(): void {
     const tileW = CONFIG.view.tileWidth;
     const tileH = CONFIG.view.tileHeight;
@@ -2421,7 +3165,7 @@ export class FarmScene extends Phaser.Scene {
     const depart = saleTruckDeparting(this.state);
     const prog = this.state.story?.saleConvoy?.phaseProgress ?? 0;
     const ramp = this.state.features.find((f) => f.kind === "loading_ramp");
-    const bay = truckParkTile(this.state);
+    const bay = roadTileBesideRamp(this.state);
     const tile = depart
       ? tileAlongRoad(this.state, 3 + Math.round(prog * 12))
       : bay
@@ -2429,26 +3173,269 @@ export class FarmScene extends Phaser.Scene {
         : ramp
           ? { x: ramp.x, y: ramp.y }
           : STEP3B.loadingRampTile;
-    const pos = tileCenter(tile.x, tile.y, this.layout, tileW, tileH);
-    const truckScale = scaleToSpanMetres(280, 16);
+    const bayPos = tileCenter((bay ?? tile).x, (bay ?? tile).y, this.layout, tileW, tileH);
+    const rampPos = ramp ? tileCenter(ramp.x, ramp.y, this.layout, tileW, tileH) : bayPos;
+    const awayX = bayPos.x - rampPos.x;
+    const awayY = bayPos.y - rampPos.y;
+    const awayLen = Math.hypot(awayX, awayY) || 1;
+    const along = this.truckRoadScreenStep(bay ?? tile, ramp);
+    const train = v2Ready(this.textures) ? vehiclePose("roadtrain", along.x, along.y) : null;
+    const truckScale = train?.scale ?? scaleToSpanMetres(640, 22);
     if (!this.cattleTruck) {
       this.cattleTruck = this.add
-        .image(pos.x, pos.y, SPRITE_KEYS.cattleTruck)
-        .setOrigin(0.35, 0.92)
-        .setScale(truckScale);
+        .image(0, 0, train?.key ?? SPRITE_KEYS.cattleTruck)
+        .setName("cattle-truck");
     }
-    this.cattleTruck.setScale(truckScale);
-    if (ramp) {
-      const rampPos = tileCenter(ramp.x, ramp.y, this.layout, tileW, tileH);
-      this.cattleTruck.setFlipX(rampPos.x < pos.x);
+    if (train && this.textures.exists(train.key)) {
+      this.cattleTruck.setTexture(train.key);
+      this.cattleTruck.setOrigin(train.originX, train.originY);
+      this.cattleTruck.setScale(train.scale);
+      this.cattleTruck.setAngle(0);
+    } else {
+      this.cattleTruck.setOrigin(0.5, 0.72);
+      this.cattleTruck.setScale(truckScale);
+      this.cattleTruck.setAngle((Math.atan2(along.y, along.x) * 180) / Math.PI);
     }
+    const file = roadtrainFile(along.x, along.y);
+    const ends = roadtrainEndOffsets(file, this.cattleTruck.scaleX);
+    const axle = (shift: number) => ({
+      x: rampPos.x + (awayX / awayLen) * shift,
+      y: rampPos.y + (awayY / awayLen) * shift * 0.55,
+    });
+    const parkedAt = (shift: number) => {
+      const contact = axle(shift);
+      if (!ends) return contact;
+      return { x: contact.x - ends.rearX, y: contact.y - ends.rearY };
+    };
+    let shift = 12;
+    let pos = depart ? tileCenter(tile.x, tile.y, this.layout, tileW, tileH) : parkedAt(shift);
+    if (!depart && ends) {
+      const pens = this.propSprites.filter((sprite) => sprite.getData("featureKind") === "holding_pen");
+      const hitsPen = (at: { x: number; y: number }) =>
+        pens.some((pen) => {
+          const box = pen.getBounds();
+          for (let t = 0; t <= 1; t += 0.12) {
+            const x = at.x + ends.rearX + (ends.cabX - ends.rearX) * t;
+            const y = at.y + ends.rearY + (ends.cabY - ends.rearY) * t;
+            if (x > box.left && x < box.right && y > box.top && y < box.bottom) return true;
+          }
+          return false;
+        });
+      while (shift < 80 && hitsPen(pos)) {
+        shift += 8;
+        pos = parkedAt(shift);
+      }
+    }
+    this.cattleTruck.setFlipX(false);
     this.cattleTruck.setPosition(pos.x, pos.y).setVisible(true).setDepth(9.2 + pos.y * 0.04);
+    this.cattleTruck.setData("alongX", along.x);
+    this.cattleTruck.setData("alongY", along.y);
+    this.cattleTruck.setData("rearX", pos.x + (ends?.rearX ?? 0));
+    this.cattleTruck.setData("rearY", pos.y + (ends?.rearY ?? 0));
+    this.cattleTruck.setData("cabX", pos.x + (ends?.cabX ?? 0));
+    this.cattleTruck.setData("cabY", pos.y + (ends?.cabY ?? 0));
     this.cattleTruck.setData("featureKind", "cattle_truck");
     this.cattleTruck.setData("tileX", tile.x);
     this.cattleTruck.setData("tileY", tile.y);
   }
 
+  private ensureCowCount(count: number): void {
+    const starter = v2Ready(this.textures) ? "v2-cattle-bonsmara-se" : cattleOctantKey(0, false, 0);
+    while (this.cows.length < count) {
+      const cow = this.add.image(0, 0, starter).setOrigin(0.5, 0.86);
+      this.cows.push(cow);
+      this.cowShadows.push(placeShadow(this, 0, 0, 14, 5, 0.14, 1).setVisible(false));
+    }
+    while (this.cows.length > count) {
+      this.cows.pop()?.destroy();
+      this.cowShadows.pop()?.destroy();
+    }
+  }
+
+  private placeIndividualAnimals(time: number): void {
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    const placed = layoutAnimals(this.state, this.layout, tileW, tileH, time);
+    this.ensureCowCount(placed.length);
+    const anchor = tileCenter(
+      herdWorldTile(this.state).x,
+      herdWorldTile(this.state).y,
+      this.layout,
+      tileW,
+      tileH,
+    );
+    this.herdVisual.x = anchor.x;
+    this.herdVisual.y = anchor.y;
+    this.herdOffsets = placed
+      .filter((spot) => spot.role === "herd-animal")
+      .map((spot) => ({
+        x: spot.x - anchor.x,
+        y: spot.y - anchor.y,
+        flip: false,
+        coat: 0,
+        scale: 1,
+        view: "right" as const,
+        octant: spot.octant,
+      }));
+    const zoom = this.cameras.main.zoom;
+    const cowLod = this.paintedSprites && zoom <= COW_LOD_ZOOM && !this.captureHideHerdLabel;
+    placed.forEach((spot, index) => {
+      const cow = this.cows[index];
+      if (!cow) return;
+      const bob =
+        spot.animal.activity === "walk" && !this.reduceMotion ? Math.sin(time / 180 + index) * 1.4 : 0;
+      cow.setData("captureRole", spot.role);
+      cow.setData("octant", spot.octant);
+      cow.setData("animalTag", spot.animal.tag);
+      cow.setName(spot.role);
+      const shadow = this.cowShadows[index];
+      const graze = spot.animal.activity !== "walk";
+      const coat = cattleCoatIndex(spot.animal.tag);
+      const v2Cow = v2Ready(this.textures) ? cattlePose(spot.octant, spot.calf, coat, graze) : null;
+      if (cowLod) {
+        cow.setTexture(SPRITE_KEYS.cowDot);
+        cow.setScale(1.15);
+        shadow?.setVisible(false);
+      } else if (v2Cow && this.textures.exists(v2Cow.key)) {
+        cow.setTexture(v2Cow.key);
+        cow.setOrigin(v2Cow.originX, v2Cow.originY);
+        const grown = spot.animal.stockClass === "calf" ? 1 : spot.animal.weightKg > 420 ? 1.06 : 0.96;
+        cow.setScale(v2Cow.scale * grown);
+        shadow?.setVisible(true).setPosition(spot.x + 6, spot.y + 3).setDepth(7 + spot.y * 0.04);
+        shadow?.setScale((cow.displayWidth * 0.42) / 58, (cow.displayWidth * 0.16) / 16);
+        shadow?.setAlpha(0.14);
+      } else if (this.textures.exists(cattleOctantKey(spot.octant, spot.calf, coat))) {
+        cow.setTexture(cattleOctantKey(spot.octant, spot.calf, coat));
+        const grown = spot.animal.stockClass === "calf" ? 1 : spot.animal.weightKg > 420 ? 1.06 : 0.96;
+        cow.setScale(cattleOctantScale(spot.calf) * grown);
+        shadow?.setVisible(false);
+      }
+      cow.clearTint();
+      cow.setFlipX(false);
+      cow.setRotation(0);
+      cow.setPosition(spot.x, spot.y + bob);
+      // Sale animals stand on the yard sprites. Those use the prop depth scale, which
+      // sits above the usual cattle depth once the yard is far down the map.
+      const onYard = spot.role === "cut-out-animal";
+      cow.setDepth(onYard ? 8 + spot.y * 0.04 + 1.1 : 8 + spot.y * 0.04 + 0.25);
+      cow.setVisible(true);
+      cow.setData("suppress", false);
+    });
+  }
+
+  private animalAt(worldX: number, worldY: number, radius: number): string | null {
+    let best: { id: string; dist: number } | null = null;
+    for (const cow of this.cows) {
+      if (!cow.visible) continue;
+      const id = this.animalIdForSprite(cow);
+      if (!id) continue;
+      const dist = Math.hypot(worldX - cow.x, worldY - cow.y);
+      if (dist > radius) continue;
+      if (!best || dist < best.dist) best = { id, dist };
+    }
+    return best?.id ?? null;
+  }
+
+  private animalIdForSprite(cow: Phaser.GameObjects.Image): string | null {
+    const tag = cow.getData("animalTag");
+    if (typeof tag !== "string") return null;
+    return this.state.story?.animals?.find((animal) => animal.tag === tag)?.id ?? null;
+  }
+
+  private toggleAnimal(id: string): void {
+    const story = this.state.story;
+    if (!story) return;
+    const selected = new Set(story.selectedAnimalIds ?? []);
+    if (selected.has(id)) selected.delete(id);
+    else selected.add(id);
+    story.selectedAnimalIds = [...selected];
+    story.focusedAnimalId = id;
+    this.selected = true;
+    this.pendingCampId = null;
+    this.pendingCampName = "";
+    const animal = story.animals?.find((item) => item.id === id);
+    if (animal) {
+      const label = animal.whereabouts === "escaped" || animal.whereabouts === "neighbour" ? "out" : "in the herd";
+      this.hud.setHint(`Tag ${animal.tag}, ${label}.`);
+    }
+    this.syncHud();
+    const summary = document.getElementById("sheet-summary");
+    if (document.getElementById("herd-sheet")?.dataset.expanded !== "true") {
+      summary?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    }
+  }
+
+  private applyAnimalFilter(filter: "all" | "tolly300" | "out"): void {
+    const story = this.state.story;
+    if (!story?.animals) return;
+    if (filter === "all") {
+      this.syncHud();
+      return;
+    }
+    const matched =
+      filter === "tolly300"
+        ? filterAnimals(story.animals, TOLLY_OVER_300)
+        : filterAnimals(story.animals, { outOnly: true });
+    story.selectedAnimalIds = matched.map((animal) => animal.id);
+    story.focusedAnimalId = matched[0]?.id ?? null;
+    this.selected = true;
+    const count = matched.length;
+    this.hud.setHint(
+      count === 0 ? "No animals match." : count === 1 ? "1 animal selected." : `${count} animals selected.`,
+    );
+    this.syncHud();
+  }
+
+  private orderCutToPendingCamp(): void {
+    if (this.pendingCampId === null) {
+      this.hud.setHint("Tap the camp you want, then tap To camp.");
+      return;
+    }
+    const ids = this.state.story?.selectedAnimalIds ?? [];
+    const result = requestCutOut(this.state, ids, { kind: "camp", campId: this.pendingCampId });
+    this.hud.setHint(result.message);
+    this.pendingCampId = null;
+    this.pendingCampName = "";
+    this.syncHud();
+  }
+
+  private orderCutToKraal(): void {
+    const ids = this.state.story?.selectedAnimalIds ?? [];
+    const result = requestCutOut(this.state, ids, { kind: "kraal" });
+    this.hud.setHint(result.message);
+    this.syncHud();
+  }
+
+  private orderRoundUp(): void {
+    const selected = this.state.story?.selectedAnimalIds ?? [];
+    const escaped = escapedAnimalIds(this.state);
+    const ids = selected.filter((id) => escaped.includes(id));
+    const use = ids.length > 0 ? ids : escaped;
+    if (use.length === 0) {
+      this.hud.setHint("No animals are out.");
+      return;
+    }
+    const result = requestCutOut(this.state, use, { kind: "camp", campId: this.state.herd.campId });
+    this.hud.setHint(result.message);
+    this.syncHud();
+  }
+
+  private showCalmEscapeNote(): void {
+    const notes = this.state.notifications?.log ?? [];
+    const fresh = notes.find((item) => item.kind === "animal_out" && !item.read);
+    if (!fresh) return;
+    fresh.read = true;
+    this.hud.setHint(fresh.body);
+  }
+
   private placeHerd(time: number): void {
+    const special = this.captureDrinkHeads > 0 || this.captureKraalLineup;
+    const animals = this.state.story?.animals?.filter((animal) => animal.whereabouts !== "sold") ?? [];
+    if (!special && animals.length > 0 && (v2Ready(this.textures) || this.textures.exists(cattleOctantKey(0)))) {
+      this.placeIndividualAnimals(time);
+      this.refreshHerdLabel();
+      return;
+    }
     this.refreshHerdOffsets(time);
     const tile = worldToTile(
       this.herdVisual.x,
@@ -2508,7 +3495,14 @@ export class FarmScene extends Phaser.Scene {
           return;
         }
         const spot = tileCenter(trough.x, trough.y, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
-        cow.setTexture(SPRITE_KEYS.cowDrink);
+        const drinking = v2Ready(this.textures) ? cattlePose(1, false, offset.coat ?? 0, true) : null;
+        if (drinking && this.textures.exists(drinking.key)) {
+          cow.setTexture(drinking.key);
+          cow.setOrigin(drinking.originX, drinking.originY);
+          cow.setScale(drinking.scale);
+        } else {
+          cow.setTexture(SPRITE_KEYS.cowDrink);
+        }
         cow.setData("pose", "drink");
         cow.setData("suppress", false);
         cow.setRotation(0);
@@ -2570,29 +3564,37 @@ export class FarmScene extends Phaser.Scene {
           cow.setVisible(false);
           continue;
         }
-        const posed = cow.getData("pose") === "drink" || this.captureKraalLineup;
+        const posed = cow.getData("pose") === "drink" || this.captureKraalLineup || Boolean(cow.getData("captureRole"));
         const px = posed ? cow.x : cx;
         const py = posed ? cow.y : cy;
-        cow.setVisible(
-          px >= view.x - pad - 24 && px <= view.right + pad + 24 && py >= view.y - pad - 24 && py <= view.bottom + pad + 24,
-        );
+        const seen =
+          px >= view.x - pad - 24 && px <= view.right + pad + 24 && py >= view.y - pad - 24 && py <= view.bottom + pad + 24;
+        cow.setVisible(seen);
+        this.cowShadows[i]?.setVisible(seen && cow.texture.key.startsWith("v2-"));
       }
     }
   }
 
+  /** Keep a grass tile under the camera so panning or zooming never shows the clear colour. */
+  private syncGroundFill(): void {
+    const fill = this.groundFill;
+    if (!fill) return;
+    const view = this.cameras.main.worldView;
+    const pad = 48;
+    const x = view.x - pad;
+    const y = view.y - pad;
+    fill.setPosition(x, y);
+    fill.setSize(Math.max(8, view.width + pad * 2), Math.max(8, view.height + pad * 2));
+    fill.tilePositionX = x;
+    fill.tilePositionY = y;
+  }
+
   private cullChunks(): void {
     const camera = this.cameras.main;
-    const pad = CONFIG.view.propCullPadPx;
-    const tileW = CONFIG.view.tileWidth;
-    const tileH = CONFIG.view.tileHeight;
+    const pad = Math.max(CONFIG.view.propCullPadPx, 96);
     const source = this.paintedSprites ? this.chunkRenderTextures : this.chunkRoots;
-    for (const [key, root] of source) {
-      const [cx, cy] = key.split(",").map(Number);
-      const sample = tileTop(cx * CONFIG.view.terrainChunkTiles, cy * CONFIG.view.terrainChunkTiles, this.layout, tileW, tileH);
-      const bounds = new Phaser.Geom.Rectangle(sample.x - tileW * 8, sample.y - tileH * 2, tileW * 16, tileH * 16);
-      const visible = boundsVisible(camera, bounds, pad);
-      if (root instanceof Phaser.GameObjects.Container) root.setVisible(visible);
-      else root.setVisible(visible);
+    for (const root of source.values()) {
+      root.setVisible(boundsVisible(camera, root.getBounds(), pad));
     }
   }
 
@@ -2857,6 +3859,11 @@ export class FarmScene extends Phaser.Scene {
       CONFIG.view.herdPickTiles * CONFIG.view.tileWidth,
       CONFIG.view.herdPickMinScreenPx / this.cameras.main.zoom,
     );
+    const animalId = this.animalAt(world.x, world.y, radius);
+    if (animalId) {
+      this.toggleAnimal(animalId);
+      return;
+    }
     if (this.pointerHitsHerd(world.x, world.y, radius)) {
       const action = resolveHerdTap(this.selected);
       if (action === "deselect") {

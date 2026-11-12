@@ -1,3 +1,4 @@
+import { moveCampAnimals } from "./animals";
 import { addHours } from "./calendar";
 import { clamp } from "./math";
 import { CONFIG, type GameConfig } from "./config";
@@ -79,7 +80,9 @@ function finishTransit(state: GameState): void {
     transit.hoursApplied = transit.walkGameHours;
   }
   const dest = state.camps.find((c) => c.id === transit.toCampId);
+  const fromCampId = state.herd.campId;
   state.herd.campId = transit.toCampId;
+  moveCampAnimals(state, fromCampId, transit.toCampId);
   state.herd.daysInCamp = 0;
   state.herd.transit = null;
   if (dest) dest.restDays = 0;

@@ -1,3 +1,4 @@
+import { ensureAnimals } from "./animals";
 import { CONFIG, type GameConfig } from "./config";
 import { generateFarm } from "./generate";
 import { initStoryPeople } from "./story";
@@ -200,6 +201,11 @@ export function gameStateFromFarmDefinition(def: FarmDefinition, config: GameCon
       : undefined,
   };
   initStoryPeople(state, config);
+  ensureAnimals(state, config);
+  for (const animal of state.story?.animals ?? []) {
+    if (!animal.split && animal.whereabouts === "in_camp") animal.campId = state.herd.campId;
+  }
+  state.stateVersion = 8;
   return state;
 }
 

@@ -25,6 +25,7 @@ import type { NotificationItem } from "../sim/notifications";
 import { herdMoveStatusLine } from "../sim/herding";
 import { DEFAULT_PLAYER_DISPLAY_NAME } from "../sim/playerName";
 import { grazeableFraction, grazingDaysLeft } from "../sim/pasture";
+import { renderAnimalPanel, type AnimalFilterId } from "./animalSheet";
 import type { GameState } from "../sim/types";
 import type { ViewInsets } from "./camera";
 import { paintMinimap } from "./colour";
@@ -84,6 +85,12 @@ export function mountHud(options: {
   onHerdLocator?: () => void;
   onDayLength?: (seconds: DayLengthSeconds) => void;
   onFarmerName?: (name: string) => void;
+  onToggleAnimal?: (id: string) => void;
+  onAnimalFilter?: (filter: "all" | "tolly300" | "out") => void;
+  onCutToCamp?: () => void;
+  onCutToKraal?: () => void;
+  onRoundUp?: () => void;
+  onClearAnimalFocus?: () => void;
 }): Hud {
   const root = document.getElementById("hud-root");
   if (!root) throw new Error("Missing the HUD root.");
@@ -157,6 +164,24 @@ export function mountHud(options: {
         <button type="button" class="icon-btn sheet-close" id="sheet-close" aria-label="Close herd card">×</button>
       </div>
       <div class="sheet-detail" id="sheet-detail" hidden>
+        <div class="animal-panel" id="animal-panel">
+          <div class="animal-filters" role="group" aria-label="Animal filters">
+            <button type="button" class="chip" id="animal-filter-all">All</button>
+            <button type="button" class="chip" id="animal-filter-tolly300">Tollies over 300 kg</button>
+            <button type="button" class="chip" id="animal-filter-out">Out</button>
+          </div>
+          <article id="animal-detail" hidden>
+            <h3 id="animal-detail-title"></h3>
+            <p id="animal-detail-body"></p>
+            <button type="button" class="pill-btn ghost" id="animal-detail-back">Back to the list</button>
+          </article>
+          <ul class="animal-list" id="animal-list"></ul>
+          <div class="animal-actions">
+            <button type="button" class="pill-btn" id="animal-to-camp">To camp</button>
+            <button type="button" class="pill-btn" id="animal-to-kraal">To the yards</button>
+            <button type="button" class="pill-btn ghost" id="animal-round-up">Round up</button>
+          </div>
+        </div>
         <h2 id="herd-name"></h2>
         <p id="herd-camp"></p>
         <p id="herd-head"></p>
@@ -367,6 +392,28 @@ export function mountHud(options: {
   });
   moveConfirmBtn.addEventListener("click", () => options.onConfirmMove());
   moveCancelBtn.addEventListener("click", () => options.onCancelMove());
+  let animalFilter: AnimalFilterId = "all";
+  const markFilter = () => {
+    for (const id of ["all", "tolly300", "out"] as const) {
+      document.getElementById(`animal-filter-${id}`)?.classList.toggle("is-on", animalFilter === id);
+    }
+  };
+  for (const id of ["all", "tolly300", "out"] as const) {
+    document.getElementById(`animal-filter-${id}`)?.addEventListener("click", () => {
+      animalFilter = id;
+      markFilter();
+      options.onAnimalFilter?.(id);
+    });
+  }
+  document.getElementById("animal-list")?.addEventListener("click", (event) => {
+    const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>(".animal-row");
+    const id = button?.dataset.animalId;
+    if (id) options.onToggleAnimal?.(id);
+  });
+  document.getElementById("animal-detail-back")?.addEventListener("click", () => options.onClearAnimalFocus?.());
+  document.getElementById("animal-to-camp")?.addEventListener("click", () => options.onCutToCamp?.());
+  document.getElementById("animal-to-kraal")?.addEventListener("click", () => options.onCutToKraal?.());
+  document.getElementById("animal-round-up")?.addEventListener("click", () => options.onRoundUp?.());
   summary.addEventListener("click", () => toggleExpanded());
   summary.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -511,6 +558,7 @@ export function mountHud(options: {
             farmhand?.hired && presence ? `Piet: ${presence.activityLabel}` : "";
           statusEl.textContent = [moveLine, status, farmLine].filter(Boolean).join(" · ");
           statusEl.hidden = statusEl.textContent.length === 0;
+          renderAnimalPanel(state, animalFilter);
           const summaryMove = herdMoveStatusLine(state);
           if (summaryMove) {
             sheetLine.textContent = `${formatHerdSheetSummary(state.herd.headCount, camp?.name ?? "Camp", pct)} · ${summaryMove}`;

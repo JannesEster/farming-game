@@ -55,6 +55,8 @@ export type HerdOffset = {
   coat: number;
   scale: number;
   view: CowView;
+  /** 0 to 7. Screen facing. 2 is toward the camera, 6 is away, 0 is screen-right. */
+  octant?: number;
 };
 
 function canvas(width: number, height: number, draw: (ctx: CanvasRenderingContext2D) => void): HTMLCanvasElement {
