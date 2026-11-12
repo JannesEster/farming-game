@@ -1,20 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { CONFIG } from "./config";
 import { createGame, moveHerd, stepDayWithRain } from "./simulation";
-import {
-  herdInTransit,
-  moveDurationMs,
-  tickTransitRealtime,
-  walkGameHours,
-} from "./transit";
+import { tickHerdingRealtime } from "./herding";
+import { herdInTransit, herdMoveActive, moveDurationMs, walkGameHours } from "./transit";
 
 function finishTransitPlay(state: ReturnType<typeof createGame>): void {
   let guard = 0;
-  while (herdInTransit(state.herd) && guard < 500) {
+  while (state.herd.transit && guard < 800) {
     const progress = state.herd.transit?.progress ?? 0;
-    tickTransitRealtime(state, 50, "x1", CONFIG);
-    if ((state.herd.transit?.progress ?? 1) === progress) guard += 1;
-    else guard = 0;
+    tickHerdingRealtime(state, 50, "x1", CONFIG);
+    if (!state.herd.transit) break;
+    if (state.herd.transit.phase === "drive" && (state.herd.transit?.progress ?? 1) === progress) {
+      guard += 1;
+    } else {
+      guard = 0;
+    }
   }
 }
 
@@ -27,7 +27,7 @@ describe("herd transit", () => {
     const moved = moveHerd(state, dest.id);
     expect(moved.ok).toBe(true);
     expect(state.herd.campId).toBe(fromId);
-    expect(herdInTransit(state.herd)).toBe(true);
+    expect(herdMoveActive(state.herd)).toBe(true);
     finishTransitPlay(state);
     expect(state.herd.campId).toBe(dest.id);
     expect(state.herd.transit).toBeNull();
@@ -53,7 +53,10 @@ describe("herd transit", () => {
     for (const camp of state.camps) {
       if (camp.id === from) continue;
       moveHerd(state, camp.id);
-      const km = state.herd.transit!.distanceKm;
+      const transit = state.herd.transit!;
+      transit.phase = "drive";
+      transit.approachProgress = 1;
+      const km = transit.distanceKm;
       maxKm = Math.max(maxKm, km);
       shortestMs = Math.min(shortestMs, moveDurationMs(km, "x1", CONFIG));
       longestMs = Math.max(longestMs, moveDurationMs(km, "x1", CONFIG));
@@ -81,12 +84,15 @@ describe("herd transit", () => {
     if (!dest) throw new Error("expected destination");
     moveHerd(state, dest.id);
     state.date = { year: 2026, month: 8, day: 1, hour: 6 };
-    const expectedHours = walkGameHours(state.herd.transit!.distanceKm);
+    const transit = state.herd.transit!;
+    transit.phase = "drive";
+    transit.approachProgress = 1;
+    const expectedHours = walkGameHours(transit.distanceKm);
     if (Math.abs(state.herd.transit!.distanceKm - 4.54) > 0.5) {
       expect(expectedHours).toBeGreaterThan(0.2);
     }
     while (herdInTransit(state.herd)) {
-      tickTransitRealtime(state, 16, "x1", CONFIG);
+      tickHerdingRealtime(state, 16, "x1", CONFIG);
     }
     expect(state.date.day).toBe(1);
     expect(Math.floor(state.date.hour)).toBeGreaterThanOrEqual(6 + Math.floor(expectedHours));
@@ -98,11 +104,14 @@ describe("herd transit", () => {
     const dest = state.camps.find((c) => c.id !== state.herd.campId);
     if (!dest) throw new Error("expected destination");
     moveHerd(state, dest.id);
-    const km = state.herd.transit!.distanceKm;
+    const transit = state.herd.transit!;
+    transit.phase = "drive";
+    transit.approachProgress = 1;
+    const km = transit.distanceKm;
     const expectedHours = walkGameHours(km, CONFIG);
     expect(expectedHours).toBeGreaterThan(0.2);
     const startTicks = state.date.day * 24 + state.date.hour;
-    tickTransitRealtime(state, 2000, "x1", CONFIG);
+    tickHerdingRealtime(state, 2000, "x1", CONFIG);
     expect(state.date.day * 24 + state.date.hour).toBeGreaterThanOrEqual(startTicks);
     finishTransitPlay(state);
     expect(state.date.day * 24 + state.date.hour).toBeGreaterThanOrEqual(

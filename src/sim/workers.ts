@@ -1,4 +1,5 @@
 import { CONFIG, type GameConfig } from "./config";
+import { freeWorkerHouseSlots } from "./housing";
 import { defaultWorkGrid } from "./workGrid";
 import { ensureStep2State } from "./levers";
 import type { FarmhandJob, WorkJobId } from "./storyTypes";
@@ -8,6 +9,9 @@ export function hireFarmhand(state: GameState, config: GameConfig = CONFIG): { o
   const story = state.story;
   if (!story) return { ok: false, message: "Missing story." };
   if (story.farmhand.hired) return { ok: false, message: "Farmhand already hired." };
+  if (freeWorkerHouseSlots(state) < 1) {
+    return { ok: false, message: "No free worker house. Build one in Ranch ops first." };
+  }
   story.farmhand.hired = true;
   story.farmhand.wageCashNad = config.economy.farmhandMonthlyCashNad;
   story.farmhand.daysUntilPayroll = config.economy.payrollIntervalDays;

@@ -6,7 +6,7 @@ import {
   grazeableFraction,
   residualDmKgPerHa,
 } from "./pasture";
-import { createStoryState } from "./story";
+import { createStoryState, initStoryPeople } from "./story";
 import { campGateToward } from "./path";
 import { createRng, type Rng } from "./rng";
 import {
@@ -228,6 +228,12 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
       scale: 1,
     });
   }
+  features.push({
+    kind: "worker_house",
+    x: hx + 11,
+    y: hy + 13,
+    scale: 1,
+  });
 
   const spaceDown = height - (hy + blockH);
   const spaceUp = hy;
@@ -399,5 +405,6 @@ export function generateFarm(seed: number, config: GameConfig = CONFIG): GameSta
   }
   best.state.seed = seed;
   best.state.rngState = rng.getState();
+  initStoryPeople(best.state, config);
   return best.state;
 }

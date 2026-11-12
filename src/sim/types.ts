@@ -13,6 +13,7 @@ export type FeatureKind =
   | "tree"
   | "bush"
   | "house"
+  | "worker_house"
   | "windmill"
   | "reservoir"
   | "kraal"
@@ -27,6 +28,10 @@ export type Feature = {
   scale: number;
 };
 
+export type HerdTransitPhase = "approach" | "drive";
+
+export type HerderId = "farmer" | "piet";
+
 export type HerdTransit = {
   toCampId: number;
   progress: number;
@@ -37,6 +42,10 @@ export type HerdTransit = {
   hoursApplied: number;
   /** Whole path as tile points, including anchors. */
   path: TilePoint[];
+  phase?: HerdTransitPhase;
+  herder?: HerderId;
+  /** 0..1 walk from home to the herd before the drive starts. */
+  approachProgress?: number;
 };
 
 export type CampState = {
@@ -94,5 +103,5 @@ export type GameState = {
 };
 
 export type MoveResult =
-  | { ok: true; campName: string }
+  | { ok: true; campName: string; queued?: boolean; queueReason?: string }
   | { ok: false; reason: "same" | "missing" | "moving" };

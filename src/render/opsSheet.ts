@@ -5,6 +5,8 @@ import { answerMorningDecision } from "../sim/morningPlay";
 import { resolvePlayerEvent } from "../sim/playerEvents";
 import type { LickChoice, MaintenanceMode, PumpChoice, WorkJobId, WorkPriority } from "../sim/storyTypes";
 import { setWorkPriority, WORK_JOB_LABELS, defaultWorkGrid } from "../sim/workGrid";
+import { buildWorkerHouse, countWorkerHouses, freeWorkerHouseSlots } from "../sim/housing";
+import { STEP3A } from "../sim/step3aConfig";
 import { hireFarmhand } from "../sim/workers";
 import type { GameState } from "../sim/types";
 
@@ -39,9 +41,17 @@ export function mountOpsSheet(options: {
       <button type="button" class="icon-btn sheet-close" id="ops-close" aria-label="Close ranch ops">×</button>
     </div>
     <div class="sheet-detail" id="ops-detail">
+      <div id="ops-event" class="ops-event-top ops-hide-on-lever-focus ops-hide-on-grid-focus" hidden>
+        <h3 class="ops-heading" id="ops-event-title"></h3>
+        <p class="extra" id="ops-event-body"></p>
+        <p class="extra warn" id="ops-event-ignore"></p>
+        <div id="ops-event-actions"></div>
+      </div>
       <p class="extra ops-hide-on-event-focus ops-hide-on-lever-focus" id="ops-goal"></p>
       <p class="extra ops-hide-on-event-focus ops-hide-on-lever-focus" id="ops-farmhand-status"></p>
+      <p class="extra ops-hide-on-event-focus ops-hide-on-lever-focus" id="ops-housing-status"></p>
       <button type="button" class="pill-btn ghost ops-hide-on-event-focus ops-hide-on-lever-focus" id="ops-hire-btn">Hire farmhand (N$${Math.round(CONFIG.economy.farmhandMonthlyCashNad).toLocaleString("en-NA")}/mo)</button>
+      <button type="button" class="pill-btn ghost ops-hide-on-event-focus ops-hide-on-lever-focus" id="ops-build-house-btn">Build worker house (N$${STEP3A.workerHouseBuildCostNad.toLocaleString("en-NA")})</button>
       <h3 class="ops-heading ops-hide-on-event-focus ops-hide-on-lever-focus" id="ops-heading-grid">Work grid</h3>
       <div class="work-grid ops-hide-on-event-focus ops-hide-on-lever-focus" id="work-grid"></div>
       <h3 class="ops-heading" id="ops-heading-levers">Cost levers</h3>
@@ -74,18 +84,14 @@ export function mountOpsSheet(options: {
         <p class="extra" id="ops-morning-text"></p>
         <div id="ops-morning-actions"></div>
       </div>
-      <div id="ops-event" class="ops-hide-on-lever-focus ops-hide-on-grid-focus" hidden>
-        <h3 class="ops-heading" id="ops-event-title"></h3>
-        <p class="extra" id="ops-event-body"></p>
-        <p class="extra warn" id="ops-event-ignore"></p>
-        <div id="ops-event-actions"></div>
-      </div>
     </div>
   `;
   root.appendChild(sheet);
 
   const closeBtn = sheet.querySelector<HTMLButtonElement>("#ops-close")!;
   const hireBtn = sheet.querySelector<HTMLButtonElement>("#ops-hire-btn")!;
+  const buildHouseBtn = sheet.querySelector<HTMLButtonElement>("#ops-build-house-btn")!;
+  const housingStatus = sheet.querySelector<HTMLElement>("#ops-housing-status")!;
   const workGridEl = sheet.querySelector<HTMLElement>("#work-grid")!;
   const goalEl = sheet.querySelector<HTMLElement>("#ops-goal")!;
   const farmhandStatus = sheet.querySelector<HTMLElement>("#ops-farmhand-status")!;
@@ -153,6 +159,9 @@ export function mountOpsSheet(options: {
     }
     const fh = state.story?.farmhand;
     const presence = state.story?.farmhandPresence;
+    const houses = countWorkerHouses(state);
+    const free = freeWorkerHouseSlots(state);
+    housingStatus.textContent = `${houses} worker house(s), ${free} free slot(s).`;
     if (fh?.hired) {
       hireBtn.hidden = true;
       farmhandStatus.textContent = presence
@@ -160,8 +169,16 @@ export function mountOpsSheet(options: {
         : "Piet is on the farm.";
     } else {
       hireBtn.hidden = false;
-      farmhandStatus.textContent = "No farmhand hired yet.";
+      hireBtn.disabled = free < 1;
+      farmhandStatus.textContent =
+        free < 1
+          ? "No free worker house. Build one before hiring."
+          : "No farmhand hired yet.";
     }
+    const builtAlt = state.features.some(
+      (f) => f.kind === "worker_house" && f.x === STEP3A.workerHouseBuildTile.x && f.y === STEP3A.workerHouseBuildTile.y,
+    );
+    buildHouseBtn.hidden = builtAlt;
     renderWorkGrid(state);
     const levers = state.story?.costLevers;
     if (levers) {
@@ -239,6 +256,13 @@ export function mountOpsSheet(options: {
   hireBtn.addEventListener("click", () => {
     const state = options.getState();
     const res = hireFarmhand(state);
+    options.onToast(res.message);
+    if (res.ok) options.onChange();
+    refresh(state);
+  });
+  buildHouseBtn.addEventListener("click", () => {
+    const state = options.getState();
+    const res = buildWorkerHouse(state);
     options.onToast(res.message);
     if (res.ok) options.onChange();
     refresh(state);

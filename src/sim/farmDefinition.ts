@@ -1,5 +1,6 @@
 import { CONFIG, type GameConfig } from "./config";
 import { generateFarm } from "./generate";
+import { initStoryPeople } from "./story";
 import type { CampState, Feature, GameState, TilePoint } from "./types";
 
 export type FarmCampInfrastructure = {
@@ -178,7 +179,7 @@ export function gameStateFromFarmDefinition(def: FarmDefinition, config: GameCon
     generated.herd.campId >= 0 && def.campIds.includes(generated.herd.campId)
       ? generated.herd.campId
       : (camps[0]?.id ?? 0);
-  return {
+  const state = {
     ...generated,
     seed: def.seed,
     width: def.width,
@@ -191,6 +192,8 @@ export function gameStateFromFarmDefinition(def: FarmDefinition, config: GameCon
       ? { ...generated.farmMeta, offerId: def.id, regionKey: def.regionKey ?? generated.farmMeta.regionKey }
       : undefined,
   };
+  initStoryPeople(state, config);
+  return state;
 }
 
 export const DEFAULT_FARM_PATH = "/farms/default-farm.json";

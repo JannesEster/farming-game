@@ -21,6 +21,7 @@ import { findCamp } from "../sim/simulation";
 import { formatClockTime, type DayLengthSeconds } from "../sim/clock";
 import { CONFIG } from "../sim/config";
 import type { NotificationItem } from "../sim/notifications";
+import { herdMoveStatusLine } from "../sim/herding";
 import { grazeableFraction, grazingDaysLeft } from "../sim/pasture";
 import type { GameState } from "../sim/types";
 import type { ViewInsets } from "./camera";
@@ -88,8 +89,8 @@ export function mountHud(options: {
         <span class="chip chip-date" id="stat-date"></span>
         <span class="chip chip-time" id="stat-time" title="Ranch clock"></span>
         <span class="chip chip-icon" id="stat-season" title="Season"></span>
-        <span class="chip" id="stat-cash" title="${COPY.cashTitle}"></span>
-        <span class="chip" id="stat-rain" title="${COPY.rainTitle}"></span>
+        <span class="chip chip-cash" id="stat-cash" title="${COPY.cashTitle}"></span>
+        <span class="chip chip-rain" id="stat-rain" title="${COPY.rainTitle}"></span>
       </div>
       <div class="top-actions">
         <div class="speeds compact" role="group" aria-label="Speed">
@@ -399,8 +400,18 @@ export function mountHud(options: {
       lastState = state;
       const seasonText = seasonLabelForHud(state);
       const dry = !seasonText.toLowerCase().includes("rain");
-      dateEl.textContent = formatHudDate(state.date);
-      timeEl.textContent = formatClockTime(state.date);
+      const narrow = typeof window !== "undefined" && window.innerWidth <= 430;
+      if (narrow) {
+        dateEl.textContent = `${formatHudDate(state.date)} ${formatClockTime(state.date)}`;
+        timeEl.textContent = "";
+        timeEl.hidden = true;
+        seasonEl.hidden = true;
+      } else {
+        dateEl.textContent = formatHudDate(state.date);
+        timeEl.textContent = formatClockTime(state.date);
+        timeEl.hidden = false;
+        seasonEl.hidden = false;
+      }
       if (state.clock?.settings.dayLengthSeconds) {
         dayLengthSelect.value = String(state.clock.settings.dayLengthSeconds);
       }
@@ -438,11 +449,10 @@ export function mountHud(options: {
         const fraction = camp ? grazeableFraction(camp) : 0;
         const pct = Math.round(fraction * 100);
         const warn = camp ? formatMoveWarning(state.herd, camp, state.date).length > 0 : false;
-        sheetLine.textContent = formatHerdSheetSummary(
-          state.herd.headCount,
-          camp?.name ?? "Camp",
-          pct,
-        );
+        const moveSummary = herdMoveStatusLine(state);
+        sheetLine.textContent = moveSummary
+          ? `${formatHerdSheetSummary(state.herd.headCount, camp?.name ?? "Camp", pct)} · ${moveSummary}`
+          : formatHerdSheetSummary(state.herd.headCount, camp?.name ?? "Camp", pct);
         warnDot.hidden = !warn;
 
         if (expanded && camp) {
@@ -475,10 +485,15 @@ export function mountHud(options: {
           const status = formatFeedStatus(daysLeft);
           const farmhand = state.story?.farmhand;
           const presence = state.story?.farmhandPresence;
+          const moveLine = herdMoveStatusLine(state);
           const farmLine =
             farmhand?.hired && presence ? `Piet: ${presence.activityLabel}` : "";
-          statusEl.textContent = [status, farmLine].filter(Boolean).join(" · ");
+          statusEl.textContent = [moveLine, status, farmLine].filter(Boolean).join(" · ");
           statusEl.hidden = statusEl.textContent.length === 0;
+          const summaryMove = herdMoveStatusLine(state);
+          if (summaryMove) {
+            sheetLine.textContent = `${formatHerdSheetSummary(state.herd.headCount, camp?.name ?? "Camp", pct)} · ${summaryMove}`;
+          }
         }
 
         if (ui.pendingCampId !== null) {

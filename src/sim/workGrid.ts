@@ -1,3 +1,4 @@
+import { isDaylightHour } from "./clock";
 import { CONFIG, type GameConfig } from "./config";
 import { STEP2 } from "./step2Config";
 import { farmhandWaterBonus } from "./workers";
@@ -78,6 +79,8 @@ export function jobTargetTile(state: GameState, job: WorkJobId): TilePoint {
 export function tickFarmhandWorld(state: GameState, config: GameConfig = CONFIG): void {
   const story = state.story;
   if (!story?.farmhand.hired) return;
+  if (!isDaylightHour(state.date.hour)) return;
+  if (story.farmhandPresence?.onHerdingDuty) return;
   if (!story.farmhandPresence) {
     story.farmhandPresence = {
       tileX: state.width / 2,

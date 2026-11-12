@@ -642,18 +642,75 @@ body {
   }
 }
 
-@media (max-width: 380px) {
+@media (max-width: 430px) {
   .topbar.compact {
     padding: env(safe-area-inset-top) max(4px, env(safe-area-inset-left)) 0 max(4px, env(safe-area-inset-right));
+    gap: 2px;
   }
 
   .chips {
-    gap: 1px;
+    gap: 2px;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: calc(100% - 132px);
   }
 
   .chip {
     padding: 2px 4px;
+    font-size: 10px;
   }
+
+  .chip-date {
+    max-width: 4.8em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .chip-time {
+    font-size: 10px;
+    padding: 2px 4px;
+  }
+
+  .chip-rain {
+    display: none;
+  }
+
+  .top-actions {
+    flex: 0 0 auto;
+    gap: 2px;
+  }
+
+  .speeds.compact button {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+  }
+
+  .dock-ranch {
+    font-size: 10px;
+    padding: 2px 5px;
+    max-width: 3.6em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  #menu-overflow {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+  }
+}
+
+.ops-event-top {
+  order: -1;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--bar);
+}
+
+#ops-detail {
+  display: flex;
+  flex-direction: column;
 }
 
 @media (orientation: landscape) and (max-height: 520px) {

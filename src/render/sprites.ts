@@ -30,29 +30,110 @@ export const SPRITE_KEYS = {
   cattleCalf: "spr-cattle-calf",
   cowDot: "spr-cow-dot",
   farmhand: "spr-farmhand",
+  farmer: "spr-farmer",
+  workerHouse: "spr-worker-house",
 } as const;
 
-/** Large readable worker until step 3 walk art lands. */
+export type PersonDir = "n" | "e" | "s" | "w";
+
+export function personTextureKey(role: "farmer" | "farmhand", dir: PersonDir, frame: number): string {
+  return `${role === "farmer" ? SPRITE_KEYS.farmer : SPRITE_KEYS.farmhand}-${dir}-${frame % 2}`;
+}
+
+/** Farmhand and farmer walk textures (4 directions, 2 frames). */
 export function ensureFarmhandTexture(scene: Phaser.Scene): void {
-  const key = SPRITE_KEYS.farmhand;
-  if (scene.textures.exists(key)) return;
-  const g = scene.make.graphics({ x: 0, y: 0 });
-  g.fillStyle(0xff8c1a, 1);
-  g.fillRoundedRect(14, 26, 36, 44, 4);
-  g.fillStyle(0xf2c9a0, 1);
-  g.fillCircle(32, 20, 14);
-  g.fillStyle(0x3d2c1e, 1);
-  g.fillEllipse(32, 16, 20, 10);
-  g.fillStyle(0x1a3550, 1);
-  g.fillRoundedRect(22, 62, 20, 26, 3);
-  g.fillStyle(0x2a2a2a, 1);
-  g.fillRect(18, 86, 14, 8);
-  g.fillRect(38, 86, 14, 8);
-  g.generateTexture(key, 64, 96);
-  g.destroy();
+  ensurePersonWalkTextures(scene, "farmhand");
+}
+
+export function ensureFarmerTexture(scene: Phaser.Scene): void {
+  ensurePersonWalkTextures(scene, "farmer");
 }
 
 export const FARMHAND_TEXTURE_HEIGHT = 96;
+export const PERSON_TEXTURE_HEIGHT = 96;
+
+function drawPersonFrame(
+  g: Phaser.GameObjects.Graphics,
+  shirt: number,
+  hat: number,
+  frame: number,
+  dir: PersonDir,
+): void {
+  g.clear();
+  const lean = frame === 1 ? 2 : 0;
+  g.fillStyle(shirt, 1);
+  g.fillRoundedRect(14 + lean, 28, 36, 42, 4);
+  g.fillStyle(0xf2c9a0, 1);
+  g.fillCircle(32, 20, 14);
+  g.fillStyle(hat, 1);
+  g.fillEllipse(32, 15, 22, 11);
+  g.fillStyle(0x1a3550, 1);
+  g.fillRoundedRect(22, 62, 20, 24, 3);
+  g.fillStyle(0x2a2a2a, 1);
+  if (dir === "n") {
+    g.fillRect(20, 84, 12, 10);
+    g.fillRect(32, 84, 12, 10);
+  } else if (dir === "s") {
+    g.fillRect(18, 86, 14, 8);
+    g.fillRect(38, 86, 14, 8);
+  } else if (dir === "e") {
+    g.fillRect(16 + lean, 86, 14, 8);
+    g.fillRect(40 + lean, 84, 14, 8);
+  } else {
+    g.fillRect(18 - lean, 84, 14, 8);
+    g.fillRect(34 - lean, 86, 14, 8);
+  }
+}
+
+export function ensurePersonWalkTextures(scene: Phaser.Scene, role: "farmer" | "farmhand"): void {
+  const shirt = role === "farmer" ? 0x2d6a4f : 0xff8c1a;
+  const hat = role === "farmer" ? 0xc4a574 : 0x3d2c1e;
+  const base = role === "farmer" ? SPRITE_KEYS.farmer : SPRITE_KEYS.farmhand;
+  const dirs: PersonDir[] = ["n", "e", "s", "w"];
+  for (const dir of dirs) {
+    for (let frame = 0; frame < 2; frame += 1) {
+      const key = personTextureKey(role, dir, frame);
+      if (scene.textures.exists(key)) continue;
+      const g = scene.make.graphics({ x: 0, y: 0 });
+      drawPersonFrame(g, shirt, hat, frame, dir);
+      g.generateTexture(key, 64, 96);
+      g.destroy();
+    }
+  }
+  if (!scene.textures.exists(base)) {
+    const g = scene.make.graphics({ x: 0, y: 0 });
+    drawPersonFrame(g, shirt, hat, 0, "s");
+    g.generateTexture(base, 64, 96);
+    g.destroy();
+  }
+}
+
+export function ensureWorkerHouseTexture(scene: Phaser.Scene): void {
+  const key = SPRITE_KEYS.workerHouse;
+  if (scene.textures.exists(key)) return;
+  const g = scene.make.graphics({ x: 0, y: 0 });
+  g.fillStyle(0xc9b59a, 1);
+  g.fillRoundedRect(8, 36, 72, 52, 3);
+  g.fillStyle(0x8b3a2a, 1);
+  g.beginPath();
+  g.moveTo(6, 38);
+  g.lineTo(44, 8);
+  g.lineTo(82, 38);
+  g.closePath();
+  g.fillPath();
+  g.fillStyle(0x4a3528, 1);
+  g.fillRect(34, 58, 20, 30);
+  g.fillStyle(0x6e8199, 1);
+  g.fillRect(18, 52, 14, 12);
+  g.fillRect(56, 52, 14, 12);
+  g.generateTexture(key, 96, 96);
+  g.destroy();
+}
+
+export function inferPersonDir(dx: number, dy: number): PersonDir {
+  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? "e" : "w";
+  return dy >= 0 ? "s" : "n";
+}
 
 export const SPRITE_FILES: { key: string; file: string }[] = [
   { key: SPRITE_KEYS.farmhouse, file: "farmhouse.png" },
