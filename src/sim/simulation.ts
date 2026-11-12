@@ -1,7 +1,8 @@
 import { CONFIG, type GameConfig } from "./config";
-import { defaultRanchClock, ecologyScalePerGameDay, rollGameDay } from "./clock";
+import { defaultRanchClock, ecologyScalePerGameDay, rollGameDayFromState } from "./clock";
 import { defaultNotificationState } from "./notifications";
 import { isSeasonStart, gameDaysInMonth } from "./calendar";
+import { createGameFromDefinition, loadDefaultFarmDefinition } from "./farmDefinition";
 import { generateFarm } from "./generate";
 import {
   dailyDemandKg,
@@ -19,6 +20,25 @@ import { herdInTransit, startHerdMove } from "./transit";
 import type { CampState, GameState, MoveResult } from "./types";
 
 export function createGame(seed = CONFIG.worldSeed, config: GameConfig = CONFIG): GameState {
+  if (seed === CONFIG.worldSeed && cachedDefaultState) return cloneGameState(cachedDefaultState);
+  return generateFarm(seed, config);
+}
+
+let cachedDefaultState: GameState | null = null;
+
+function cloneGameState(state: GameState): GameState {
+  return JSON.parse(JSON.stringify(state)) as GameState;
+}
+
+/** Load public/farms/default-farm.json once; used for seed 3300 at runtime. */
+export async function preloadDefaultFarm(config: GameConfig = CONFIG): Promise<boolean> {
+  const def = await loadDefaultFarmDefinition();
+  if (!def || def.seed !== config.worldSeed) return false;
+  cachedDefaultState = createGameFromDefinition(def, config);
+  return true;
+}
+
+export function generateFarmState(seed: number, config: GameConfig = CONFIG): GameState {
   return generateFarm(seed, config);
 }
 
@@ -38,7 +58,8 @@ export function campIdAt(state: GameState, x: number, y: number): number | null 
 export function stepDayWithRain(state: GameState, rainMm: number, config: GameConfig = CONFIG): void {
   if (!state.clock) state.clock = defaultRanchClock();
   if (!state.notifications) state.notifications = defaultNotificationState();
-  if (isSeasonStart(state.date, config)) state.seasonRainMm = 0;
+  const nextDate = rollGameDayFromState(state, config);
+  if (isSeasonStart(nextDate, config)) state.seasonRainMm = 0;
   state.todayRainMm = rainMm;
   const dpm = gameDaysInMonth(state, config);
   const eco = ecologyScalePerGameDay(dpm, config.calendar.ecologyReferenceDaysPerMonth);
@@ -80,7 +101,7 @@ export function stepDayWithRain(state: GameState, rainMm: number, config: GameCo
     afterFeedDay(state, eaten, demand, config, eco);
   }
 
-  state.date = rollGameDay(state.date, dpm);
+  state.date = nextDate;
 }
 
 export function stepDay(state: GameState, config: GameConfig = CONFIG): void {

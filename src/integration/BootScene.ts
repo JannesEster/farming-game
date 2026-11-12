@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { preloadDefaultFarm } from "../sim/simulation";
 import { getGameFlow } from "./GameFlowService";
 
 export class BootScene extends Phaser.Scene {
@@ -7,6 +8,8 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
-    getGameFlow().boot(this.game);
+    void preloadDefaultFarm().finally(() => {
+      getGameFlow().boot(this.game);
+    });
   }
 }

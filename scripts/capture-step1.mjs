@@ -24,6 +24,18 @@ function waitForServer(url, timeoutMs = 60000) {
   });
 }
 
+async function waitForTransitMidpoint(page) {
+  for (let i = 0; i < 40; i += 1) {
+    const progress = await page.evaluate(() => {
+      const scene = window.__farmCapture;
+      return scene?.herdTransitProgress?.() ?? 0;
+    });
+    if (progress >= 0.22 && progress <= 0.72) return progress;
+    await page.waitForTimeout(400);
+  }
+  return 0;
+}
+
 async function main() {
   await mkdir(outDir, { recursive: true });
   const preview = spawn("npm", ["run", "preview"], { cwd: repoRoot, stdio: "ignore" });
@@ -52,26 +64,24 @@ async function main() {
       await page.waitForTimeout(500);
       await page.screenshot({ path: path.join(outDir, `${viewport.name}-night.png`) });
 
-      await page.evaluate(() => window.__farmCapture?.zoomGrassReadability?.());
-      await page.waitForTimeout(400);
+      await page.evaluate(() => window.__farmCapture?.zoomGrassNearCapture?.());
+      await page.waitForTimeout(450);
       await page.screenshot({ path: path.join(outDir, `${viewport.name}-grass-near.png`) });
 
-      await page.evaluate(() => window.__farmCapture?.zoomFullFarm?.());
-      await page.waitForTimeout(400);
+      await page.evaluate(() => window.__farmCapture?.zoomGrassFarCapture?.());
+      await page.waitForTimeout(450);
       await page.screenshot({ path: path.join(outDir, `${viewport.name}-grass-far.png`) });
 
       await page.screenshot({ path: path.join(outDir, `${viewport.name}-scale-bar.png`) });
 
       await page.evaluate(() => window.__farmCapture?.triggerHerdMoveDemo?.());
-      for (let i = 0; i < 12; i += 1) {
-        await page.waitForTimeout(500);
-        if (i === 6) {
-          await page.screenshot({ path: path.join(outDir, `${viewport.name}-herd-walk.png`) });
-        }
-      }
+      await waitForTransitMidpoint(page);
+      await page.evaluate(() => window.__farmCapture?.zoomHerdWalkCapture?.());
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: path.join(outDir, `${viewport.name}-herd-walk.png`) });
 
       await page.evaluate(() => window.__farmCapture?.openNotificationsDemo?.());
-      await page.waitForTimeout(400);
+      await page.waitForTimeout(450);
       await page.screenshot({ path: path.join(outDir, `${viewport.name}-notifications.png`) });
 
       await page.evaluate(() => window.__farmCapture?.showMonthSummaryDemo?.());

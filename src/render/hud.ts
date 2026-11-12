@@ -18,7 +18,8 @@ import { compositionSummaryLine } from "../sim/cattleClasses";
 import { seasonLabelForHud } from "../sim/story";
 import { moveAdvice } from "../sim/grazing";
 import { findCamp } from "../sim/simulation";
-import { formatClockTime } from "../sim/clock";
+import { formatClockTime, type DayLengthSeconds } from "../sim/clock";
+import { CONFIG } from "../sim/config";
 import type { NotificationItem } from "../sim/notifications";
 import { grazeableFraction, grazingDaysLeft } from "../sim/pasture";
 import type { GameState } from "../sim/types";
@@ -74,6 +75,7 @@ export function mountHud(options: {
   onOpenMarket: () => void;
   onSheetExpanded?: (expanded: boolean) => void;
   onHerdLocator?: () => void;
+  onDayLength?: (seconds: DayLengthSeconds) => void;
 }): Hud {
   const root = document.getElementById("hud-root");
   if (!root) throw new Error("Missing the HUD root.");
@@ -99,6 +101,12 @@ export function mountHud(options: {
       <div class="overflow-menu" id="overflow-menu" hidden>
         <button type="button" id="view-home">Home</button>
         <button type="button" id="market-open">Sell / market</button>
+        <label class="settings-row" for="day-length-select">Day length</label>
+        <select id="day-length-select" aria-label="Day length in minutes">
+          <option value="180">3 minutes</option>
+          <option value="240">4 minutes</option>
+          <option value="300">5 minutes</option>
+        </select>
         <button type="button" id="new-farm">${COPY.newFarmLabel}</button>
       </div>
     </header>
@@ -185,6 +193,7 @@ export function mountHud(options: {
   const overflowMenu = required(root, "overflow-menu");
   const newFarmBtn = requiredButton(root, "new-farm");
   const homeBtn = requiredButton(root, "view-home");
+  const dayLengthSelect = required(root, "day-length-select") as HTMLSelectElement;
   const minimap = root.querySelector<HTMLCanvasElement>("#minimap");
   if (!minimap) throw new Error("Missing the minimap.");
   const herdLocator = requiredButton(root, "herd-locator");
@@ -286,6 +295,11 @@ export function mountHud(options: {
     overflowMenu.hidden = true;
     options.onHome();
   });
+  dayLengthSelect.value = String(CONFIG.time.dayLengthSecondsDefault);
+  dayLengthSelect.addEventListener("change", () => {
+    const seconds = Number(dayLengthSelect.value) as DayLengthSeconds;
+    if (CONFIG.time.dayLengthOptions.includes(seconds)) options.onDayLength?.(seconds);
+  });
   overflowBtn.addEventListener("click", (event) => {
     event.stopPropagation();
     const open = overflowMenu.hidden;
@@ -366,6 +380,9 @@ export function mountHud(options: {
       const dry = !seasonText.toLowerCase().includes("rain");
       dateEl.textContent = formatHudDate(state.date);
       timeEl.textContent = formatClockTime(state.date);
+      if (state.clock?.settings.dayLengthSeconds) {
+        dayLengthSelect.value = String(state.clock.settings.dayLengthSeconds);
+      }
       seasonEl.innerHTML = dry ? ICONS.dry : ICONS.rain;
       seasonEl.title = seasonText;
       cashEl.textContent = formatHudMoney(state.cashNad);

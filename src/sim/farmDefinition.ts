@@ -12,16 +12,6 @@ export type FarmCampInfrastructure = {
   trough: boolean;
 };
 
-export type FarmDefinitionCamp = {
-  id: number;
-  name: string;
-  hectares: number;
-  /** Tile membership for the camp polygon on the grid. */
-  tiles: TilePoint[];
-  anchor: TilePoint;
-  infrastructure: FarmCampInfrastructure;
-};
-
 export type FarmDefinitionGate = {
   campA: number;
   campB: number;
@@ -29,28 +19,42 @@ export type FarmDefinitionGate = {
   toGate: TilePoint;
 };
 
+/** Compact on disk; camp membership lives in campIds grid. */
 export type FarmDefinition = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   id: string;
   label: string;
   seed: number;
   hectares: number;
-  /** Metres represented by one map tile. A. TODO: matches CONFIG.transit.kmPerTile. */
   metresPerTile: number;
   width: number;
   height: number;
   campIds: number[];
-  camps: FarmDefinitionCamp[];
+  camps: {
+    id: number;
+    name: string;
+    hectares: number;
+    anchor: TilePoint;
+    infrastructure: FarmCampInfrastructure;
+  }[];
   gates: FarmDefinitionGate[];
-  lanes: TilePoint[];
-  waterpoints: TilePoint[];
+  laneKeys: string[];
   features: Feature[];
-  /** ISO 3166 style region key for rainfall table. */
   regionKey?: string;
 };
 
 export function metresPerTileFromConfig(config: GameConfig = CONFIG): number {
   return config.transit.kmPerTile * 1000;
+}
+
+function campBounds(campIds: number[], width: number, campId: number): TilePoint[] {
+  const tiles: TilePoint[] = [];
+  for (let y = 0; y < campIds.length / width; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (campIds[y * width + x] === campId) tiles.push({ x, y });
+    }
+  }
+  return tiles;
 }
 
 export function farmDefinitionFromState(state: GameState, config: GameConfig = CONFIG): FarmDefinition {
@@ -63,26 +67,15 @@ export function farmDefinitionFromState(state: GameState, config: GameConfig = C
       if (pair) gates.push({ campA: a.id, campB: b.id, fromGate: pair.fromGate, toGate: pair.toGate });
     }
   }
-  const lanes: TilePoint[] = [];
-  const waterpoints: TilePoint[] = [];
+  const laneKeys: string[] = [];
+  const features: Feature[] = [];
   for (const feature of state.features) {
-    if (feature.kind === "track") lanes.push({ x: feature.x, y: feature.y });
-    if (feature.kind === "trough" || feature.kind === "windmill" || feature.kind === "reservoir") {
-      waterpoints.push({ x: feature.x, y: feature.y });
-    }
+    if (feature.kind === "track") laneKeys.push(`${feature.x},${feature.y}`);
+    else features.push({ ...feature });
   }
 
-  const camps: FarmDefinitionCamp[] = state.camps.map((camp) => ({
-    id: camp.id,
-    name: camp.name,
-    hectares: camp.hectares,
-    tiles: camp.tiles,
-    anchor: camp.anchor,
-    infrastructure: infrastructureForCamp(state, camp),
-  }));
-
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: state.farmMeta?.offerId ?? `seed-${state.seed}`,
     label: config.farm.name,
     seed: state.seed,
@@ -91,11 +84,16 @@ export function farmDefinitionFromState(state: GameState, config: GameConfig = C
     width: state.width,
     height: state.height,
     campIds: [...state.campIds],
-    camps,
+    camps: state.camps.map((camp) => ({
+      id: camp.id,
+      name: camp.name,
+      hectares: camp.hectares,
+      anchor: { ...camp.anchor },
+      infrastructure: infrastructureForCamp(state, camp),
+    })),
     gates,
-    lanes,
-    waterpoints,
-    features: state.features.map((f) => ({ ...f })),
+    laneKeys,
+    features,
     regionKey: state.farmMeta?.regionKey,
   };
 }
@@ -148,11 +146,18 @@ function infrastructureForCamp(state: GameState, camp: CampState): FarmCampInfra
   };
 }
 
-/** Build runtime state from a farm definition (pasture values come from generator defaults). */
+export function isFarmDefinition(value: unknown): value is FarmDefinition {
+  if (!value || typeof value !== "object") return false;
+  const def = value as FarmDefinition;
+  return def.schemaVersion === 2 && Array.isArray(def.campIds) && Array.isArray(def.camps);
+}
+
+/** Build runtime state from compact farm JSON. Pasture stats come from the same seed via generateFarm. */
 export function gameStateFromFarmDefinition(def: FarmDefinition, config: GameConfig = CONFIG): GameState {
   const generated = generateFarm(def.seed, config);
   const camps: CampState[] = def.camps.map((dc) => {
     const prior = generated.camps.find((c) => c.id === dc.id);
+    const tiles = campBounds(def.campIds, def.width, dc.id);
     return {
       id: dc.id,
       name: dc.name,
@@ -161,10 +166,18 @@ export function gameStateFromFarmDefinition(def: FarmDefinition, config: GameCon
       standingDmKgPerHa: prior?.standingDmKgPerHa ?? config.pasture.peakDmKgPerHa * 0.7,
       soilMoistureMm: prior?.soilMoistureMm ?? 0,
       restDays: prior?.restDays ?? 0,
-      tiles: dc.tiles.map((t) => ({ ...t })),
+      tiles,
       anchor: { ...dc.anchor },
     };
   });
+  const laneFeatures: Feature[] = def.laneKeys.map((key) => {
+    const [sx, sy] = key.split(",").map(Number);
+    return { kind: "track", x: sx, y: sy, scale: 1 };
+  });
+  const herdCamp =
+    generated.herd.campId >= 0 && def.campIds.includes(generated.herd.campId)
+      ? generated.herd.campId
+      : (camps[0]?.id ?? 0);
   return {
     ...generated,
     seed: def.seed,
@@ -172,6 +185,34 @@ export function gameStateFromFarmDefinition(def: FarmDefinition, config: GameCon
     height: def.height,
     campIds: [...def.campIds],
     camps,
-    features: def.features.map((f) => ({ ...f })),
+    features: [...def.features, ...laneFeatures],
+    herd: { ...generated.herd, campId: herdCamp },
+    farmMeta: generated.farmMeta
+      ? { ...generated.farmMeta, offerId: def.id, regionKey: def.regionKey ?? generated.farmMeta.regionKey }
+      : undefined,
   };
+}
+
+export const DEFAULT_FARM_PATH = "/farms/default-farm.json";
+
+let defaultFarmPromise: Promise<FarmDefinition | null> | null = null;
+
+export function loadFarmDefinitionFromUrl(url: string): Promise<FarmDefinition | null> {
+  return fetch(url)
+    .then((res) => (res.ok ? res.json() : null))
+    .then((data) => (isFarmDefinition(data) ? data : null))
+    .catch(() => null);
+}
+
+export function loadDefaultFarmDefinition(): Promise<FarmDefinition | null> {
+  if (!defaultFarmPromise) {
+    const base = typeof import.meta !== "undefined" && import.meta.env?.BASE_URL ? import.meta.env.BASE_URL : "/";
+    const path = `${base}${DEFAULT_FARM_PATH.replace(/^\//, "")}`;
+    defaultFarmPromise = loadFarmDefinitionFromUrl(path);
+  }
+  return defaultFarmPromise;
+}
+
+export function createGameFromDefinition(def: FarmDefinition, config: GameConfig = CONFIG): GameState {
+  return gameStateFromFarmDefinition(def, config);
 }

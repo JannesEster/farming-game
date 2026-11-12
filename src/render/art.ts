@@ -46,14 +46,15 @@ export type ArtSheet = {
   garden: HTMLCanvasElement;
 };
 
+export type CowView = "left" | "right" | "toward" | "away";
+
 export type HerdOffset = {
   x: number;
   y: number;
   flip: boolean;
   coat: number;
   scale: number;
-  /** Screen facing angle in radians for painted cattle. */
-  facingRad: number;
+  view: CowView;
 };
 
 function canvas(width: number, height: number, draw: (ctx: CanvasRenderingContext2D) => void): HTMLCanvasElement {
@@ -137,14 +138,13 @@ export function herdLayout(count: number, seed: number, radiusX: number, radiusY
   for (let i = 0; i < count; i += 1) {
     const angle = next() * Math.PI * 2;
     const dist = Math.sqrt(next()) * (0.35 + next() * 0.65);
-    const facing = angle;
     offsets.push({
       x: Math.cos(angle) * radiusX * dist,
       y: Math.sin(angle) * radiusY * dist,
-      flip: Math.cos(facing) > 0,
+      flip: false,
       coat: Math.floor(next() * 6),
       scale: 0.42 + next() * 0.22,
-      facingRad: facing,
+      view: next() > 0.5 ? "right" : "left",
     });
   }
   return offsets;

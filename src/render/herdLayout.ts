@@ -1,11 +1,20 @@
 import type { CampState, GameState, TilePoint } from "../sim/types";
 import { TILE_HOMESTEAD, TILE_OUTSIDE } from "../sim/types";
-import type { HerdOffset } from "./art";
+import type { CowView, HerdOffset } from "./art";
+import { cowViewFromVector } from "./sprites";
 
 export function facingFromTileVector(ux: number, uy: number): number {
   const sx = ux - uy;
   const sy = (ux + uy) * 0.5;
   return Math.atan2(sy, sx);
+}
+
+function randomView(next: () => number): CowView {
+  const roll = next();
+  if (roll < 0.25) return "left";
+  if (roll < 0.5) return "right";
+  if (roll < 0.75) return "toward";
+  return "away";
 }
 import { tileCenter, worldToTile, type IsoLayout } from "./iso";
 import { trackKeys } from "./colour";
@@ -170,10 +179,10 @@ export function spreadInCamp(
     reachX = Math.max(reachX, Math.abs(point.x - center.x));
     reachY = Math.max(reachY, Math.abs(point.y - center.y));
   }
-  const radiusX = Math.min(tileW * 2.7, Math.max(tileW * 1.15, reachX * 0.42));
-  const radiusY = Math.min(tileH * 3.4, Math.max(tileH * 1.35, reachY * 0.42));
+  const radiusX = Math.min(tileW * 3.6, Math.max(tileW * 1.55, reachX * 0.62));
+  const radiusY = Math.min(tileH * 4.5, Math.max(tileH * 1.75, reachY * 0.62));
   const points: { x: number; y: number }[] = [];
-  let minDist = Math.min(radiusX, radiusY) * 0.22;
+  let minDist = Math.min(radiusX, radiusY) * 0.16;
   for (let round = 0; round < 7 && points.length < count; round += 1) {
     let guard = 0;
     while (points.length < count && guard < count * 36) {
@@ -205,10 +214,10 @@ export function spreadInCamp(
   return points.map((point) => ({
     x: point.x - anchor.x,
     y: point.y - anchor.y,
-    flip: next() > 0.5,
+    flip: false,
     coat: Math.floor(next() * 6),
-    scale: 0.9 + next() * 0.1,
-    facingRad: (next() - 0.5) * 0.35,
+    scale: 0.72 + next() * 0.08,
+    view: randomView(next),
   }));
 }
 
@@ -298,14 +307,13 @@ export function fileAlongPath(
     const px = -at.uy;
     const py = at.ux;
     const foot = nudgeInsideCamp(state, at.x + px * lane, at.y + py * lane, layout, tileW, tileH);
-    const facing = facingFromTileVector(at.ux, at.uy);
     offsets.push({
       x: foot.x - herdX,
       y: foot.y - herdY,
-      flip: Math.cos(facing) > 0,
+      flip: false,
       coat: Math.floor(phase * 6) % 6,
-      scale: 0.7 + (phase % 0.12),
-      facingRad: facing,
+      scale: 0.58 + (phase % 0.1),
+      view: cowViewFromVector(at.ux, at.uy),
     });
   }
   return offsets;
@@ -442,14 +450,13 @@ export function organicTrekOffsets(
     const nibble = Math.sin(timeMs / 380 + i * 1.65 + phase * 4) > 0.97;
     const nibbleBack = nibble ? -5 : 0;
 
-    const facing = facingFromTileVector(ux, uy);
     offsets.push({
       x: ux * (along + nibbleBack) + px * across,
       y: uy * (along + nibbleBack) + py * across,
-      flip: Math.cos(facing) > 0,
+      flip: false,
       coat: Math.floor(phase * 6) % 6,
-      scale: (0.64 + (phase % 0.12)) * (nibble ? 0.92 : 1),
-      facingRad: facing,
+      scale: (0.52 + (phase % 0.1)) * (nibble ? 0.92 : 1),
+      view: cowViewFromVector(ux, uy),
     });
   }
   return offsets;
@@ -534,10 +541,10 @@ export function blendOffsets(
     return {
       x: s.x * (1 - t) + m.x * t,
       y: s.y * (1 - t) + m.y * t,
-      flip: t > 0.5 ? m.flip : s.flip,
+      flip: false,
       coat: s.coat,
       scale: s.scale * (1 - t * 0.08) + m.scale * t * 0.08,
-      facingRad: s.facingRad * (1 - t) + m.facingRad * t,
+      view: t > 0.5 ? m.view : s.view,
     };
   });
 }

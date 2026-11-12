@@ -1,4 +1,7 @@
+import { daysInGameMonth } from "./calendar";
+import type { GameState } from "./types";
 import type { CalendarDate } from "./types";
+import { CONFIG, type GameConfig } from "./config";
 
 /** Real seconds for a full game day at 1x. */
 export type DayLengthSeconds = 180 | 240 | 300;
@@ -117,11 +120,15 @@ export function tickRanchClock(
   return { bankMs: bank, hoursAdvanced, daySteps, date: current };
 }
 
-export function rollGameDay(date: CalendarDate, daysPerMonth: number): CalendarDate {
-  const dpm = Math.max(1, Math.min(28, Math.floor(daysPerMonth)));
-  let { year, month, day } = date;
+export function rollGameDay(
+  date: CalendarDate,
+  daysPerMonth: number,
+  config: GameConfig = CONFIG,
+): CalendarDate {
+  const span = daysInGameMonth(daysPerMonth, date.year, date.month, config);
+  let { year, month, day, hour } = date;
   day += 1;
-  if (day > dpm) {
+  if (day > span) {
     day = 1;
     month += 1;
     if (month > 12) {
@@ -129,7 +136,12 @@ export function rollGameDay(date: CalendarDate, daysPerMonth: number): CalendarD
       year += 1;
     }
   }
-  return { year, month, day, hour: DAYLIGHT_START };
+  return { year, month, day, hour };
+}
+
+export function rollGameDayFromState(state: GameState, config: GameConfig = CONFIG): CalendarDate {
+  const requested = state.clock?.settings.daysPerMonth ?? config.calendar.daysPerMonthDefault;
+  return rollGameDay(state.date, requested, config);
 }
 
 export function formatClockTime(date: CalendarDate): string {

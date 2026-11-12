@@ -8,7 +8,9 @@ import { presentStoryCard } from "./storyPresent";
 import { daylightBlend, tickRanchClock } from "../sim/clock";
 import { elementVisible, isSimBlocked as simClockBlocked, speedMultiplier, transitMayAdvance } from "./simGate";
 import { syncAlertStrip } from "../integration/notificationHub";
+import { bfsCampRoute } from "../sim/path";
 import { campIdAt, moveHerd, stepDay } from "../sim/simulation";
+import type { DayLengthSeconds } from "../sim/clock";
 import { herdInTransit, herdWorldTile, pathTangent, tickTransitRealtime } from "../sim/transit";
 import {
   PAN_INERTIA,
@@ -72,7 +74,10 @@ import {
   COW_LOD_ZOOM,
   cattleDisplayScale,
   cattleSpriteForCoat,
+  cattleTextureForView,
+  cowPresentationScale,
   ensureCowDotTexture,
+  ensureCowViewTextures,
   maybePaintedTermiteAt,
   maybeRockAt,
   paintedSpritesReady,
@@ -134,6 +139,18 @@ export class FarmScene extends Phaser.Scene {
   private herdLabel?: Phaser.GameObjects.Text;
   private herdVisual = { x: 0, y: 0 };
   private campLabels = new Map<number, Phaser.GameObjects.Text>();
+  private hiddenSinceMs = 0;
+  private visibilityCatchMs = 0;
+  private onVisibilityChange = (): void => {
+    if (document.hidden) {
+      this.hiddenSinceMs = performance.now();
+      return;
+    }
+    if (this.hiddenSinceMs <= 0) return;
+    const cap = this.state.clock?.settings.catchUpCapMs ?? CONFIG.time.catchUpCapMs;
+    this.visibilityCatchMs += Math.min(cap, performance.now() - this.hiddenSinceMs);
+    this.hiddenSinceMs = 0;
+  };
 
   constructor() {
     super("farm");
@@ -168,6 +185,7 @@ export class FarmScene extends Phaser.Scene {
     this.track = trackKeys(this.state);
     this.paintedSprites = paintedSpritesReady(this.textures);
     ensureCowDotTexture(this);
+    if (this.paintedSprites) ensureCowViewTextures(this);
     this.buildProceduralFallback();
     if (this.paintedSprites) {
       this.bakeAllTerrain();
@@ -211,6 +229,7 @@ export class FarmScene extends Phaser.Scene {
       onConfirmMove: () => this.confirmPendingMove(),
       onCancelMove: () => this.cancelPendingMove(),
       onOpenMarket: () => this.market.open(),
+      onDayLength: (seconds) => this.setDayLength(seconds),
       onSheetExpanded: (expanded) => {
         getGameFlow().setHudPanel("herdSheet", Boolean(expanded));
         if (expanded) getGameFlow().notifySim("grassChecked");
@@ -247,6 +266,7 @@ export class FarmScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       cancelAnimationFrame(refit);
       this.scale.off("resize", onResize);
+      document.removeEventListener("visibilitychange", this.onVisibilityChange);
       this.hud?.destroy();
       this.market?.destroy();
     });
@@ -258,6 +278,26 @@ export class FarmScene extends Phaser.Scene {
       canvas.addEventListener("contextmenu", (event) => event.preventDefault());
     }
     this.installCaptureBridge();
+    document.addEventListener("visibilitychange", this.onVisibilityChange);
+  }
+
+  private setDayLength(seconds: DayLengthSeconds): void {
+    if (!this.state.clock) return;
+    this.state.clock.settings.dayLengthSeconds = seconds;
+    this.persist();
+  }
+
+  private pickDistantMoveCamp(): number | null {
+    const from = this.state.herd.campId;
+    let best: { id: number; hops: number } | null = null;
+    for (const camp of this.state.camps) {
+      if (camp.id === from) continue;
+      const route = bfsCampRoute(this.state, from, camp.id);
+      if (!route || route.length < 3) continue;
+      const hops = route.length - 1;
+      if (!best || hops > best.hops) best = { id: camp.id, hops };
+    }
+    return best?.id ?? null;
   }
 
   private installCaptureBridge(): void {
@@ -442,6 +482,7 @@ export class FarmScene extends Phaser.Scene {
         this.clampScroll();
         return camera.zoom;
       },
+      herdTransitProgress: () => this.state.herd.transit?.progress ?? 0,
       sampleFps: async (frames = 90) => {
         const samples: number[] = [];
         for (let i = 0; i < frames; i += 1) {
@@ -484,28 +525,41 @@ export class FarmScene extends Phaser.Scene {
         return true;
       },
       setNightForCapture: () => {
-        this.state.date.hour = 2;
-        this.hud.setDaylight(0.1);
-        if (this.nightOverlay) this.nightOverlay.setAlpha(0.5);
+        this.state.date.hour = 22;
+        this.hud.setDaylight(0.06);
+        if (this.nightOverlay) this.nightOverlay.setAlpha(0.72);
         return true;
       },
-      zoomGrassReadability: () => {
+      zoomGrassNearCapture: () => {
         const camera = this.cameras.main;
-        camera.setZoom(clampZoom(0.85, this.minZoom, this.maxZoom));
-        this.layoutCamera(false);
+        camera.setZoom(clampZoom(0.92, this.minZoom, this.maxZoom));
+        this.jumpCameraTo(this.herdVisual.x, this.herdVisual.y, false);
+        this.clampScroll();
         return camera.zoom;
       },
-      zoomFullFarm: () => {
+      zoomGrassFarCapture: () => {
         const camera = this.cameras.main;
         camera.setZoom(clampZoom(this.minZoom, this.minZoom, this.maxZoom));
         this.layoutCamera(false);
         this.clampScroll();
+        this.redrawFences();
         return camera.zoom;
       },
+      zoomHerdWalkCapture: () => {
+        const camera = this.cameras.main;
+        camera.setZoom(clampZoom(0.58, this.minZoom, this.maxZoom));
+        this.jumpCameraTo(this.herdVisual.x, this.herdVisual.y, false);
+        this.clampScroll();
+        return camera.zoom;
+      },
+      pickDistantMoveCamp: () => this.pickDistantMoveCamp(),
       triggerHerdMoveDemo: () => {
-        const target = this.state.camps.find((c) => c.id !== this.state.herd.campId);
+        const targetId = this.pickDistantMoveCamp();
+        const target =
+          (targetId !== null && this.state.camps.find((c) => c.id === targetId)) ??
+          this.state.camps.find((c) => c.id !== this.state.herd.campId);
         if (target) this.commitMove(target.id);
-        this.setSpeed("x2");
+        this.setSpeed("x3");
         return true;
       },
       openNotificationsDemo: () => {
@@ -520,7 +574,14 @@ export class FarmScene extends Phaser.Scene {
           read: false,
         });
         this.hud.syncAlerts(["Camp 8 worn", "Camp 3 no trough"]);
-        this.hud.pushNewsLog(["Late rains: Season rain is 42 mm, below a normal start."]);
+        this.hud.pushNewsLog([
+          "Late rains: Season rain is 42 mm, below a normal start.",
+          "Month in review: Labour and lick costs posted.",
+        ]);
+        document.getElementById("news-log")?.removeAttribute("hidden");
+        document.getElementById("letter-stack")?.removeAttribute("hidden");
+        document.getElementById("alert-strip")?.removeAttribute("hidden");
+        document.getElementById("news-log-open")?.removeAttribute("hidden");
         return true;
       },
       showDroughtChoice: () => {
@@ -556,10 +617,15 @@ export class FarmScene extends Phaser.Scene {
     this.state.clock.speed = speedMultiplier(this.mode);
     let steps = 0;
     if (!walking) {
+      let catchUp = 0;
+      if (this.visibilityCatchMs > 0) {
+        catchUp = this.visibilityCatchMs;
+        this.visibilityCatchMs = 0;
+      }
       const tick = tickRanchClock(
         this.state.date,
         this.state.clock,
-        delta,
+        delta + catchUp,
         blocked,
       );
       this.state.date = tick.date;
@@ -603,6 +669,7 @@ export class FarmScene extends Phaser.Scene {
     this.syncHerdFromSim();
     if (this.state.herd.campId !== prevCamp) this.redrawFences();
     this.placeHerd(time);
+    this.refreshCampLabelScale();
     this.cullProps();
     this.cullChunks();
     if (this.blades && !this.reduceMotion && !this.paintedSprites) {
@@ -939,6 +1006,15 @@ export class FarmScene extends Phaser.Scene {
       const active = camp.id === this.state.herd.campId;
       label.setColor(active && badge ? "#f0c27a" : "#f7f0e2");
     }
+    this.refreshCampLabelScale();
+  }
+
+  private refreshCampLabelScale(): void {
+    const zoom = Math.max(this.cameras.main.zoom, 0.08);
+    const boost = Math.min(2.8, Math.max(1, 0.58 / zoom));
+    for (const label of this.campLabels.values()) {
+      label.setScale(boost);
+    }
   }
 
   private startNewFarm(): void {
@@ -1017,7 +1093,7 @@ export class FarmScene extends Phaser.Scene {
     this.fenceGates.forEach((gate) => gate.destroy());
     this.fenceGates = [];
     const segments = collectFenceSegments(this.state, this.layout, herdCamp, this.selected);
-    drawFences(this.fences, segments);
+    drawFences(this.fences, segments, this.cameras.main.zoom);
     this.fenceGates = placeGateSprites(this, segments, this.paintedSprites);
   }
 
@@ -1093,7 +1169,7 @@ export class FarmScene extends Phaser.Scene {
         flip: false,
         coat: 0,
         scale: 0.5,
-        facingRad: 0,
+        view: "right" as const,
       };
       const walk =
         walking && !this.reduceMotion
@@ -1105,18 +1181,13 @@ export class FarmScene extends Phaser.Scene {
         cow.setRotation(0);
         cow.setFlipX(false);
       } else if (this.paintedSprites) {
-        cow.setTexture(cattleSpriteForCoat(offset.coat));
-        const base = cattleDisplayScale(offset.scale / 0.94);
-        const refZoom = (CONFIG.view.phoneTilePx * 0.92) / CONFIG.view.tileWidth;
-        const zoomComp = zoom < 0.45 ? clamp(refZoom / Math.max(zoom, 0.08), 1, 1.45) : 1;
+        cow.setTexture(cattleTextureForView(offset.coat, offset.view));
+        const base = cattleDisplayScale(offset.scale / 0.82);
         const squash = walking && !this.reduceMotion ? 1 + Math.sin(time / 170 + index * 0.9) * 0.03 : 1;
-        const s = base * zoomComp;
-        cow.setScale(s, s * squash);
-        const tilt = walking ? offset.facingRad * 0.92 : offset.facingRad * 0.35;
-        const grazeTilt =
-          walking || this.reduceMotion ? tilt : tilt + Math.sin(time / 520 + index * 1.1) * 0.04;
-        cow.setFlipX(offset.flip);
-        cow.setRotation(grazeTilt);
+        const face = cowPresentationScale(offset.view, base);
+        cow.setScale(face.x, face.y * squash);
+        cow.setFlipX(false);
+        cow.setRotation(0);
       } else {
         const animFrame = walking
           ? Math.floor(time / 160 + index * 0.15) % 3
