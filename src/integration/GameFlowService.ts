@@ -20,6 +20,8 @@ import {
 import { createStoryEventsAdapter } from "./storyEventsAdapter";
 import { createStoryEconomy } from "./storyEconomyAdapter";
 import { stateFromOfferCard } from "./pickerAdapter";
+import { CONFIG } from "../sim/config";
+import { createGame } from "../sim/simulation";
 import type { FarmOfferCard } from "../picker/types";
 import {
   closePickerScreen,
@@ -111,6 +113,20 @@ export class GameFlowService {
     const params = new URLSearchParams(window.location.search);
     const flow = params.get("flowCapture");
     const offerId = params.get("offer");
+    if (params.get("capture") === "1" && params.get("farm") === "default") {
+      const card = generateFarmOffers(88001).find((o) => o.playable);
+      if (card) {
+        this.pickFarmPurchase(createGame(CONFIG.worldSeed), card);
+        this.runtime.meta.tutorial = {
+          completed: true,
+          skipped: true,
+          currentStepId: null,
+          finishedStepIds: [],
+        };
+        this.ui?.hideTutorial();
+        return;
+      }
+    }
     if (params.get("capture") === "1" && offerId) {
       const card = generateFarmOffers(88001).find((o) => o.id === offerId);
       if (card?.playable) {

@@ -4,7 +4,8 @@ export const STEP3A = {
   /** A. TODO assumption. Build one more corrugated worker cottage near the yard. */
   workerHouseBuildCostNad: 48_500,
   /** Tile placement for the optional second worker house (homestead grid). */
-  workerHouseBuildTile: { x: 10, y: 14 },
+  /** Beside homestead yard (matches default farm worker_house). */
+  workerHouseBuildTile: { x: 17, y: 15 },
   /** Real-time ms to walk from yard to a camp at 1x (scaled by path length). */
   approachBaseMs: 5_500,
   /** Herder tile steps per sim hour while approaching or on chores. */

@@ -25,6 +25,7 @@ import { maxGrazingDaysInCamp, moveAdvice } from "./grazing";
 import { formatMoveWarning } from "./format";
 import { dailyRainMm } from "./rainfall";
 import { createGame, findCamp, moveHerd, stepDay, stepDayWithRain } from "./simulation";
+import { campHasWaterAccess } from "./water";
 import { tickHerdingRealtime } from "./herding";
 import { herdMoveActive } from "./transit";
 import type { CampState, GameState, HerdState } from "./types";
@@ -207,7 +208,7 @@ describe("grazing rhythm and warnings", () => {
     const state = createGame(8);
     dry(state);
     const fromId = state.herd.campId;
-    const rested = state.camps.find((item) => item.id !== fromId);
+    const rested = state.camps.find((item) => item.id !== fromId && campHasWaterAccess(state, item));
     if (!rested) throw new Error("expected second camp");
     rested.restDays = CONFIG.pasture.fullRestDays;
     rested.standingDmKgPerHa = rested.peakDmKgPerHa * 0.9;
@@ -336,7 +337,11 @@ describe("the running farm", () => {
       expect(kinds.has("windmill")).toBe(true);
       expect(kinds.has("reservoir")).toBe(true);
       expect(kinds.has("kraal")).toBe(true);
-      expect(first.features.filter((feature) => feature.kind === "trough")).toHaveLength(first.camps.length);
+      const troughs = first.features.filter((feature) => feature.kind === "trough");
+      expect(troughs.length).toBeGreaterThan(0);
+      expect(troughs.length).toBeLessThan(first.camps.length);
+      expect(first.farmWaterPoints?.length ?? 0).toBeGreaterThan(0);
+      expect(first.camps.some((camp) => !campHasWaterAccess(first, camp))).toBe(true);
       expect(findCamp(first, first.herd.campId)).toBeDefined();
       expect(first.camps.map((item) => [item.hectares, item.standingDmKgPerHa, item.tiles.length])).toEqual(
         second.camps.map((item) => [item.hectares, item.standingDmKgPerHa, item.tiles.length]),

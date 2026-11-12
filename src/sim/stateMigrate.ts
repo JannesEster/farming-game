@@ -8,12 +8,100 @@ import { DEFAULT_PLAYER_DISPLAY_NAME } from "./playerName";
 import { defaultWorkGrid, freshDailyPlay } from "./workGrid";
 import { createStoryState, defaultComposition } from "./story";
 import type { GameState } from "./types";
-import type { HerdComposition } from "./storyTypes";
+import type { FarmWaterPoint, HerdComposition } from "./storyTypes";
+import { STEP3B } from "./step3bConfig";
 
-export const GAME_STATE_VERSION = 6;
+import { defaultDrinkingTrip } from "./water";
+import { defaultBakkieRun } from "./bakkie";
+
+export const GAME_STATE_VERSION = 7;
+
+function deriveWaterPointsFromFeatures(state: GameState): FarmWaterPoint[] {
+  const points: FarmWaterPoint[] = [];
+  const windmills = state.features.filter((f) => f.kind === "windmill" || f.kind === "solar_pump");
+  for (const pump of windmills) {
+    const trough =
+      state.features.find(
+        (f) => f.kind === "trough" && Math.hypot(f.x - pump.x, f.y - pump.y) <= 2,
+      ) ?? pump;
+    const servedCampIds = state.camps
+      .filter((camp) => {
+        const inCamp = camp.tiles.some((t) => t.x === trough.x && t.y === trough.y);
+        if (inCamp) return true;
+        return Math.hypot(camp.anchor.x - trough.x, camp.anchor.y - trough.y) < 8;
+      })
+      .map((c) => c.id);
+    points.push({
+      id: `wp-${pump.x}-${pump.y}`,
+      tile: { x: pump.x, y: pump.y },
+      trough: { x: trough.x, y: trough.y },
+      pump: pump.kind === "solar_pump" ? "solar" : "windmill",
+      reservoir: state.features.some(
+        (f) => f.kind === "reservoir" && Math.hypot(f.x - pump.x, f.y - pump.y) <= 2,
+      ),
+      servedCampIds,
+      lick: state.features.some(
+        (f) => f.kind === "lick_feeder" && Math.hypot(f.x - trough.x, f.y - trough.y) <= 2,
+      ),
+    });
+  }
+  return points;
+}
+
+function snapWorkerCottagesOntoYard(state: GameState): void {
+  const houses = state.features.filter((f) => f.kind === "worker_house");
+  if (houses.length === 0) {
+    state.features.push({ kind: "worker_house", x: 17, y: 15, scale: 1 });
+    return;
+  }
+  const yard: { x: number; y: number }[] = [];
+  for (let y = 0; y < state.height; y += 1) {
+    for (let x = 0; x < state.width; x += 1) {
+      if (state.campIds[y * state.width + x] === -1) yard.push({ x, y });
+    }
+  }
+  if (yard.length === 0) return;
+  const main = state.features.find((f) => f.kind === "house");
+  for (const cottage of houses) {
+    const id = state.campIds[cottage.y * state.width + cottage.x];
+    if (id === -1) continue;
+    let best = yard[0];
+    let bestD = Number.POSITIVE_INFINITY;
+    for (const tile of yard) {
+      const d = main
+        ? Math.hypot(tile.x - main.x, tile.y - main.y)
+        : Math.hypot(tile.x - cottage.x, tile.y - cottage.y);
+      const occupied = state.features.some(
+        (f) => f !== cottage && f.x === tile.x && f.y === tile.y && f.kind !== "track" && f.kind !== "bush",
+      );
+      if (occupied) continue;
+      if (d < bestD && d > 0.5) {
+        bestD = d;
+        best = tile;
+      }
+    }
+    cottage.x = best.x;
+    cottage.y = best.y;
+  }
+}
+
+function ensureHandlingYardFeatures(state: GameState): void {
+  const has = (kind: string) => state.features.some((f) => f.kind === kind);
+  if (!has("crush")) {
+    state.features.push({ kind: "crush", x: STEP3B.crushTile.x, y: STEP3B.crushTile.y, scale: 1 });
+  }
+  if (!has("loading_ramp")) {
+    state.features.push({
+      kind: "loading_ramp",
+      x: STEP3B.loadingRampTile.x,
+      y: STEP3B.loadingRampTile.y,
+      scale: 1,
+    });
+  }
+}
 
 export type LegacySavedGame = {
-  version?: 1 | 2 | 3 | 4 | 5;
+  version?: 1 | 2 | 3 | 4 | 5 | 6 | 7;
   savedAt?: string;
   state?: GameState;
 };
@@ -78,10 +166,16 @@ export function migrateState(state: GameState): GameState {
     if (!state.story.farmerPresence) state.story.farmerPresence = defaultFarmerPresence(state);
     if (!state.story.playerDisplayName?.trim()) state.story.playerDisplayName = DEFAULT_PLAYER_DISPLAY_NAME;
     if (state.story.herdMoveQueue === undefined) state.story.herdMoveQueue = null;
-    if (!state.features.some((f) => f.kind === "worker_house")) {
-      state.features.push({ kind: "worker_house", x: 11, y: 13, scale: 1 });
-    }
+    snapWorkerCottagesOntoYard(state);
+    if (!state.story.drinkingTrip) state.story.drinkingTrip = defaultDrinkingTrip();
+    if (state.story.saleConvoy === undefined) state.story.saleConvoy = null;
+    if (!state.story.bakkieRun) state.story.bakkieRun = defaultBakkieRun();
+    if (state.story.bakkieDieselLitresMonth === undefined) state.story.bakkieDieselLitresMonth = 0;
   }
+  if (!state.farmWaterPoints?.length) {
+    state.farmWaterPoints = deriveWaterPointsFromFeatures(state);
+  }
+  ensureHandlingYardFeatures(state);
   if (state.herd.transit) {
     if (!state.herd.transit.phase) state.herd.transit.phase = "drive";
     if (!state.herd.transit.herder) state.herd.transit.herder = "farmer";
@@ -100,7 +194,8 @@ export function parseLegacySaved(raw: string): GameState | null {
       data.version !== 2 &&
       data.version !== 3 &&
       data.version !== 4 &&
-      data.version !== 5
+      data.version !== 5 &&
+      data.version !== 6
     ) {
       return null;
     }

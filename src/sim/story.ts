@@ -22,6 +22,7 @@ import { DEFAULT_PLAYER_DISPLAY_NAME } from "./playerName";
 import { defaultWorkGrid, freshDailyPlay, tickDailyGoal, tickFarmhandWorld } from "./workGrid";
 import { tickPeopleSchedule } from "./people";
 import { tickFarmhand } from "./workers";
+import { tickHerdWaterDay } from "./water";
 import { isLastGameDayOfMonth } from "./calendar";
 import {
   closeMonth,
@@ -113,6 +114,7 @@ export function afterFeedDay(
   state.story.eatenYesterdayKg = eatenKg;
   state.story.demandYesterdayKg = demandKg;
   queueHusbandryWarnings(state, config);
+  tickHerdWaterDay(state, config);
 
   const intakeRatio = demandKg <= 0 ? 1 : eatenKg / demandKg;
   applyYoungstockGrowth(state, intakeRatio, config, ecologyScale);

@@ -32,6 +32,13 @@ export const SPRITE_KEYS = {
   farmhand: "spr-farmhand",
   farmer: "spr-farmer",
   workerHouse: "spr-worker-house",
+  solarPump: "spr-solar-pump",
+  crush: "spr-crush",
+  loadingRamp: "spr-loading-ramp",
+  cattleTruck: "spr-cattle-truck",
+  lickFeeder: "spr-lick-feeder",
+  reservoir: "spr-reservoir",
+  cowDrink: "spr-cow-drink",
 } as const;
 
 export type PersonDir = "n" | "e" | "s" | "w";
@@ -108,43 +115,176 @@ export function ensurePersonWalkTextures(scene: Phaser.Scene, role: "farmer" | "
   }
 }
 
+export function ensureStep3bPropTextures(scene: Phaser.Scene): void {
+  if (!scene.textures.exists(SPRITE_KEYS.reservoir)) {
+    const g = scene.make.graphics({ x: 0, y: 0 });
+    g.fillStyle(0x8d8680, 1);
+    g.fillEllipse(56, 62, 96, 46);
+    g.fillStyle(0x6a6560, 1);
+    g.fillEllipse(56, 54, 84, 36);
+    g.fillStyle(0x3d7eae, 1);
+    g.fillEllipse(56, 50, 64, 24);
+    g.lineStyle(3, 0x4e4944, 1);
+    g.strokeEllipse(56, 62, 96, 46);
+    g.generateTexture(SPRITE_KEYS.reservoir, 112, 96);
+    g.destroy();
+  }
+  if (!scene.textures.exists(SPRITE_KEYS.solarPump)) {
+    const g = scene.make.graphics({ x: 0, y: 0 });
+    g.fillStyle(0x2b3550, 1);
+    g.fillRect(36, 58, 40, 28);
+    g.fillStyle(0x1a4a8f, 1);
+    g.beginPath();
+    g.moveTo(24, 58);
+    g.lineTo(56, 26);
+    g.lineTo(88, 58);
+    g.closePath();
+    g.fillPath();
+    g.lineStyle(2, 0xd4dce8, 0.9);
+    for (let i = 0; i < 4; i += 1) {
+      g.lineBetween(30 + i * 14, 52, 48 + i * 8, 34);
+    }
+    g.generateTexture(SPRITE_KEYS.solarPump, 112, 96);
+    g.destroy();
+  }
+  if (!scene.textures.exists(SPRITE_KEYS.lickFeeder)) {
+    const g = scene.make.graphics({ x: 0, y: 0 });
+    g.fillStyle(0x5c5348, 1);
+    g.fillRoundedRect(20, 52, 72, 26, 4);
+    g.fillStyle(0xc9a45c, 0.85);
+    g.fillEllipse(56, 48, 54, 14);
+    g.generateTexture(SPRITE_KEYS.lickFeeder, 112, 80);
+    g.destroy();
+  }
+  if (!scene.textures.exists(SPRITE_KEYS.crush)) {
+    const g = scene.make.graphics({ x: 0, y: 0 });
+    g.lineStyle(5, 0x6a4a2a, 1);
+    g.strokeRect(18, 22, 76, 58);
+    g.lineBetween(18, 50, 94, 50);
+    g.fillStyle(0x8b6b3a, 0.35);
+    g.fillRect(22, 54, 68, 22);
+    g.generateTexture(SPRITE_KEYS.crush, 112, 96);
+    g.destroy();
+  }
+  if (!scene.textures.exists(SPRITE_KEYS.loadingRamp)) {
+    const g = scene.make.graphics({ x: 0, y: 0 });
+    g.fillStyle(0x8b7355, 1);
+    g.fillTriangle(16, 72, 96, 72, 56, 28);
+    g.lineStyle(3, 0x5c4330, 1);
+    g.lineBetween(24, 72, 56, 32);
+    g.lineBetween(56, 32, 88, 72);
+    g.generateTexture(SPRITE_KEYS.loadingRamp, 112, 96);
+    g.destroy();
+  }
+  if (!scene.textures.exists(SPRITE_KEYS.cattleTruck)) {
+    const g = scene.make.graphics({ x: 0, y: 0 });
+    const w = 280;
+    const h = 120;
+    g.fillStyle(0xf4f1ea, 1);
+    g.fillRoundedRect(8, 36, 78, 52, 6);
+    g.fillStyle(0x9ec8e8, 1);
+    g.fillRoundedRect(16, 44, 28, 18, 3);
+    g.fillStyle(0xc45a3a, 1);
+    g.fillRect(70, 58, 16, 8);
+    g.fillStyle(0x2c2118, 1);
+    g.fillRoundedRect(92, 30, 170, 58, 3);
+    for (let i = 0; i < 8; i += 1) {
+      g.fillStyle(i % 2 === 0 ? 0x8d6240 : 0x6e4b30, 1);
+      g.fillRect(98 + i * 20, 34, 12, 50);
+    }
+    g.lineStyle(2, 0x2a1c12, 1);
+    g.strokeRoundedRect(92, 30, 170, 58, 3);
+    g.fillStyle(0x1c2430, 1);
+    g.fillCircle(36, 96, 14);
+    g.fillCircle(70, 96, 14);
+    g.fillCircle(130, 98, 15);
+    g.fillCircle(190, 98, 15);
+    g.fillCircle(240, 98, 15);
+    g.fillStyle(0x8d98a6, 1);
+    g.fillCircle(36, 96, 6);
+    g.fillCircle(70, 96, 6);
+    g.fillCircle(130, 98, 6);
+    g.fillCircle(190, 98, 6);
+    g.fillCircle(240, 98, 6);
+    g.generateTexture(SPRITE_KEYS.cattleTruck, w, h);
+    g.destroy();
+  }
+  if (!scene.textures.exists(SPRITE_KEYS.cowDrink)) {
+    const g = scene.make.graphics({ x: 0, y: 0 });
+    g.fillStyle(0x7a4e2d, 1);
+    g.fillEllipse(108, 46, 86, 36);
+    g.fillRect(78, 58, 8, 28);
+    g.fillRect(96, 58, 8, 28);
+    g.fillRect(122, 58, 8, 28);
+    g.fillRect(140, 58, 8, 28);
+    g.fillStyle(0x6b4226, 1);
+    g.fillTriangle(78, 40, 36, 78, 88, 46);
+    g.fillStyle(0x8a5a34, 1);
+    g.fillEllipse(30, 84, 34, 18);
+    g.fillStyle(0x2a1a12, 1);
+    g.fillCircle(20, 82, 2.4);
+    g.fillStyle(0xf2efe6, 1);
+    g.fillEllipse(118, 38, 12, 9);
+    g.generateTexture(SPRITE_KEYS.cowDrink, 180, 110);
+    g.destroy();
+  }
+}
+
+export function ensureDrinkCowTexture(scene: Phaser.Scene, baseKey: string): string {
+  const drinkKey = `${baseKey}-drink`;
+  if (scene.textures.exists(drinkKey)) return drinkKey;
+  if (!scene.textures.exists(baseKey)) return baseKey;
+  const source = scene.textures.get(baseKey).getSourceImage() as HTMLCanvasElement | HTMLImageElement;
+  const canvas = document.createElement("canvas");
+  canvas.width = source.width;
+  canvas.height = source.height;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    ctx.drawImage(source, 0, 0);
+    ctx.save();
+    ctx.translate(canvas.width * 0.52, canvas.height * 0.72);
+    ctx.rotate(0.42);
+    ctx.fillStyle = "#2a1a12";
+    ctx.fillRect(-10, -6, 28, 10);
+    ctx.restore();
+  }
+  scene.textures.addCanvas(drinkKey, canvas);
+  return drinkKey;
+}
+
 export function ensureWorkerHouseTexture(scene: Phaser.Scene): void {
   const key = SPRITE_KEYS.workerHouse;
   if (scene.textures.exists(key)) return;
   const g = scene.make.graphics({ x: 0, y: 0 });
-  g.fillStyle(0xb8a48c, 1);
-  g.fillRoundedRect(10, 44, 76, 42, 3);
-  g.fillStyle(0xc7a06a, 1);
-  g.fillRect(6, 78, 84, 8);
-  g.fillStyle(0xa04030, 1);
+  g.fillStyle(0xd7c3a4, 1);
+  g.fillRect(18, 58, 92, 40);
+  g.fillStyle(0xb08968, 1);
+  g.fillRect(14, 94, 100, 8);
+  g.fillStyle(0x8d97a0, 1);
   g.beginPath();
-  g.moveTo(8, 46);
-  g.lineTo(48, 12);
-  g.lineTo(88, 46);
+  g.moveTo(8, 62);
+  g.lineTo(64, 22);
+  g.lineTo(120, 62);
   g.closePath();
   g.fillPath();
-  g.lineStyle(1, 0x7a2a1e, 0.85);
-  for (let i = 0; i < 7; i += 1) {
-    const y = 18 + i * 4;
-    g.lineBetween(20 + i * 3, y, 76 - i * 2, y + 8);
+  g.lineStyle(2, 0x5e676e, 1);
+  for (let i = 0; i < 9; i += 1) {
+    const y = 26 + i * 3.8;
+    const t = i / 9;
+    const left = 16 + t * 40;
+    const right = 112 - t * 40;
+    g.lineBetween(left, y, right, y + 4);
   }
   g.fillStyle(0x4a3528, 1);
-  g.fillRect(40, 58, 18, 28);
-  g.fillStyle(0x3d2918, 1);
-  g.fillRect(46, 66, 6, 6);
-  g.fillStyle(0x6e8199, 0.9);
-  g.fillRect(22, 54, 12, 11);
-  g.fillRect(60, 54, 12, 11);
-  g.lineStyle(1, 0x5a6578, 1);
-  g.lineBetween(28, 54, 28, 65);
-  g.lineBetween(22, 59, 34, 59);
-  g.lineBetween(66, 54, 66, 65);
-  g.lineBetween(60, 59, 72, 59);
-  g.generateTexture(key, 96, 96);
+  g.fillRect(54, 70, 20, 28);
+  g.fillStyle(0x6e8199, 0.95);
+  g.fillRect(28, 68, 16, 12);
+  g.fillRect(84, 68, 16, 12);
+  g.generateTexture(key, 128, 112);
   g.destroy();
 }
 
-export const WORKER_COTTAGE_NATIVE_WIDTH = 96;
+export const WORKER_COTTAGE_NATIVE_WIDTH = 128;
 
 export function inferPersonDir(dx: number, dy: number): PersonDir {
   if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? "e" : "w";
@@ -239,6 +379,20 @@ export type PropSpriteDef = {
   scale: number;
 };
 
+/**
+ * TODO(A): the herd cow texture stands for a 1.4 m animal. Prop metres below use that
+ * so a windmill and a reservoir read next to the cattle, not as towers over dots.
+ */
+export const COW_SHOULDER_METRES = 1.4;
+
+export function worldPxPerMetre(): number {
+  return (128 * cattleDisplayScale()) / COW_SHOULDER_METRES;
+}
+
+export function scaleToSpanMetres(nativePx: number, metres: number): number {
+  return (metres * worldPxPerMetre()) / nativePx;
+}
+
 /** Homestead prop scale tuned for 64×32 iso tiles on phone zoom. */
 export function propSpriteForKind(kind: string, x: number, y: number, featureScale: number): PropSpriteDef {
   const tileW = CONFIG.view.tileWidth;
@@ -247,15 +401,32 @@ export function propSpriteForKind(kind: string, x: number, y: number, featureSca
     case "house":
       return { key: SPRITE_KEYS.farmhouse, originX: 0.5, originY: 0.9, scale: (tileW * 2.45) / tw };
     case "windmill":
-      return { key: SPRITE_KEYS.windmill, originX: 0.48, originY: 0.94, scale: (tileW * 2.2) / tw };
+      // Painted art is 512×739. TODO(A): full sprite height stands for an 8 m mill (about 6 to 10 m).
+      return { key: SPRITE_KEYS.windmill, originX: 0.48, originY: 0.94, scale: scaleToSpanMetres(739, 8) };
     case "shed":
-      return { key: SPRITE_KEYS.shed, originX: 0.5, originY: 0.88, scale: (tileW * 2.2) / tw };
+      return { key: SPRITE_KEYS.shed, originX: 0.5, originY: 0.88, scale: (tileW * 1.28) / 512 };
     case "kraal":
-      return { key: SPRITE_KEYS.kraal, originX: 0.5, originY: 0.82, scale: (tileW * 2.6) / tw };
+      // Art is 512 px wide. Keep the pen smaller than the house footprint (2.05 tiles).
+      return { key: SPRITE_KEYS.kraal, originX: 0.5, originY: 0.82, scale: (tileW * 1.3) / 512 };
     case "trough":
       return { key: SPRITE_KEYS.trough, originX: 0.5, originY: 0.85, scale: (tileW * 1.35) / tw };
     case "reservoir":
-      return { key: SPRITE_KEYS.windmill, originX: 0.5, originY: 0.94, scale: (tileW * 2.2) / tw };
+      // TODO(A): dam about 10 m across (about 8 to 12 m).
+      return { key: SPRITE_KEYS.reservoir, originX: 0.5, originY: 0.9, scale: scaleToSpanMetres(112, 10) };
+    case "solar_pump":
+      // TODO(A): a small array about 6 m across.
+      return { key: SPRITE_KEYS.solarPump, originX: 0.5, originY: 0.94, scale: scaleToSpanMetres(112, 6) };
+    case "crush":
+      // TODO(A): crush reads about 5 m long beside the kraal.
+      return { key: SPRITE_KEYS.crush, originX: 0.5, originY: 0.88, scale: scaleToSpanMetres(112, 5) };
+    case "loading_ramp":
+      // TODO(A): ramp reads about 7 m, facing the farm road.
+      return { key: SPRITE_KEYS.loadingRamp, originX: 0.5, originY: 0.92, scale: scaleToSpanMetres(112, 7) };
+    case "cattle_truck":
+      // TODO(A): cab plus trailer about 16 m.
+      return { key: SPRITE_KEYS.cattleTruck, originX: 0.35, originY: 0.92, scale: scaleToSpanMetres(280, 16) };
+    case "lick_feeder":
+      return { key: SPRITE_KEYS.lickFeeder, originX: 0.5, originY: 0.9, scale: (tileW * 1.1) / 112 };
     case "tree":
       return {
         key: treeSpriteKey(x, y),

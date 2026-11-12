@@ -1,4 +1,4 @@
-import type { CalendarDate } from "./types";
+import type { CalendarDate, TilePoint } from "./types";
 
 export type StockClass =
   | "cow"
@@ -172,10 +172,66 @@ export type StoryState = {
   dailyPlay?: DailyPlayState;
   pendingPlayerEvent?: PendingPlayerEvent | null;
   monthDiary?: string[];
+  drinkingTrip?: DrinkingTripState;
+  saleConvoy?: SaleConvoyState | null;
+  bakkieRun?: BakkieRunState;
+  /** Visible bakkie trips this month (feeds diesel accounting hooks). */
+  bakkieDieselLitresMonth?: number;
 };
 
 export type SellRequest = {
   stockClass: StockClass;
   count: number;
   channel: SaleChannel;
+};
+
+export type FarmWaterPoint = {
+  id: string;
+  tile: TilePoint;
+  trough: TilePoint;
+  pump: "windmill" | "solar";
+  reservoir: boolean;
+  servedCampIds: number[];
+  lick: boolean;
+};
+
+export type DrinkingTripState = {
+  active: boolean;
+  troughTile: TilePoint | null;
+  walkProgress: number;
+  drinkingTicks: number;
+  cowsAtTrough: number;
+  lastSatisfiedDayKey: string;
+};
+
+export type SaleConvoyPhase =
+  | "gather"
+  | "drive_yard"
+  | "kraal"
+  | "crush"
+  | "ramp"
+  | "loading"
+  | "truck_depart"
+  | "done";
+
+export type SaleConvoyState = {
+  stockClass: StockClass;
+  count: number;
+  channel: SaleChannel;
+  quoted: SaleLine;
+  phase: SaleConvoyPhase;
+  phaseProgress: number;
+  paid: boolean;
+  herder: "farmer" | "piet";
+  toCampId: number;
+  driveStarted?: boolean;
+};
+
+export type BakkieRunState = {
+  active: boolean;
+  job: WorkJobId | null;
+  progress: number;
+  dieselLitres: number;
+  fromTile: TilePoint | null;
+  toTile: TilePoint | null;
 };

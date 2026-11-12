@@ -8,6 +8,7 @@ import {
 } from "./pasture";
 import { createStoryState, initStoryPeople } from "./story";
 import { campGateToward } from "./path";
+import { homesteadYardPieces, placeSharedWaterPoints } from "./waterLayout";
 import { createRng, type Rng } from "./rng";
 import {
   TILE_HOMESTEAD,
@@ -212,31 +213,17 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
   const score = camps.reduce((min, camp) => Math.min(min, camp.tiles.length), Number.POSITIVE_INFINITY);
 
   const features: Feature[] = [];
-  const yard = config.map.yard;
-  const buildings: { kind: Feature["kind"]; at: TilePoint }[] = [
-    { kind: "house", at: yard.house },
-    { kind: "windmill", at: yard.windmill },
-    { kind: "reservoir", at: yard.reservoir },
-    { kind: "kraal", at: yard.kraal },
-    { kind: "shed", at: yard.shed },
-  ];
-  for (const building of buildings) {
-    features.push({
-      kind: building.kind,
-      x: hx + building.at.x,
-      y: hy + building.at.y,
-      scale: 1,
-    });
-  }
-  features.push({
-    kind: "worker_house",
-    x: hx + 11,
-    y: hy + 13,
-    scale: 1,
-  });
-
   const spaceDown = height - (hy + blockH);
   const spaceUp = hy;
+  const roadSouth = spaceDown >= spaceUp;
+  for (const piece of homesteadYardPieces(blockW, blockH, roadSouth)) {
+    features.push({
+      kind: piece.kind,
+      x: hx + piece.x,
+      y: hy + piece.y,
+      scale: piece.kind === "lick_feeder" ? 0.85 : 1,
+    });
+  }
   const track: TilePoint[] = [];
   const doorX = hx + Math.floor(blockW / 2);
   if (spaceDown >= spaceUp) {
@@ -280,8 +267,30 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
       }
     }
     camp.anchor = anchor;
-    features.push({ kind: "trough", x: anchor.x, y: anchor.y, scale: 1 });
   }
+
+  const mapMidX = width / 2;
+  const mapMidY = height / 2;
+  const central = camps.filter((camp) => {
+    const middle = centroid(camp.tiles);
+    return Math.abs(middle.x - mapMidX) < width * 0.3 && Math.abs(middle.y - mapMidY) < height * 0.3;
+  });
+  const pool = central.length > 0 ? central : camps;
+  const byGrass = [...pool].sort((a, b) => grazeableFraction(a, config) - grazeableFraction(b, config));
+  let start = byGrass[Math.floor(byGrass.length / 2)];
+  if (config.map.herdStartNearYard) {
+    const besideYard = campAdjacentToHomestead(camps, finalGrid, width, height);
+    if (besideYard) start = besideYard;
+  }
+  const farmWaterPoints = placeSharedWaterPoints({
+    grid: finalGrid,
+    width,
+    height,
+    camps,
+    features,
+    startCampId: start.id,
+    config,
+  });
 
   const occupied = new Set(features.map((feature) => `${feature.x},${feature.y}`));
   for (let y = 0; y < height; y += 1) {
@@ -308,19 +317,6 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
     }
   }
 
-  const mapMidX = width / 2;
-  const mapMidY = height / 2;
-  const central = camps.filter((camp) => {
-    const middle = centroid(camp.tiles);
-    return Math.abs(middle.x - mapMidX) < width * 0.3 && Math.abs(middle.y - mapMidY) < height * 0.3;
-  });
-  const pool = central.length > 0 ? central : camps;
-  const byGrass = [...pool].sort((a, b) => grazeableFraction(a, config) - grazeableFraction(b, config));
-  let start = byGrass[Math.floor(byGrass.length / 2)];
-  if (config.map.herdStartNearYard) {
-    const besideYard = campAdjacentToHomestead(camps, finalGrid, width, height);
-    if (besideYard) start = besideYard;
-  }
   for (const camp of camps) {
     camp.restDays =
       camp.id === start.id ? 0 : Math.floor(rng.next() * (config.pasture.initialRestDaysMax + 1));
@@ -363,6 +359,7 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
       transit: null,
     },
     features,
+    farmWaterPoints,
     story: createStoryState(config.herd.headCount, config),
   };
   return { state, score };

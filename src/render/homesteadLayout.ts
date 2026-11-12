@@ -54,23 +54,12 @@ function push(
 export function homesteadSpritePlacementsFromFeatures(features: Feature[]): HomesteadSpritePlacement[] {
   const byKind = (kind: Feature["kind"]) => features.find((f) => f.kind === kind);
   const house = byKind("house");
-  const windmill = byKind("windmill");
   const shed = byKind("shed");
-  const kraal = byKind("kraal");
-  const reservoir = byKind("reservoir");
   const list: HomesteadSpritePlacement[] = [];
 
   if (house) push(list, SPRITE_KEYS.farmhouse, house.x, house.y, 512, 2.05, 0.91);
   if (house) push(list, SPRITE_KEYS.bakkie, house.x + 2, house.y, 320, 1.05, 0.9, 0, 4);
   if (shed) push(list, SPRITE_KEYS.shed, shed.x, shed.y, 512, 1.28, 0.89, 4, 2);
-  if (windmill) push(list, SPRITE_KEYS.windmill, windmill.x, windmill.y, 512, 1.2, 0.94, -2, -2);
-  if (reservoir) push(list, SPRITE_KEYS.trough, reservoir.x, reservoir.y, 256, 0.78, 0.88, 0, 4);
-  if (kraal) push(list, SPRITE_KEYS.kraal, kraal.x, kraal.y, 512, 1.45, 0.84);
-
-  const trough = byKind("trough");
-  if (trough && trough.x !== reservoir?.x) {
-    push(list, SPRITE_KEYS.trough, trough.x, trough.y, 256, 0.75, 0.88);
-  }
   return list;
 }
 
@@ -94,8 +83,8 @@ export function workerCottagePlacements(features: Feature[]): HomesteadSpritePla
       SPRITE_KEYS.workerHouse,
       cottage.x,
       cottage.y,
-      96,
-      1.02,
+      128,
+      1.55,
       0.92,
       offsetX,
       offsetY,
