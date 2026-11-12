@@ -29,7 +29,8 @@ export function tickPeopleSchedule(state: GameState, _config: GameConfig = CONFI
   ensurePeopleState(state);
   const story = state.story;
   if (!story) return;
-  const daylight = isDaylightHour(state.date.hour);
+  const hour = state.date.hour;
+  const daylight = isDaylightHour(hour);
   const farmer = story.farmerPresence;
   if (farmer && !farmer.onHerdingDuty && activeHerder(state) !== "farmer") {
     const home = mainHouseTile(state);
@@ -46,18 +47,32 @@ export function tickPeopleSchedule(state: GameState, _config: GameConfig = CONFI
     }
   }
   const piet = story.farmhandPresence;
-  if (piet && story.farmhand.hired && !piet.onHerdingDuty && activeHerder(state) !== "piet") {
+  if (piet && story.farmhand.hired) {
     const home = workerHouseForFarmhand(state) ?? mainHouseTile(state);
-    if (!daylight) {
+    const onDuty = piet.onHerdingDuty || activeHerder(state) === "piet";
+    if (!daylight && !onDuty) {
       piet.tileX = home.x;
       piet.tileY = home.y;
       piet.targetTileX = home.x;
       piet.targetTileY = home.y;
       piet.walkProgress = 1;
       piet.atHome = true;
+      piet.activeJob = null;
       piet.activityLabel = `At ${STEP3A.farmhandName}'s house`;
-    } else {
+    } else if (daylight && !onDuty) {
       piet.atHome = false;
     }
   }
+}
+
+/** For tests and capture: worker must be within one tile of their house at night. */
+export function workerAtHomeAtNight(state: GameState): boolean {
+  const story = state.story;
+  if (!story?.farmhand.hired || !story.farmhandPresence) return true;
+  const hour = state.date.hour;
+  if (hour >= 6 && hour < 18) return true;
+  const home = workerHouseForFarmhand(state);
+  if (!home) return false;
+  const p = story.farmhandPresence;
+  return Math.hypot(p.tileX - home.x, p.tileY - home.y) <= 1.05;
 }

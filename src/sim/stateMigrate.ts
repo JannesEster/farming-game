@@ -4,6 +4,7 @@ import { defaultClassLiveweights, migrateLegacyComposition } from "./cattleClass
 import { defaultNotificationState } from "./notifications";
 import { defaultCostLevers, defaultInfrastructureWear } from "./levers";
 import { defaultFarmerPresence } from "./herding";
+import { DEFAULT_PLAYER_DISPLAY_NAME } from "./playerName";
 import { defaultWorkGrid, freshDailyPlay } from "./workGrid";
 import { createStoryState, defaultComposition } from "./story";
 import type { GameState } from "./types";
@@ -75,6 +76,7 @@ export function migrateState(state: GameState): GameState {
       if (state.story.farmhand.job === "move_herd") state.story.workGrid.move_herd_help = 2;
     }
     if (!state.story.farmerPresence) state.story.farmerPresence = defaultFarmerPresence(state);
+    if (!state.story.playerDisplayName?.trim()) state.story.playerDisplayName = DEFAULT_PLAYER_DISPLAY_NAME;
     if (state.story.herdMoveQueue === undefined) state.story.herdMoveQueue = null;
     if (!state.features.some((f) => f.kind === "worker_house")) {
       state.features.push({ kind: "worker_house", x: 11, y: 13, scale: 1 });

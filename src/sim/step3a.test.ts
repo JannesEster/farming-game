@@ -4,7 +4,8 @@ import { createGame, findCamp, moveHerd, primeDefaultFarmCache } from "./simulat
 import defaultFarm from "../../public/farms/default-farm.json";
 import { countWorkerHouses, freeWorkerHouseSlots } from "./housing";
 import { requestHerdMove, tickHerdingRealtime } from "./herding";
-import { tickPeopleSchedule } from "./people";
+import { tickPeopleSchedule, workerAtHomeAtNight } from "./people";
+import { farmerDisplayName } from "./playerName";
 import { migrateState } from "./stateMigrate";
 import { hireFarmhand } from "./workers";
 import { tickFarmhandWorld } from "./workGrid";
@@ -85,5 +86,22 @@ describe("step 3a living farm", () => {
   it("default farm includes a worker house near the homestead", () => {
     const s = state();
     expect(countWorkerHouses(s)).toBeGreaterThanOrEqual(1);
+  });
+
+  it("defaults farmer display name to Farmer until the player sets one", () => {
+    const s = state();
+    expect(farmerDisplayName(s)).toBe("Farmer");
+    s.story!.playerDisplayName = "Jannes";
+    expect(farmerDisplayName(s)).toBe("Jannes");
+  });
+
+  it("keeps Piet within one tile of his cottage between dusk and dawn", () => {
+    const s = state();
+    hireFarmhand(s);
+    s.date.hour = 21;
+    tickPeopleSchedule(s);
+    tickFarmhandWorld(s);
+    expect(workerAtHomeAtNight(s)).toBe(true);
+    expect(s.story?.farmhandPresence?.activityLabel).toMatch(/house/i);
   });
 });

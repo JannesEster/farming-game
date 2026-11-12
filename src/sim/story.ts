@@ -18,6 +18,7 @@ import {
 import { refreshDailyGoal, rollMorningDecision } from "./morningPlay";
 import { tickPlayerEvents } from "./playerEvents";
 import { defaultFarmerPresence } from "./herding";
+import { DEFAULT_PLAYER_DISPLAY_NAME } from "./playerName";
 import { defaultWorkGrid, freshDailyPlay, tickDailyGoal, tickFarmhandWorld } from "./workGrid";
 import { tickPeopleSchedule } from "./people";
 import { tickFarmhand } from "./workers";
@@ -81,6 +82,7 @@ export function createStoryState(headCount: number, config: GameConfig = CONFIG)
     pendingPlayerEvent: null,
     farmerPresence: undefined,
     herdMoveQueue: null,
+    playerDisplayName: DEFAULT_PLAYER_DISPLAY_NAME,
   };
 }
 

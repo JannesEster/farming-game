@@ -1,6 +1,7 @@
 import { isDaylightHour } from "./clock";
 import { CONFIG, type GameConfig } from "./config";
 import { findCamp } from "./simulation";
+import { farmerDisplayName } from "./playerName";
 import { STEP3A } from "./step3aConfig";
 import { mainHouseTile, workerHouseForFarmhand } from "./housing";
 import { herdInTransit, tickTransitRealtime, walkGameHours, type TransitSpeed } from "./transit";
@@ -144,6 +145,7 @@ export function tickHerdingRealtime(
   config: GameConfig = CONFIG,
 ): void {
   tryDispatchHerdQueue(state, config);
+  if (!isDaylightHour(state.date.hour)) return;
   const transit = state.herd.transit;
   if (!transit) return;
   ensureTransitFields(transit);
@@ -221,7 +223,7 @@ export function herdMoveStatusLine(state: GameState): string {
   const transit = state.herd.transit;
   if (!transit) return "";
   ensureTransitFields(transit);
-  const name = transit.herder === "piet" ? STEP3A.farmhandName : STEP3A.farmerName;
+  const name = transit.herder === "piet" ? STEP3A.farmhandName : farmerDisplayName(state);
   if (transit.phase === "approach") {
     const pct = Math.round((transit.approachProgress ?? 0) * 100);
     return `${name} walking to herd (${pct}%)`;

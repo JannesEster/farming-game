@@ -74,29 +74,37 @@ async function main() {
       await prepPage(page);
       const hashes = {};
 
-      await page.evaluate(() => window.__farmCapture?.frameFarmerAtHouse?.());
+      const farmerOk = await page.evaluate(() => window.__farmCapture?.frameFarmerAtHouse?.());
+      if (!farmerOk) throw new Error(`${viewport.name}: farmer-house frame failed (worker house visibility?)`);
       await page.waitForTimeout(400);
       const farmerMeta = await page.evaluate(() => ({
         inView: window.__farmCapture?.countFarmerInView?.() ?? 0,
         heightPx: window.__farmCapture?.farmerScreenHeightPx?.() ?? 0,
+        workerHouse: window.__farmCapture?.workerHouseInView?.() ?? false,
       }));
       if (farmerMeta.inView < 1) throw new Error(`${viewport.name}: farmer not in view`);
       if (farmerMeta.heightPx < 30) {
         throw new Error(`${viewport.name}: farmer too small (${farmerMeta.heightPx.toFixed(1)}px)`);
       }
+      if (!farmerMeta.workerHouse) throw new Error(`${viewport.name}: worker cottage not in farmer-house shot`);
       const farmerPath = path.join(outDir, `${viewport.name}-farmer-house.png`);
       await page.screenshot({ path: farmerPath });
       hashes.farmer = await fileHash(farmerPath);
       checks.push(`${viewport.name}-farmer-house: ${farmerMeta.heightPx.toFixed(0)}px tall`);
 
-      await page.evaluate(() => window.__farmCapture?.prepareHerdDriveCapture?.());
+      const driveOk = await page.evaluate(() => window.__farmCapture?.prepareHerdDriveCapture?.());
+      if (!driveOk) throw new Error(`${viewport.name}: herd drive capture setup failed`);
       await page.waitForTimeout(500);
       const driveMeta = await page.evaluate(() => ({
         cattle: window.__farmCapture?.countCattleInView?.() ?? 0,
         herder: (window.__farmCapture?.countFarmerInView?.() ?? 0) + (window.__farmCapture?.countFarmhandInView?.() ?? 0),
+        herderPx: window.__farmCapture?.herderHerdScreenDistancePx?.() ?? 9999,
       }));
       if (driveMeta.cattle < 1 || driveMeta.herder < 1) {
         throw new Error(`${viewport.name}: herd drive needs herd and herder in view`);
+      }
+      if (driveMeta.herderPx > 80) {
+        throw new Error(`${viewport.name}: herder too far from herd (${driveMeta.herderPx.toFixed(1)}px)`);
       }
       const drivePath = path.join(outDir, `${viewport.name}-herd-drive-gate.png`);
       await page.screenshot({ path: drivePath });
@@ -104,24 +112,36 @@ async function main() {
       checks.push(`${viewport.name}-herd-drive-gate: cattle ${driveMeta.cattle}, herder ${driveMeta.herder}`);
 
       await prepPage(page);
-      await page.evaluate(() => window.__farmCapture?.prepareNightWorkersHomeCapture?.());
+      const nightOk = await page.evaluate(() => window.__farmCapture?.prepareNightWorkersHomeCapture?.());
+      if (!nightOk) throw new Error(`${viewport.name}: night workers capture setup failed`);
       await page.waitForTimeout(400);
-      const nightMeta = await page.evaluate(() => window.__farmCapture?.countFarmhandInView?.() ?? 0);
-      if (nightMeta < 1) throw new Error(`${viewport.name}: Piet not visible at night`);
+      const nightMeta = await page.evaluate(() => ({
+        piet: window.__farmCapture?.countFarmhandInView?.() ?? 0,
+        ...window.__farmCapture?.nightWorkersCaptureMeta?.(),
+      }));
+      if (nightMeta.piet < 1) throw new Error(`${viewport.name}: Piet not visible at night`);
+      if (!(nightMeta.hour >= 19 || nightMeta.hour <= 5)) {
+        throw new Error(`${viewport.name}: HUD hour should be night (got ${nightMeta.hour})`);
+      }
+      if (!nightMeta.workerAtHome) throw new Error(`${viewport.name}: Piet not at cottage tile at night`);
+      if (!nightMeta.workerHouseVisible) throw new Error(`${viewport.name}: worker cottage not in night shot`);
       const nightPath = path.join(outDir, `${viewport.name}-workers-night.png`);
       await page.screenshot({ path: nightPath });
       hashes.night = await fileHash(nightPath);
       checks.push(`${viewport.name}-workers-night: Piet at house`);
 
       if (viewport.name === "phone") {
+        await prepPage(page);
         const topMeta = await page.evaluate(() => window.__farmCapture?.measureTopbarMetrics?.());
-        if (!topMeta || topMeta.sparePx < 4) {
-          throw new Error(`phone top bar overlap: spare ${topMeta?.sparePx}px`);
+        if (!topMeta) throw new Error("phone top bar metrics missing");
+        if (!topMeta.textOverflowOk) {
+          throw new Error(`phone top bar text overflow: ${topMeta.textOverflowOffenders?.join(", ")}`);
         }
         const topPath = path.join(outDir, `${viewport.name}-topbar.png`);
-        await page.screenshot({ path: topPath, clip: { x: 0, y: 0, width: 390, height: 56 } });
+        const topbarH = Math.max(56, Math.ceil(topMeta?.topbarPx ?? 56));
+        await page.screenshot({ path: topPath, clip: { x: 0, y: 0, width: 390, height: topbarH } });
         hashes.topbar = await fileHash(topPath);
-        checks.push(`phone top bar spare ${topMeta.sparePx}px`);
+        checks.push(`phone top bar ${topMeta.topbarPx.toFixed(0)}px tall, no text overflow`);
       }
 
       await prepPage(page);

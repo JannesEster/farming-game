@@ -140,6 +140,8 @@ export type UiCard = {
 };
 
 export type StoryState = {
+  /** Player-chosen farmer name on the map (default Farmer). */
+  playerDisplayName?: string;
   /** @deprecated use state.notifications; kept for migration reads only */
   legacyNotificationsMigrated?: boolean;
   composition: HerdComposition;

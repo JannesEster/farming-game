@@ -11,6 +11,5 @@ export const STEP3A = {
   walkStepPerHour: 1.8,
   /** Path progress behind the herd while driving (tiles along route). */
   herderTrailBehind: 0.07,
-  farmerName: "Jannes",
   farmhandName: "Piet",
 } as const;

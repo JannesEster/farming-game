@@ -5,20 +5,21 @@ import { clamp } from "../sim/math";
 import { getGameFlow } from "../integration/GameFlowService";
 import { hasBlockingCard, popNextCard } from "../sim/story";
 import { presentStoryCard } from "./storyPresent";
-import { nightOverlayAlpha, sceneDaylightBlend, tickRanchClock } from "../sim/clock";
+import { isDaylightHour, nightOverlayAlpha, sceneDaylightBlend, tickRanchClock } from "../sim/clock";
 import { elementVisible, isSimBlocked as simClockBlocked, speedMultiplier, transitMayAdvance } from "./simGate";
 import { syncAlertStrip } from "../integration/notificationHub";
 import { bfsCampRoute } from "../sim/path";
 import { campIdAt, moveHerd, stepDay } from "../sim/simulation";
-import { setWorkPriority, tickFarmhandWorld, WORK_JOB_LABELS } from "../sim/workGrid";
+import { defaultWorkGrid, setWorkPriority, tickFarmhandWorld, WORK_JOB_LABELS } from "../sim/workGrid";
 import { hireFarmhand } from "../sim/workers";
 import type { DayLengthSeconds } from "../sim/clock";
 import { herdInTransit, herdMoveActive, herdWorldTile, pathTangent } from "../sim/transit";
-import { syncHerderOnDrive, tickHerdingRealtime } from "../sim/herding";
+import { beginHerdMove, syncHerderOnDrive, tickHerdingRealtime } from "../sim/herding";
 import { freeWorkerHouseSlots } from "../sim/housing";
-import { tickPeopleSchedule } from "../sim/people";
+import { ensurePeopleState, tickPeopleSchedule, workerAtHomeAtNight } from "../sim/people";
+import { farmerDisplayName, DEFAULT_PLAYER_DISPLAY_NAME } from "../sim/playerName";
+import { planHerdPath, pointOnPath } from "../sim/path";
 import { initStoryPeople } from "../sim/story";
-import { STEP3A } from "../sim/step3aConfig";
 import {
   PAN_INERTIA,
   applyPanFriction,
@@ -44,7 +45,7 @@ import {
   type ZoomTargets,
 } from "./camera";
 import { grazeableFraction } from "../sim/pasture";
-import { TILE_HOMESTEAD, TILE_OUTSIDE, type GameState } from "../sim/types";
+import { TILE_HOMESTEAD, TILE_OUTSIDE, type GameState, type HerdTransit } from "../sim/types";
 import {
   ART_ORIGIN,
   buildArt,
@@ -265,6 +266,13 @@ export class FarmScene extends Phaser.Scene {
       onOpenMarket: () => this.market.open(),
       onOpenOps: () => this.ops.open(),
       onDayLength: (seconds) => this.setDayLength(seconds),
+      onFarmerName: (name) => {
+        if (!this.state.story) return;
+        this.state.story.playerDisplayName = name;
+        this.placeFarmer();
+        this.syncHud();
+        this.persist();
+      },
       onSheetExpanded: (expanded) => {
         getGameFlow().setHudPanel("herdSheet", Boolean(expanded));
         if (expanded) getGameFlow().notifySim("grassChecked");
@@ -325,7 +333,7 @@ export class FarmScene extends Phaser.Scene {
     this.farmerSprite = this.add.image(0, 0, SPRITE_KEYS.farmer);
     this.farmerSprite.setOrigin(0.5, 0.92);
     this.farmerNameTag = this.add
-      .text(0, 0, STEP3A.farmerName, {
+      .text(0, 0, DEFAULT_PLAYER_DISPLAY_NAME, {
         fontFamily: "system-ui, sans-serif",
         fontSize: "14px",
         color: "#fff6e8",
@@ -769,64 +777,12 @@ export class FarmScene extends Phaser.Scene {
       farmerScreenHeightPx: () =>
         this.farmerSprite?.visible ? this.farmerSprite.displayHeight * this.cameras.main.zoom : 0,
       countFarmerInView: () => this.countFarmerInView(),
-      frameFarmerAtHouse: () => {
-        this.panVel = null;
-        const house = this.state.features.find((f) => f.kind === "house");
-        if (!house) return false;
-        const foot = tileCenter(house.x, house.y, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
-        const zoom = clampZoom(1.2, this.minZoom, this.maxZoom);
-        this.cameras.main.setZoom(zoom);
-        this.cameras.main.centerOn(foot.x, foot.y - 12);
-        this.clampScroll();
-        this.placeFarmer();
-        const h = this.farmerSprite?.visible
-          ? this.farmerSprite.displayHeight * this.cameras.main.zoom
-          : 0;
-        return this.countFarmerInView() >= 1 && h >= 30;
-      },
-      prepareHerdDriveCapture: () => {
-        const dest = this.state.camps.find((c) => c.id !== this.state.herd.campId);
-        if (!dest) return false;
-        this.state.date.hour = 11;
-        this.captureLightingHour = 11;
-        moveHerd(this.state, dest.id);
-        const transit = this.state.herd.transit;
-        if (!transit) return false;
-        transit.phase = "drive";
-        transit.approachProgress = 1;
-        transit.progress = 0.42;
-        syncHerderOnDrive(this.state);
-        this.syncHerdFromSim();
-        this.placeHerd(performance.now());
-        this.placeFarmer();
-        this.placeFarmhand();
-        const midX = (this.herdVisual.x + (this.farmerSprite?.x ?? this.herdVisual.x)) / 2;
-        const midY = (this.herdVisual.y + (this.farmerSprite?.y ?? this.herdVisual.y)) / 2;
-        const camera = this.cameras.main;
-        const phone = camera.width < 500;
-        camera.setZoom(clampZoom(phone ? 0.68 : 0.88, this.minZoom, this.maxZoom));
-        camera.centerOn(midX, midY - (phone ? 8 : 20));
-        this.clampScroll();
-        const cattle = this.countCattleInView();
-        const herder = this.countFarmerInView() + this.countFarmhandInView();
-        return cattle >= 1 && herder >= 1;
-      },
-      prepareNightWorkersHomeCapture: () => {
-        hireFarmhand(this.state);
-        this.state.date.hour = 22;
-        this.captureLightingHour = 22;
-        tickPeopleSchedule(this.state);
-        this.applyRanchLighting();
-        const wh = this.state.features.find((f) => f.kind === "worker_house");
-        if (!wh) return false;
-        const foot = tileCenter(wh.x, wh.y, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
-        this.cameras.main.setZoom(clampZoom(1.05, this.minZoom, this.maxZoom));
-        this.cameras.main.centerOn(foot.x, foot.y - 8);
-        this.clampScroll();
-        this.placeFarmhand();
-        this.placeFarmer();
-        return this.countFarmhandInView() >= 1;
-      },
+      frameFarmerAtHouse: () => this.frameHomesteadWithWorkerHouse(),
+      prepareHerdDriveCapture: () => this.prepareHerdDriveCapture(),
+      herderHerdScreenDistancePx: () => this.herderHerdScreenDistancePx(),
+      nightWorkersCaptureMeta: () => this.nightWorkersCaptureMeta(),
+      workerHouseInView: () => this.workerHouseInView(),
+      prepareNightWorkersHomeCapture: () => this.prepareNightWorkersHomeCapture(),
       prepareHireBlockedCapture: () => {
         this.state.features = this.state.features.filter((f) => f.kind !== "worker_house");
         this.ops.open("default");
@@ -1006,6 +962,9 @@ export class FarmScene extends Phaser.Scene {
       this.ops.refresh(this.state);
       this.persist();
       getGameFlow().onSimDayAdvanced(this.state);
+    }
+    if (!isDaylightHour(this.state.date.hour)) {
+      tickPeopleSchedule(this.state);
     }
     this.applyRanchLighting();
     this.updateScaleBar();
@@ -1602,6 +1561,7 @@ export class FarmScene extends Phaser.Scene {
     const placed = this.placePersonSprite(this.farmerSprite, presence, "farmer", this.farmerLastPos);
     this.farmerSprite.setVisible(true);
     if (this.farmerNameTag) {
+      this.farmerNameTag.setText(farmerDisplayName(this.state));
       this.farmerNameTag.setPosition(
         placed.x,
         placed.y - this.farmerSprite.displayHeight - 6 + placed.bob,
@@ -1609,6 +1569,223 @@ export class FarmScene extends Phaser.Scene {
       this.farmerNameTag.setDepth(this.farmerSprite.depth + 2);
       this.farmerNameTag.setVisible(true);
     }
+  }
+
+  private herderSpriteForTransit(): Phaser.GameObjects.Image | undefined {
+    const herder = this.state.herd.transit?.herder;
+    if (herder === "piet" && this.farmhandSprite?.visible) return this.farmhandSprite;
+    return this.farmerSprite;
+  }
+
+  private herderHerdScreenDistancePx(): number {
+    const herd = this.mobCenter();
+    const sprite = this.herderSpriteForTransit();
+    if (!sprite?.visible) return 9999;
+    return Math.hypot(sprite.x - herd.x, sprite.y - herd.y) * this.cameras.main.zoom;
+  }
+
+  private nudgeHerderBesideHerdCenter(maxPx: number): void {
+    const presence = this.state.story?.farmerPresence;
+    if (!presence) return;
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    const tan = pathTangent(this.state);
+    for (let pass = 0; pass < 24; pass += 1) {
+      const center = this.mobCenter();
+      const behindPx = Math.max(18, 64 - pass * 2);
+      const footX = center.x - tan.x * behindPx;
+      const footY = center.y - tan.y * behindPx;
+      const tile = worldToTile(footX, footY, this.layout, tileW, tileH);
+      presence.tileX = tile.x;
+      presence.tileY = tile.y;
+      this.placeFarmer();
+      if (this.herderHerdScreenDistancePx() <= maxPx) return;
+    }
+  }
+
+  private workerHouseInView(): boolean {
+    const wh = this.state.features.find((f) => f.kind === "worker_house");
+    if (!wh) return false;
+    const foot = tileCenter(wh.x, wh.y, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
+    return this.cameras.main.worldView.contains(foot.x, foot.y);
+  }
+
+  private nightWorkersCaptureMeta(): { hour: number; workerAtHome: boolean; workerHouseVisible: boolean } {
+    return {
+      hour: this.state.date.hour,
+      workerAtHome: workerAtHomeAtNight(this.state),
+      workerHouseVisible: this.workerHouseInView(),
+    };
+  }
+
+  private frameHomesteadWithWorkerHouse(): boolean {
+    this.panVel = null;
+    const house = this.state.features.find((f) => f.kind === "house");
+    const workerHouse = this.state.features.find((f) => f.kind === "worker_house");
+    if (!house) return false;
+  const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    const main = tileCenter(house.x, house.y, this.layout, tileW, tileH);
+    const pts = [main];
+    if (workerHouse) pts.push(tileCenter(workerHouse.x, workerHouse.y, this.layout, tileW, tileH));
+    let minX = pts[0].x;
+    let maxX = pts[0].x;
+    let minY = pts[0].y;
+    let maxY = pts[0].y;
+    for (const p of pts) {
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y);
+      maxY = Math.max(maxY, p.y);
+    }
+    const span = Math.max(maxX - minX, maxY - minY, 160);
+    const camera = this.cameras.main;
+    const phone = camera.width < 500;
+    const zoom = clampZoom(phone ? Math.min(1.05, 520 / span) : Math.min(1.2, 640 / span), this.minZoom, this.maxZoom);
+    camera.setZoom(zoom);
+    camera.centerOn((minX + maxX) / 2, (minY + maxY) / 2 - 14);
+    this.clampScroll();
+    this.placeFarmer();
+    const h = this.farmerSprite?.visible ? this.farmerSprite.displayHeight * camera.zoom : 0;
+    return this.countFarmerInView() >= 1 && h >= 30 && (workerHouse ? this.workerHouseInView() : true);
+  }
+
+  private pickLongHerdMoveDestination(): number | null {
+    let bestId: number | null = null;
+    let bestLen = 0;
+    for (const camp of this.state.camps) {
+      if (camp.id === this.state.herd.campId) continue;
+      const path = planHerdPath(this.state, this.state.herd.campId, camp.id);
+      if (path.length > bestLen) {
+        bestLen = path.length;
+        bestId = camp.id;
+      }
+    }
+    return bestId;
+  }
+
+  private gateProgressForCapture(): number {
+    const path = this.state.herd.transit?.path ?? [];
+    if (path.length < 2) return 0.5;
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    const segments = collectFenceSegments(this.state, this.layout, this.state.herd.campId, false);
+    const gates = segments.filter((segment) => segment.gate);
+    if (gates.length === 0) return 0.5;
+    let bestIndex = 0;
+    let bestDist = Number.POSITIVE_INFINITY;
+    path.forEach((tile, index) => {
+      const point = tileCenter(tile.x, tile.y, this.layout, tileW, tileH);
+      for (const gate of gates) {
+        const dist = Math.hypot(point.x - (gate.x1 + gate.x2) / 2, point.y - (gate.y1 + gate.y2) / 2);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestIndex = index;
+        }
+      }
+    });
+    return bestIndex / (path.length - 1);
+  }
+
+  private prepareHerdDriveCapture(): boolean {
+    const story = this.state.story;
+    if (!story) return false;
+    story.herdMoveQueue = null;
+    const herdState = this.state.herd;
+    herdState.transit = null;
+    ensurePeopleState(this.state);
+    if (!story.workGrid) story.workGrid = defaultWorkGrid();
+    story.workGrid.move_herd_help = 0;
+    if (story.farmhandPresence) {
+      story.farmhandPresence.onHerdingDuty = false;
+      story.farmhandPresence.activeJob = null;
+    }
+    if (story.farmerPresence) story.farmerPresence.onHerdingDuty = false;
+
+    const destId = this.pickLongHerdMoveDestination();
+    if (destId === null) return false;
+
+    this.state.date.hour = 11;
+    this.captureLightingHour = 11;
+    if (!beginHerdMove(this.state, destId)) return false;
+    const transit = herdState.transit as HerdTransit | null;
+    if (!transit || transit.path.length < 2) return false;
+    transit.phase = "drive";
+    transit.approachProgress = 1;
+    transit.herder = "farmer";
+    const gateP = this.gateProgressForCapture();
+    transit.progress = Math.min(0.88, Math.max(0.15, gateP));
+    syncHerderOnDrive(this.state);
+    if (story.farmerPresence) {
+      const herdTile = pointOnPath(transit.path, transit.progress);
+      const tan = pathTangent(this.state);
+      story.farmerPresence.tileX = herdTile.x - tan.x * 0.22;
+      story.farmerPresence.tileY = herdTile.y - tan.y * 0.22;
+      story.farmerPresence.onHerdingDuty = true;
+    }
+
+    this.syncHerdFromSim();
+    this.placeHerd(performance.now());
+    this.nudgeHerderBesideHerdCenter(80);
+    this.placeFarmhand();
+    this.redrawFences();
+
+    const herdCenter = this.mobCenter();
+    const herderSprite = this.herderSpriteForTransit();
+    const hx = herderSprite?.x ?? herdCenter.x;
+    const hy = herderSprite?.y ?? herdCenter.y;
+    const camera = this.cameras.main;
+    const phone = camera.width < 500;
+    camera.setZoom(clampZoom(phone ? 0.95 : 1.08, this.minZoom, this.maxZoom));
+    camera.centerOn((herdCenter.x + hx) / 2, (herdCenter.y + hy) / 2 - (phone ? 6 : 16));
+    this.clampScroll();
+
+    const dist = this.herderHerdScreenDistancePx();
+    const midMove = transit.progress > 0.08 && transit.progress < 0.95;
+    return this.countCattleInView() >= 1 && this.countFarmerInView() >= 1 && dist <= 80 && midMove;
+  }
+
+  private prepareNightWorkersHomeCapture(): boolean {
+    this.state.herd.transit = null;
+    if (this.state.story) this.state.story.herdMoveQueue = null;
+    hireFarmhand(this.state);
+    ensurePeopleState(this.state);
+    const story = this.state.story;
+    if (story?.farmerPresence) story.farmerPresence.onHerdingDuty = false;
+    if (story?.farmhandPresence) {
+      story.farmhandPresence.onHerdingDuty = false;
+      story.farmhandPresence.activeJob = null;
+    }
+    this.state.date.hour = 21;
+    this.captureLightingHour = 21;
+    tickPeopleSchedule(this.state);
+    for (let i = 0; i < 4; i += 1) tickFarmhandWorld(this.state);
+    this.applyRanchLighting();
+    this.syncHud();
+
+    const house = this.state.features.find((f) => f.kind === "house");
+    const wh = this.state.features.find((f) => f.kind === "worker_house");
+    if (!wh || !house) return false;
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    const main = tileCenter(house.x, house.y, this.layout, tileW, tileH);
+    const worker = tileCenter(wh.x, wh.y, this.layout, tileW, tileH);
+    const span = Math.max(Math.hypot(main.x - worker.x, main.y - worker.y), 180);
+    const camera = this.cameras.main;
+    const zoom = clampZoom(Math.min(1.12, 700 / span), this.minZoom, this.maxZoom);
+    camera.setZoom(zoom);
+    camera.centerOn((main.x + worker.x) / 2, (main.y + worker.y) / 2 - 10);
+    this.clampScroll();
+    this.placeFarmhand();
+    this.placeFarmer();
+
+    const hourOk = this.state.date.hour >= 19 || this.state.date.hour <= 5;
+    return (
+      this.countFarmhandInView() >= 1 &&
+      this.workerHouseInView() &&
+      workerAtHomeAtNight(this.state) &&
+      hourOk
+    );
   }
 
   private placeFarmhand(): void {
@@ -1631,7 +1808,7 @@ export class FarmScene extends Phaser.Scene {
     const jobShort =
       presence.activeJob && WORK_JOB_LABELS[presence.activeJob]
         ? WORK_JOB_LABELS[presence.activeJob]
-        : "On duty";
+        : presence.activityLabel?.trim() || "On duty";
     if (this.farmhandNameTag) {
       this.farmhandNameTag.setPosition(
         placed.x,
