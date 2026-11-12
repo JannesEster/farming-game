@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { cattleBodyTiles, cattleFile, facingFromOctant, grazeFacing, nwSeDiagonal, personFile, personPose } from "./v2Art";
+import { cattleBodyTiles, cattleFile, cattlePose, facingFromOctant, grazeFacing, nwSeDiagonal, personFile, personPose } from "./v2Art";
+import { displayScaleForFile, keyRatios } from "./worldScale";
+import { CONFIG } from "../sim/config";
 
 describe("v2 art choices", () => {
   it("maps a travel octant onto the facing sheet", () => {
@@ -28,19 +30,23 @@ describe("v2 art choices", () => {
     expect(personFile("farmer", 0, 1, false)).toBe("person-farmer-stand-s.png");
   });
 
-  it("draws a calf at about two thirds of a cow's length", () => {
+  it("draws a calf at the world-scale fraction of a cow", () => {
     const cow = cattleBodyTiles(false);
     const calf = cattleBodyTiles(true);
-    expect(cow).toBeCloseTo(0.62, 2);
-    expect(calf / cow).toBeGreaterThanOrEqual(0.65);
-    expect(calf / cow).toBeLessThanOrEqual(0.7);
+    const ratios = keyRatios();
+    expect(cow).toBeCloseTo(ratios.cow / CONFIG.view.tileWidth, 2);
+    expect(calf / cow).toBeCloseTo(ratios.calf / ratios.cow, 2);
+    const side = cattlePose(0, false, 1, false);
+    expect(side?.scale).toBeCloseTo(displayScaleForFile("cattle-bonsmara-e.png") ?? 0, 5);
   });
 
-  it("draws a worker tall enough to read behind a herd", () => {
-    const pose = personPose("farmhand", 1, 0.4, true);
+  it("keeps the step 3c person height on every pose", () => {
+    const pose = personPose("farmer", 0, 1, false);
     expect(pose).not.toBeNull();
-    const heightTiles = ((pose?.scale ?? 0) * 140) / 64;
-    expect(heightTiles).toBeGreaterThan(0.5);
+    expect(pose!.scale).toBeCloseTo(displayScaleForFile("person-farmer-stand-s.png") ?? 0, 5);
+    const ratios = keyRatios();
+    expect(ratios.person).toBeCloseTo(CONFIG.view.tileWidth * 0.58, 5);
+    expect(ratios.cow).toBeCloseTo(CONFIG.view.tileWidth * 0.62, 5);
   });
 
   it("tells the two fence diagonals apart", () => {

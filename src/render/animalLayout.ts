@@ -17,6 +17,7 @@ export type PlacedAnimal = {
   octant: number;
   role: AnimalSpriteRole;
   calf: boolean;
+  moving?: boolean;
 };
 
 function hashUnit(n: number): number {
@@ -59,6 +60,12 @@ export function layoutAnimals(
     const homeAt = homeIndex.get(animal.id);
     if (homeAt !== undefined && animal.whereabouts === "in_camp") {
       const offset = offsets[homeAt];
+      if (walking && offset?.moving) {
+        animal.activity = "walk";
+        if (offset.octant !== undefined) animal.facing = offset.octant;
+      } else if (walking) {
+        animal.activity = "graze";
+      }
       placed.push({
         animal,
         x: herdPoint.x + (offset?.x ?? 0),
@@ -66,6 +73,7 @@ export function layoutAnimals(
         octant: offset?.octant ?? animal.facing,
         role: "herd-animal",
         calf,
+        moving: offset?.moving,
       });
       continue;
     }

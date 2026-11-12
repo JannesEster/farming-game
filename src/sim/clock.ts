@@ -101,6 +101,7 @@ export function tickRanchClock(
   clock: RanchClockState,
   deltaMs: number,
   blocked: boolean,
+  pace = 1,
 ): ClockTickResult {
   if (blocked || clock.speed === 0 || deltaMs <= 0) {
     return { bankMs: clock.bankMs, hoursAdvanced: 0, daySteps: 0, date };
@@ -115,7 +116,7 @@ export function tickRanchClock(
   let guard = 0;
   while (guard < 48) {
     guard += 1;
-    const msNeeded = realMsPerGameHour(current.hour, clock.settings.dayLengthSeconds);
+    const msNeeded = realMsPerGameHour(current.hour, clock.settings.dayLengthSeconds) / Math.max(0.05, pace);
     if (bank < msNeeded) break;
     bank -= msNeeded;
     hoursAdvanced += 1;
@@ -161,10 +162,27 @@ export function rollGameDayFromState(state: GameState, config: GameConfig = CONF
   return rollGameDay(state.date, requested, config);
 }
 
-export function formatClockTime(date: CalendarDate): string {
-  const h = ((date.hour % 24) + 24) % 24;
-  const hh = String(h).padStart(2, "0");
-  return `${hh}:00`;
+/** Whole hours plus the fraction stored in the ranch-clock bank. */
+export function fractionalHour(hour: number, bankMs = 0, dayLength: DayLengthSeconds = DEFAULT_DAY_LENGTH_S): number {
+  if (!Number.isFinite(hour)) return 0;
+  if (!Number.isInteger(hour)) return ((hour % 24) + 24) % 24;
+  const wrapped = ((hour % 24) + 24) % 24;
+  const ms = realMsPerGameHour(wrapped, dayLength);
+  const extra = ms <= 0 ? 0 : Math.max(0, bankMs) / ms;
+  return wrapped + Math.min(0.999, extra);
+}
+
+/** Always HH:MM. A fractional hour from an older save becomes minutes, never a decimal hour. */
+export function formatClockTime(
+  date: CalendarDate,
+  bankMs = 0,
+  dayLength: DayLengthSeconds = DEFAULT_DAY_LENGTH_S,
+): string {
+  const frac = fractionalHour(date.hour, bankMs, dayLength);
+  const wrapped = ((frac % 24) + 24) % 24;
+  const hh = Math.floor(wrapped);
+  const mm = Math.min(59, Math.floor((wrapped - hh) * 60 + 1e-6));
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
 }
 
 export function ecologyScalePerGameDay(daysPerMonth: number, referenceDays = 30): number {

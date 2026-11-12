@@ -1,32 +1,13 @@
-import { TILE_HOMESTEAD, TILE_OUTSIDE, type Feature, type FeatureKind, type TilePoint } from "./types";
-
-type Stamp = { kind: FeatureKind; into: number; along: number; scale: number };
+import { HANDLING_YARD, HANDLING_YARD_COMPACT, truckBayTiles, type YardStamp } from "../render/worldScale";
+import { TILE_HOMESTEAD, TILE_OUTSIDE, type Feature, type TilePoint } from "./types";
 
 /**
  * Steel yards beside the farm road, from docs/reference/cattle-yards/yards-aerial.png.
  * `into` steps off the road into the camp. `along` steps along the road.
- * The pens sit well back from the road so the truck can park on the gravel bay
- * without covering them. The footprint is several times a single-tile kraal.
+ * Pen scales are metres. The gravel bay is long enough for the road train.
  */
-const YARD: Stamp[] = [
-  { kind: "loading_ramp", into: 1, along: 2, scale: 1 },
-  { kind: "race", into: 3, along: 4, scale: 1 },
-  { kind: "crush", into: 3, along: 5, scale: 1 },
-  { kind: "handling_roof", into: 3, along: 5, scale: 1 },
-  { kind: "holding_pen", into: 6, along: 2, scale: 1.15 },
-  { kind: "holding_pen", into: 6, along: 6, scale: 0.82 },
-  { kind: "holding_pen", into: 6, along: 9, scale: 0.58 },
-];
-
-const COMPACT: Stamp[] = [
-  { kind: "loading_ramp", into: 1, along: 1, scale: 1 },
-  { kind: "race", into: 2, along: 3, scale: 1 },
-  { kind: "crush", into: 2, along: 4, scale: 1 },
-  { kind: "handling_roof", into: 2, along: 4, scale: 1 },
-  { kind: "holding_pen", into: 5, along: 1, scale: 1.1 },
-  { kind: "holding_pen", into: 5, along: 4, scale: 0.8 },
-  { kind: "holding_pen", into: 5, along: 7, scale: 0.58 },
-];
+const YARD: readonly YardStamp[] = HANDLING_YARD;
+const COMPACT: readonly YardStamp[] = HANDLING_YARD_COMPACT;
 
 const INTO = [
   [1, 0],
@@ -35,11 +16,13 @@ const INTO = [
   [0, -1],
 ] as const;
 
+type GravelCell = TilePoint & { scale: number };
+
 type Placed = {
   score: number;
   tiles: Feature[];
   reserved: TilePoint[];
-  gravel: TilePoint[];
+  gravel: GravelCell[];
 };
 
 export function placeCattleHandlingYard(args: {
@@ -95,18 +78,35 @@ export function placeCattleHandlingYard(args: {
           }
           if (!ok) continue;
           const rampStamp = layout.find((piece) => piece.kind === "loading_ramp");
-          const besideRoad = rampStamp ? at(0, rampStamp.along) : at(0, 0);
-          if (!tracks.some((track) => track.x === besideRoad.x && track.y === besideRoad.y)) continue;
+          const rampCell = rampStamp ? at(rampStamp.into, rampStamp.along) : at(1, 0);
+          if (Math.hypot(rampCell.x - house.x, rampCell.y - house.y) < 8) continue;
+          const bay = truckBayTiles();
+          let bayOk = true;
+          for (let along = -bay; along <= alongMax + 2 && bayOk; along += 1) {
+            const cell = at(0, along);
+            if (cell.x < 0 || cell.y < 0 || cell.x >= width || cell.y >= height) continue;
+            if (idAt(cell.x, cell.y) === TILE_HOMESTEAD) {
+              bayOk = false;
+              break;
+            }
+            if (blocked.has(`${cell.x},${cell.y}`)) {
+              bayOk = false;
+              break;
+            }
+          }
+          if (!bayOk) continue;
           const tiles = layout.map((piece) => {
             const cell = at(piece.into, piece.along);
             return { kind: piece.kind, x: cell.x, y: cell.y, scale: piece.scale };
           });
-          const gravel: TilePoint[] = [];
-          for (let along = 0; along <= Math.min(6, alongMax); along += 1) {
-            const cell = at(-1, along);
-            if (cell.x < 0 || cell.y < 0 || cell.x >= width || cell.y >= height) continue;
-            if (idAt(cell.x, cell.y) === TILE_HOMESTEAD) continue;
-            gravel.push(cell);
+          const gravel: GravelCell[] = [];
+          for (let along = -bay; along <= alongMax + 3; along += 1) {
+            for (const into of [0, -1, -2, -3, -4, -5]) {
+              const cell = at(into, along);
+              if (cell.x < 0 || cell.y < 0 || cell.x >= width || cell.y >= height) continue;
+              if (idAt(cell.x, cell.y) === TILE_HOMESTEAD) continue;
+              gravel.push({ ...cell, scale: into === 0 ? 3 : 2 });
+            }
           }
           let score = fromHouse;
           if (beside === avoidCampId) score -= 40;
@@ -124,12 +124,13 @@ export function placeCattleHandlingYard(args: {
     }
   }
   for (const tile of best.tiles) features.push(tile);
-  const trackKeys = new Set(features.filter((feature) => feature.kind === "track").map((feature) => `${feature.x},${feature.y}`));
   for (const tile of best.gravel) {
-    const key = `${tile.x},${tile.y}`;
-    if (trackKeys.has(key)) continue;
-    features.push({ kind: "track", x: tile.x, y: tile.y, scale: 1 });
-    trackKeys.add(key);
+    const existing = features.find((feature) => feature.kind === "track" && feature.x === tile.x && feature.y === tile.y);
+    if (existing) {
+      existing.scale = Math.max(existing.scale, tile.scale);
+      continue;
+    }
+    features.push({ kind: "track", x: tile.x, y: tile.y, scale: tile.scale });
   }
   return best.reserved;
 }

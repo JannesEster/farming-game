@@ -7,6 +7,8 @@ import {
 } from "../sim/cattleClasses";
 import { quoteSale } from "../sim/economy";
 import { beginSaleConvoy, saleConvoyActive } from "../sim/sales";
+import { repairStuckTransit } from "../sim/transit";
+import { isDaylightHour } from "../sim/clock";
 import { resolveDroughtChoice } from "../sim/drought";
 import { formatHudMoney, formatMoney } from "../sim/format";
 import { hireFarmhand, setFarmhandJob } from "../sim/workers";
@@ -74,6 +76,7 @@ export function mountMarketSheet(options: {
         <button type="button" class="pill-btn ghost" data-drought="move_herd">Move camps</button>
       </div>
       <p class="extra" id="market-quote"></p>
+      <p class="market-status" id="market-status"></p>
       <button type="button" class="pill-btn confirm" id="market-sell-btn">Confirm sale</button>
     </div>
   `;
@@ -165,22 +168,28 @@ export function mountMarketSheet(options: {
   channelSel.addEventListener("change", updateQuote);
   countEl.addEventListener("input", updateQuote);
 
+  const statusEl = sheet.querySelector<HTMLElement>("#market-status");
+  const say = (text: string): void => {
+    if (statusEl) statusEl.textContent = text;
+    options.onToast(text);
+  };
   sellBtn.addEventListener("click", () => {
     const state = options.getState();
+    if (state.herd.transit && !isDaylightHour(state.date.hour)) repairStuckTransit(state);
     const stockClass = classSel.value as StockClass;
     const count = Math.max(1, Number.parseInt(countEl.value, 10) || 1);
     const channel = channelSel.value as SaleChannel;
     const q = quoteSale(state, stockClass, count, channel);
     if ("reason" in q) {
-      options.onToast(q.reason);
+      say(q.reason);
       return;
     }
     if (saleConvoyActive(state)) {
-      options.onToast("A sale is already running at the kraal.");
+      say("A sale is already running at the kraal.");
       return;
     }
     const begin = beginSaleConvoy(state, stockClass, count, channel, q);
-    options.onToast(begin.message);
+    say(begin.message);
     if (!begin.ok) return;
     options.onChange();
     refresh(state);

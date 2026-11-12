@@ -160,6 +160,7 @@ export function mountHud(options: {
     <section class="sheet" id="herd-sheet" hidden data-expanded="false">
       <div class="sheet-summary" id="sheet-summary" role="button" tabindex="0" aria-expanded="false">
         <span class="sheet-line" id="sheet-line"></span>
+        <h2 id="herd-name"></h2>
         <span class="warn-dot" id="sheet-warn-dot" hidden aria-label="Time to move"></span>
         <button type="button" class="icon-btn sheet-close" id="sheet-close" aria-label="Close herd card">×</button>
       </div>
@@ -182,7 +183,6 @@ export function mountHud(options: {
             <button type="button" class="pill-btn ghost" id="animal-round-up">Round up</button>
           </div>
         </div>
-        <h2 id="herd-name"></h2>
         <p id="herd-camp"></p>
         <p id="herd-head"></p>
         <div class="meter"><span>Condition</span><div class="bar"><span id="condition-bar"></span></div><b id="condition-value"></b></div>
@@ -448,11 +448,17 @@ export function mountHud(options: {
     root.style.setProperty("--toast-bottom", `${toastLift}px`);
   };
 
+  function applySheetChrome(): void {
+    sheetLine.hidden = expanded;
+    nameEl.hidden = !expanded;
+  }
+
   function toggleExpanded(): void {
     expanded = !expanded;
     sheet.dataset.expanded = expanded ? "true" : "false";
     summary.setAttribute("aria-expanded", expanded ? "true" : "false");
     sheetDetail.hidden = !expanded;
+    applySheetChrome();
     options.onSheetExpanded?.(expanded);
     syncChromeInsets();
   }
@@ -473,7 +479,11 @@ export function mountHud(options: {
       const dry = !seasonText.toLowerCase().includes("rain");
       const narrow = typeof window !== "undefined" && window.innerWidth <= 430;
       dateEl.textContent = formatHudDate(state.date);
-      timeEl.textContent = formatClockTime(state.date);
+      timeEl.textContent = formatClockTime(
+        state.date,
+        state.clock?.bankMs ?? 0,
+        state.clock?.settings.dayLengthSeconds,
+      );
       timeEl.hidden = false;
       seasonEl.hidden = narrow;
       if (state.clock?.settings.dayLengthSeconds) {
@@ -504,6 +514,8 @@ export function mountHud(options: {
         expanded = false;
         sheet.dataset.expanded = "false";
         sheetDetail.hidden = true;
+        sheetLine.hidden = false;
+        nameEl.hidden = true;
         options.onSheetExpanded?.(false);
       } else {
         const prevExpanded = expanded;
@@ -523,7 +535,7 @@ export function mountHud(options: {
           : formatHerdSheetSummary(state.herd.headCount, camp?.name ?? "Camp", pct);
         warnDot.hidden = !warn;
 
-        if (expanded && camp) {
+        if (camp) {
           const daysLeft = grazingDaysLeft(camp, state.herd);
           nameEl.textContent = state.herd.name;
           campEl.textContent = formatCampLine(camp.name, camp.hectares);
@@ -576,6 +588,7 @@ export function mountHud(options: {
         } else {
           moveConfirm.hidden = true;
         }
+        applySheetChrome();
       }
       paintMinimap(minimap, state);
       syncChromeInsets();

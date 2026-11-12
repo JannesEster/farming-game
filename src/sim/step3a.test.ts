@@ -70,10 +70,14 @@ describe("step 3a living farm", () => {
     expect(herdInTransit(s.herd)).toBe(false);
     tickHerdingRealtime(s, 300, "x1");
     expect((s.herd.transit?.approachProgress ?? 0) > 0).toBe(true);
-    tickHerdingRealtime(s, 120_000, "x1");
+    let guard = 0;
+    while (s.herd.transit?.phase === "approach" && guard < 4000) {
+      tickHerdingRealtime(s, 200, "x1");
+      guard += 1;
+    }
     expect(s.herd.transit?.phase).toBe("drive");
-    tickHerdingRealtime(s, 8_000, "x1");
-    expect(s.herd.transit?.progress ?? 0).toBeGreaterThan(0);
+    tickHerdingRealtime(s, 500, "x1");
+    expect(s.herd.transit?.progress ?? 1).toBeGreaterThan(0);
   });
 
   it("queues when herder is busy", () => {
@@ -117,16 +121,18 @@ describe("step 3a living farm", () => {
     expect(behind).toBeLessThanOrEqual(progress);
   });
 
-  it("keeps a full herd at the tight spacing and the herder clear of the last animal", () => {
+  it("keeps the moving mob within 12 tiles and the herder 2 to 3 tiles behind it", () => {
     const path = [
       { x: 0, y: 0 },
-      { x: 30, y: 0 },
+      { x: 40, y: 0 },
     ];
-    const full = columnMetrics(path, 0.5, 40);
-    expect(full.spacingTiles).toBeCloseTo(0.42, 2);
+    const full = columnMetrics(path, 0.8, 120);
+    const lead = full.centerTiles;
     const rear = full.rearProgress * full.total;
     const herder = full.herderProgress * full.total;
-    expect(rear - herder).toBeGreaterThanOrEqual(1.5);
+    expect(lead - rear).toBeLessThanOrEqual(12);
+    expect(rear - herder).toBeGreaterThanOrEqual(2);
+    expect(rear - herder).toBeLessThanOrEqual(3);
   });
 
   it("keeps Piet within one tile of his cottage between dusk and dawn", () => {

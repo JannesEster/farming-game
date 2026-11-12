@@ -1,4 +1,5 @@
 import { CONFIG, type GameConfig } from "./config";
+import { pointOnPath } from "./path";
 import type { GameState, TilePoint } from "./types";
 
 function pathLengthTiles(path: TilePoint[]): number {
@@ -10,29 +11,53 @@ function pathLengthTiles(path: TilePoint[]): number {
   return total || 1;
 }
 
-/** Tiles between the last animal's feet and the herder, clear of the cow's body. */
-const HERDER_BEHIND_TILES = 1.75;
+/** Tiles between the last animal in the moving mob and the herder, once the column has room. */
+export const HERDER_BEHIND_TILES = 2.5;
+/** The moving mob grows to about this length, then more cattle join from the camp. */
+export const MOB_LENGTH_TILES = 12;
+/** Animals side by side on the open road. A gate narrows the picture to two. */
+export const MOB_ABREAST = 6;
+/** Gap between neighbours in a rank, in tiles. Six abreast is a bit under four tiles wide. */
+export const MOB_LATERAL_TILES = 0.72;
 
-/** Spacing for a filed column. The herder walks behind the last animal, clear of its body. */
+/**
+ * Loose mob on the path. The column grows to 12 tiles as the lead walks, and the
+ * tail stays on the route already travelled. The herder follows just behind that
+ * tail, closing to 2.5 tiles once the column has room, and he keeps moving.
+ */
 export function columnMetrics(
   path: TilePoint[],
   progress: number,
   count: number,
-): { total: number; spacingTiles: number; centerTiles: number; rearProgress: number; herderProgress: number } {
+): {
+  total: number;
+  spacingTiles: number;
+  centerTiles: number;
+  rearProgress: number;
+  herderProgress: number;
+  abreast: number;
+  widthTiles: number;
+  spanTiles: number;
+} {
   const total = pathLengthTiles(path);
   const safe = Math.max(1, count);
-  // A small cut-out walks as a readable file. A full herd keeps the tighter column.
-  const preferred = safe <= 14 ? 0.9 : 0.42;
-  const spacingTiles = Math.min(preferred, (total * 0.92) / Math.max(1, safe - 1));
+  const abreast = safe <= 6 ? Math.min(2, safe) : MOB_ABREAST;
+  const spacingTiles = 0.92;
   const centerTiles = progress * total;
-  const rearTiles = centerTiles - ((safe - 1) / 2) * spacingTiles;
-  const herderTiles = Math.max(0, rearTiles - HERDER_BEHIND_TILES);
+  const span = Math.min(MOB_LENGTH_TILES, Math.max(0, centerTiles * 0.5));
+  const rearTiles = Math.max(0, centerTiles - span);
+  // Stay close at the first steps so he keeps walking, then open to 3.2 tiles behind the tail.
+  const gap = Math.min(3, 0.6 + Math.max(0, centerTiles - 1.2) * 0.28);
+  const herderTiles = Math.max(0, rearTiles - gap);
   return {
     total,
     spacingTiles,
     centerTiles,
-    rearProgress: total <= 0 ? 0 : Math.max(0, rearTiles) / total,
+    rearProgress: total <= 0 ? 0 : rearTiles / total,
     herderProgress: total <= 0 ? 0 : herderTiles / total,
+    abreast,
+    widthTiles: Math.max(0, abreast - 1) * MOB_LATERAL_TILES,
+    spanTiles: span,
   };
 }
 
@@ -48,4 +73,27 @@ export function herderPathProgressBehindTail(state: GameState, _config: GameConf
   const transit = state.herd.transit;
   if (!transit || transit.path.length < 2) return transit?.progress ?? 0;
   return columnMetrics(transit.path, transit.progress, state.herd.headCount).herderProgress;
+}
+
+/**
+ * Stand the herder on the reverse of the mob's travel heading, behind the rear
+ * animal. A bend in the path must not leave him beside or in front of the tail.
+ * Once the column has moved, he sits about 3.2 tiles behind that tail.
+ */
+export function herderStandTile(path: TilePoint[], progress: number, count: number): TilePoint {
+  const metrics = columnMetrics(path, progress, count);
+  const rear = pointOnPath(path, metrics.rearProgress);
+  const look = Math.min(1, metrics.rearProgress + 1.4 / Math.max(metrics.total, 1));
+  const ahead = pointOnPath(path, Math.max(look, metrics.rearProgress));
+  let dx = ahead.x - rear.x;
+  let dy = ahead.y - rear.y;
+  let len = Math.hypot(dx, dy);
+  if (len < 0.04) {
+    const fallback = pointOnPath(path, metrics.herderProgress);
+    return { x: fallback.x, y: fallback.y };
+  }
+  dx /= len;
+  dy /= len;
+  const back = metrics.centerTiles < 2.4 ? Math.max(0.45, metrics.centerTiles * 0.4) : 3.2;
+  return { x: rear.x - dx * back, y: rear.y - dy * back };
 }

@@ -1,5 +1,6 @@
 import type { Feature } from "../sim/types";
 import { tileCenter, type IsoLayout } from "./iso";
+import { PEN_DEPTH_METRES, metresPerTile } from "./worldScale";
 
 /**
  * Iso cattle yard drawn to match docs/reference/cattle-yards/yards-aerial.png:
@@ -98,28 +99,19 @@ function penBoxes(basis: Basis, features: Feature[]): PenBox[] {
     .map((feature) => ({ feature, ...localOf(basis, feature) }))
     .sort((a, b) => a.along - b.along);
   if (pens.length === 0) return [];
-  const edges = new Array<number>(pens.length + 1);
-  if (pens.length === 1) {
-    edges[0] = pens[0].along - 2;
-    edges[1] = pens[0].along + 2;
-  } else {
-    const firstGap = pens[1].along - pens[0].along;
-    const lastGap = pens[pens.length - 1].along - pens[pens.length - 2].along;
-    edges[0] = pens[0].along - Math.min(2.2, Math.max(1.4, firstGap * 0.55));
-    for (let i = 0; i < pens.length - 1; i += 1) {
-      edges[i + 1] = (pens[i].along + pens[i + 1].along) / 2;
-    }
-    edges[pens.length] = pens[pens.length - 1].along + Math.min(1.7, Math.max(1.15, lastGap * 0.48));
-  }
-  const intoCenter = pens.reduce((sum, pen) => sum + pen.into, 0) / pens.length;
-  const intoHalf = 1.7;
-  return pens.map((pen, index) => ({
-    feature: pen.feature,
-    along0: edges[index],
-    along1: edges[index + 1],
-    into0: intoCenter - intoHalf,
-    into1: intoCenter + intoHalf,
-  }));
+  const tileMetres = metresPerTile();
+  const halfInto = PEN_DEPTH_METRES / 2 / tileMetres;
+  return pens.map((pen) => {
+    const alongMetres = pen.feature.scale >= 3 ? pen.feature.scale : 11;
+    const halfAlong = alongMetres / 2 / tileMetres;
+    return {
+      feature: pen.feature,
+      along0: pen.along - halfAlong,
+      along1: pen.along + halfAlong,
+      into0: pen.into - halfInto,
+      into1: pen.into + halfInto,
+    };
+  });
 }
 
 function arcPoints(a: Pt, b: Pt, bend: number, steps: number): Pt[] {
@@ -149,8 +141,10 @@ function raceScreen(basis: Basis, features: Feature[], boxes: PenBox[]): Pt[] {
   const start = screenOf(basis, { into: front, along: gateAlong });
   const crushPt = screenOf(basis, crushLocal);
   const rampPt = { x: basis.rampScreen.x, y: basis.rampScreen.y };
-  const intoCrush = arcPoints(start, crushPt, 86, 8);
-  const intoRamp = arcPoints(crushPt, rampPt, 72, 7);
+  const depthPx = Math.hypot(basis.intoScreen.x, basis.intoScreen.y) * (PEN_DEPTH_METRES / metresPerTile());
+  const bend = Math.max(16, depthPx * 0.45);
+  const intoCrush = arcPoints(start, crushPt, bend, 8);
+  const intoRamp = arcPoints(crushPt, rampPt, bend * 0.8, 7);
   return [...intoCrush, ...intoRamp.slice(1)];
 }
 

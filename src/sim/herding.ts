@@ -4,9 +4,16 @@ import { findCamp } from "./simulation";
 import { farmerDisplayName } from "./playerName";
 import { STEP3A } from "./step3aConfig";
 import { mainHouseTile, workerHouseForFarmhand } from "./housing";
-import { herdInTransit, tickTransitRealtime, walkGameHours, type TransitSpeed } from "./transit";
-import { herderPathProgressBehindTail } from "./convoy";
-import { pointOnPath, planHerdPath, pathLengthKm } from "./path";
+import {
+  fractionalRanchHour,
+  gameHoursElapsed,
+  herdInTransit,
+  tickTransitRealtime,
+  walkGameHours,
+  type TransitSpeed,
+} from "./transit";
+import { columnMetrics, herderPathProgressBehindTail, herderStandTile } from "./convoy";
+import { pathLengthKm, planHerdPath, planPersonPath, pointOnPath, WATER_STRUCTURE_CLEAR_TILES } from "./path";
 import type { GameState, HerdTransit, TilePoint } from "./types";
 import type { PersonPresence } from "./storyTypes";
 import type { HerderId } from "./types";
@@ -64,12 +71,33 @@ export function tryDispatchHerdQueue(state: GameState, config: GameConfig = CONF
   if (state.herd.transit) story.herdMoveQueue = null;
 }
 
+function approachKmEstimate(state: GameState, herder: HerderId, herdTile: TilePoint, config: GameConfig): number {
+  const presence = presenceForHerder(state, herder);
+  const from = presence ? { x: presence.tileX, y: presence.tileY } : mainHouseTile(state);
+  return Math.hypot(herdTile.x - from.x, herdTile.y - from.y) * config.transit.kmPerTile * 1.25;
+}
+
+/** True when the walk out plus the drive would still be going at 18:00. */
+export function moveFitsBeforeDusk(
+  state: GameState,
+  driveKm: number,
+  approachKm: number,
+  config: GameConfig = CONFIG,
+): boolean {
+  const hours = approachKm / config.transit.herderWalkKmH + driveKm / config.transit.cattleWalkKmH;
+  return fractionalRanchHour(state, config) + hours < 18;
+}
+
 export function beginHerdMove(state: GameState, toCampId: number, config: GameConfig = CONFIG): boolean {
   if (state.herd.transit) return false;
   const herder = pickHerder(state) ?? (pietCanHerde(state) ? "piet" : null);
   if (!herder) return false;
   const path = planHerdPath(state, state.herd.campId, toCampId);
   const distanceKm = pathLengthKm(path, config);
+  const herdTile = path[0] ?? findCamp(state, state.herd.campId)?.anchor ?? mainHouseTile(state);
+  const approachKm = approachKmEstimate(state, herder, herdTile, config);
+  if (!moveFitsBeforeDusk(state, distanceKm, approachKm, config)) return false;
+  if (state.story?.returnWalk) state.story.returnWalk = null;
   state.herd.transit = {
     toCampId,
     progress: 0,
@@ -81,6 +109,7 @@ export function beginHerdMove(state: GameState, toCampId: number, config: GameCo
     herder,
     approachProgress: 0,
   };
+  ensureApproachPath(state);
   return true;
 }
 
@@ -102,6 +131,15 @@ export function requestHerdMove(state: GameState, campId: number, config: GameCo
     return { ok: true, campName: camp.name, queued: true, queueReason: "night" };
   }
 
+  const preview = planHerdPath(state, state.herd.campId, camp.id);
+  const driveKm = pathLengthKm(preview, config);
+  const herder = pickHerder(state) ?? "farmer";
+  const approachKm = approachKmEstimate(state, herder, preview[0] ?? camp.anchor, config);
+  if (!moveFitsBeforeDusk(state, driveKm, approachKm, config)) {
+    state.story.herdMoveQueue = { toCampId: camp.id, reason: "night", campName: camp.name };
+    return { ok: true, campName: camp.name, queued: true, queueReason: "night" };
+  }
+
   if (beginHerdMove(state, camp.id, config)) {
     return { ok: true, campName: camp.name };
   }
@@ -110,19 +148,22 @@ export function requestHerdMove(state: GameState, campId: number, config: GameCo
   return { ok: true, campName: camp.name, queued: true, queueReason: "no_herder" };
 }
 
-export function approachDurationMs(state: GameState, config: GameConfig = CONFIG): number {
+function ensureApproachPath(state: GameState, config: GameConfig = CONFIG): void {
   const transit = state.herd.transit;
-  if (!transit) return STEP3A.approachBaseMs;
-  const from =
-    transit.herder === "piet" && state.story?.farmhandPresence
-      ? { x: state.story.farmhandPresence.tileX, y: state.story.farmhandPresence.tileY }
-      : state.story?.farmerPresence
-        ? { x: state.story.farmerPresence.tileX, y: state.story.farmerPresence.tileY }
-        : mainHouseTile(state);
-  const herdTile = findCamp(state, state.herd.campId)?.anchor ?? from;
-  const dist = Math.hypot(herdTile.x - from.x, herdTile.y - from.y);
-  const km = dist * config.transit.kmPerTile;
-  return Math.max(STEP3A.approachBaseMs, km * STEP3A.approachBaseMs * 4);
+  if (!transit || transit.approachPath) return;
+  const presence = presenceForHerder(state, transit.herder);
+  const from = presence
+    ? { x: presence.tileX, y: presence.tileY }
+    : transit.herder === "piet"
+      ? workerHouseForFarmhand(state) ?? mainHouseTile(state)
+      : mainHouseTile(state);
+  const behind = herderPathProgressBehindTail(state, config);
+  const meet = transit.path.length > 0 ? pointOnPath(transit.path, behind) : from;
+  const allow = campsTouched(state, from, meet);
+  let path = planPersonPath(state, from, meet, undefined, allow);
+  if (Math.hypot(path[0].x - from.x, path[0].y - from.y) > 0.05) path = [from, ...path];
+  transit.approachPath = path;
+  transit.approachKm = Math.max(pathLengthKm(path, config), 0.01);
 }
 
 export function tickHerdApproach(
@@ -134,15 +175,38 @@ export function tickHerdApproach(
   const transit = state.herd.transit;
   if (!transit || transit.phase !== "approach") return;
   if (mode === "pause") return;
-  const mult = mode === "x3" ? 3 : mode === "x2" ? 2 : 1;
-  const duration = approachDurationMs(state, config);
-  transit.approachProgress = Math.min(1, (transit.approachProgress ?? 0) + (deltaMs * mult) / duration);
+  ensureApproachPath(state, config);
+  const hours = gameHoursElapsed(state.date.hour, deltaMs, mode, config.transit.driveClockFactor, config);
+  const km = hours * config.transit.herderWalkKmH;
+  const distance = transit.approachKm ?? 0.01;
+  const walked = (transit.approachProgress ?? 0) * distance + km;
+  transit.approachProgress = Math.min(1, walked / distance);
   syncHerderToApproach(state);
   if (transit.approachProgress >= 1) {
     transit.phase = "drive";
     transit.progress = 0;
     transit.hoursApplied = 0;
   }
+}
+
+export function tickReturnWalk(state: GameState, deltaMs: number, mode: TransitSpeed, config: GameConfig = CONFIG): void {
+  const walk = state.story?.returnWalk;
+  if (!walk || mode === "pause") return;
+  const hours = gameHoursElapsed(state.date.hour, deltaMs, mode, config.transit.driveClockFactor, config);
+  const km = hours * config.transit.herderWalkKmH;
+  walk.progress = Math.min(1, walk.progress + km / Math.max(walk.distanceKm, 0.01));
+  const presence = presenceForHerder(state, walk.who);
+  const tile = pointOnPath(walk.path, walk.progress);
+  if (presence) {
+    const moved = stepPerson(presence, tile);
+    presence.targetTileX = tile.x;
+    presence.targetTileY = tile.y;
+    presence.walkProgress = walk.progress < 1 && moved ? 0.4 : 1;
+    presence.activityLabel = walk.progress < 1 ? "Walking home" : "At the main house";
+    presence.onHerdingDuty = walk.progress < 1;
+    presence.atHome = walk.progress >= 1;
+  }
+  if (walk.progress >= 1 && state.story) state.story.returnWalk = null;
 }
 
 export function tickHerdingRealtime(
@@ -152,19 +216,19 @@ export function tickHerdingRealtime(
   config: GameConfig = CONFIG,
 ): void {
   tryDispatchHerdQueue(state, config);
-  if (!isDaylightHour(state.date.hour)) return;
   const transit = state.herd.transit;
-  if (!transit) return;
+  if (!transit) {
+    tickReturnWalk(state, deltaMs, mode, config);
+    return;
+  }
   ensureTransitFields(transit);
   if (transit.phase === "approach") {
     tickHerdApproach(state, deltaMs, mode, config);
     return;
   }
   tickTransitRealtime(state, deltaMs, mode, config);
-  syncHerderOnDrive(state);
-  if (!state.herd.transit) {
-    state.story && (state.story.herdMoveQueue = null);
-  }
+  if (state.herd.transit) syncHerderOnDrive(state);
+  else if (state.story) state.story.herdMoveQueue = null;
 }
 
 export function syncHerderToApproach(state: GameState): void {
@@ -172,35 +236,89 @@ export function syncHerderToApproach(state: GameState): void {
   if (!transit || transit.phase !== "approach") return;
   const presence = presenceForHerder(state, transit.herder);
   if (!presence) return;
-  const from =
-    transit.herder === "piet"
-      ? workerHouseForFarmhand(state) ?? mainHouseTile(state)
-      : mainHouseTile(state);
-  const herdTile = findCamp(state, state.herd.campId)?.anchor ?? from;
+  ensureApproachPath(state);
+  const path = transit.approachPath ?? [];
   const t = transit.approachProgress ?? 0;
-  presence.tileX = from.x + (herdTile.x - from.x) * t;
-  presence.tileY = from.y + (herdTile.y - from.y) * t;
-  presence.targetTileX = herdTile.x;
-  presence.targetTileY = herdTile.y;
-  presence.walkProgress = t < 1 ? 0.4 : 1;
+  const tile = path.length > 0 ? pointOnPath(path, t) : { x: presence.tileX, y: presence.tileY };
+  const moved = stepPerson(presence, tile);
+  const end = path[path.length - 1] ?? tile;
+  presence.targetTileX = end.x;
+  presence.targetTileY = end.y;
+  presence.walkProgress = t < 1 && moved ? 0.4 : 1;
   presence.activityLabel = t < 1 ? "Walking to the herd" : "Opening the herd";
   presence.onHerdingDuty = true;
+  presence.atHome = false;
 }
 
-export function syncHerderOnDrive(state: GameState, config: GameConfig = CONFIG): void {
+function standClearsWater(state: GameState, tile: TilePoint): boolean {
+  const limit = WATER_STRUCTURE_CLEAR_TILES * WATER_STRUCTURE_CLEAR_TILES;
+  for (const feature of state.features) {
+    if (feature.kind !== "windmill" && feature.kind !== "trough" && feature.kind !== "reservoir" && feature.kind !== "solar_pump") {
+      continue;
+    }
+    const dx = tile.x - feature.x;
+    const dy = tile.y - feature.y;
+    if (dx * dx + dy * dy < limit) return false;
+  }
+  return true;
+}
+
+function standOnRoute(state: GameState, transit: HerdTransit, tile: TilePoint): boolean {
+  const x = Math.round(tile.x);
+  const y = Math.round(tile.y);
+  if (x < 0 || y < 0 || x >= state.width || y >= state.height) return false;
+  const id = state.campIds[y * state.width + x];
+  if (id === state.herd.campId || id === transit.toCampId) return true;
+  return transit.path.some((step) => Math.max(Math.abs(step.x - x), Math.abs(step.y - y)) <= 1);
+}
+
+export function syncHerderOnDrive(state: GameState, _config: GameConfig = CONFIG): void {
   const transit = state.herd.transit;
   if (!transit || transit.phase !== "drive") return;
   const presence = presenceForHerder(state, transit.herder);
   if (!presence || transit.path.length < 2) return;
-  const trail = herderPathProgressBehindTail(state, config);
-  const tile = pointOnPath(transit.path, trail);
-  presence.tileX = tile.x;
-  presence.tileY = tile.y;
+  const metrics = columnMetrics(transit.path, transit.progress, state.herd.headCount);
+  let tile = herderStandTile(transit.path, transit.progress, state.herd.headCount);
+  if (!standOnRoute(state, transit, tile) || !standClearsWater(state, tile)) {
+    tile = pointOnPath(transit.path, metrics.herderProgress);
+  }
+  const moved = stepPerson(presence, tile);
   presence.targetTileX = tile.x;
   presence.targetTileY = tile.y;
-  presence.walkProgress = 0.5;
+  presence.walkProgress = moved ? 0.4 : 1;
   presence.activityLabel = `Driving herd (${Math.round(transit.progress * 100)}%)`;
   presence.onHerdingDuty = true;
+  presence.atHome = false;
+}
+
+/** One frame of walking. Never leaps across a tile. */
+function stepPerson(presence: PersonPresence, tile: TilePoint): boolean {
+  const dx = tile.x - presence.tileX;
+  const dy = tile.y - presence.tileY;
+  const dist = Math.hypot(dx, dy);
+  const cap = 0.45;
+  if (dist <= cap) {
+    presence.tileX = tile.x;
+    presence.tileY = tile.y;
+  } else {
+    presence.tileX += (dx / dist) * cap;
+    presence.tileY += (dy / dist) * cap;
+  }
+  return dist > 0.04;
+}
+
+function campsTouched(state: GameState, from: TilePoint, to: TilePoint): Set<number> {
+  const allow = new Set<number>();
+  const add = (point: TilePoint) => {
+    const x = Math.round(point.x);
+    const y = Math.round(point.y);
+    if (x < 0 || y < 0 || x >= state.width || y >= state.height) return;
+    const id = state.campIds[y * state.width + x];
+    if (id >= 0) allow.add(id);
+  };
+  add(from);
+  add(to);
+  return allow;
 }
 
 function presenceForHerder(state: GameState, id: HerderId | undefined): PersonPresence | null {

@@ -1,3 +1,6 @@
+import { fractionalHour } from "../sim/clock";
+import { columnMetrics, MOB_LATERAL_TILES } from "../sim/convoy";
+import { pointOnPath } from "../sim/path";
 import type { CampState, GameState, TilePoint } from "../sim/types";
 import { TILE_HOMESTEAD, TILE_OUTSIDE } from "../sim/types";
 import type { CowView, HerdOffset } from "./art";
@@ -27,8 +30,34 @@ function rng(seed: number): () => number {
   };
 }
 
+/** True when the lead is within a few tiles of a path step that changes camp, the actual gate. */
+function openingNear(state: GameState, path: TilePoint[], x: number, y: number, tiles: number): boolean {
+  const idAt = (tx: number, ty: number) => {
+    const gx = Math.round(tx);
+    const gy = Math.round(ty);
+    if (gx < 0 || gy < 0 || gx >= state.width || gy >= state.height) return TILE_OUTSIDE;
+    return state.campIds[gy * state.width + gx];
+  };
+  for (let i = 1; i < path.length; i += 1) {
+    const a = path[i - 1];
+    const b = path[i];
+    const idA = idAt(a.x, a.y);
+    const idB = idAt(b.x, b.y);
+    if (idA === idB) continue;
+    const touchesCamp = idA >= 0 || idB >= 0 || idA === TILE_HOMESTEAD || idB === TILE_HOMESTEAD;
+    if (!touchesCamp) continue;
+    if (Math.hypot(x - b.x, y - b.y) <= tiles || Math.hypot(x - a.x, y - a.y) <= tiles) return true;
+  }
+  return false;
+}
+
 function cowPhase(seed: number, index: number): number {
   return ((seed + index * 7919) % 1000) / 1000;
+}
+
+function unitHash(seed: number, index: number, salt: number): number {
+  const n = Math.imul((seed + 1) ^ Math.imul(index + salt * 17, 2246822519), 3266489917) >>> 0;
+  return n / 4294967296;
 }
 
 const GATE_PROGRESS = 0.5;
@@ -310,6 +339,75 @@ function nudgeInsideCamp(
   return { x: x + (pushX / len) * 14, y: y + (pushY / len) * 14 };
 }
 
+const WATER_KINDS = new Set(["windmill", "trough", "reservoir", "solar_pump"]);
+/**
+ * How far a cow's feet stay from each structure, in tiles.
+ * The windmill cut-out reaches about 5 tile-steps from its foot (11 m tower),
+ * so 5.1 tiles keeps bodies off the legs and the wheel. Tanks and troughs are smaller.
+ */
+function waterFootClearTiles(kind: string): number {
+  if (kind === "windmill") return 5.6;
+  if (kind === "reservoir") return 2.8;
+  if (kind === "trough") return 2.3;
+  return 2.4;
+}
+
+function shiftOffWater(
+  state: GameState,
+  layout: IsoLayout,
+  tileW: number,
+  tileH: number,
+  foot: { x: number; y: number },
+  fallback: { x: number; y: number },
+  legal: (x: number, y: number) => boolean,
+): { x: number; y: number } {
+  const tilePx = Math.hypot(tileW / 2, tileH / 2);
+  const centers = state.features
+    .filter((feature) => WATER_KINDS.has(feature.kind))
+    .map((feature) => ({
+      ...tileCenter(feature.x, feature.y, layout, tileW, tileH),
+      need: waterFootClearTiles(feature.kind) * tilePx,
+    }));
+  const score = (point: { x: number; y: number }) => {
+    let worst = Number.POSITIVE_INFINITY;
+    for (const center of centers) {
+      worst = Math.min(worst, Math.hypot(point.x - center.x, point.y - center.y) / center.need);
+    }
+    return worst;
+  };
+  let pushed = { x: foot.x, y: foot.y };
+  for (const center of centers) {
+    const dx = pushed.x - center.x;
+    const dy = pushed.y - center.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist >= center.need) continue;
+    const awayX = dist < 1 ? fallback.x - center.x : dx;
+    const awayY = dist < 1 ? fallback.y - center.y : dy;
+    const away = Math.hypot(awayX, awayY) || 1;
+    pushed = {
+      x: center.x + (awayX / away) * center.need,
+      y: center.y + (awayY / away) * center.need,
+    };
+  }
+  if (legal(pushed.x, pushed.y)) return pushed;
+  let best = legal(foot.x, foot.y) ? foot : fallback;
+  let bestScore = score(best);
+  for (let step = 9; step >= 1; step -= 1) {
+    const t = step / 10;
+    const trial = {
+      x: foot.x + (pushed.x - foot.x) * t,
+      y: foot.y + (pushed.y - foot.y) * t,
+    };
+    if (!legal(trial.x, trial.y)) continue;
+    const next = score(trial);
+    if (next > bestScore) {
+      best = trial;
+      bestScore = next;
+    }
+  }
+  return best;
+}
+
 /** Queue the herd along the walked path so they file through the gate on camp or track tiles. */
 export function fileAlongPath(
   state: GameState,
@@ -333,17 +431,36 @@ export function fileAlongPath(
     lengths.push(lengths[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y));
   }
   const total = lengths[lengths.length - 1] || 1;
-  const body = tileW * 0.82;
-  let lanes = 1;
-  const columnLength = (laneCount: number, gap: number) => Math.max(1, Math.ceil(count / laneCount) - 1) * gap;
-  let spacing = body;
-  while (columnLength(lanes, spacing) > total * 0.9 && lanes < 3) lanes += 1;
-  if (columnLength(lanes, spacing) > total * 0.9) {
-    spacing = (total * 0.9) / Math.max(1, Math.ceil(count / lanes) - 1);
-  }
-  const centerDist = progress * total;
+  const tilePx = Math.hypot(tileW / 2, tileH / 2);
+  const metrics = columnMetrics(path, progress, count);
+  const leadDist = progress * total;
+  const rearDist = metrics.rearProgress * total;
+  const leadTile = pointOnPath(path, progress);
+  const nearGate = openingNear(state, path, leadTile.x, leadTile.y, 3);
+  const lanes = nearGate ? Math.min(2, count) : Math.min(metrics.abreast, Math.max(1, count));
+  const lateral = tilePx * (nearGate ? 0.4 : MOB_LATERAL_TILES);
+  const spanPx = Math.max(tilePx * 0.6, leadDist - rearDist);
+  const ranks = Math.max(1, Math.round(spanPx / (tilePx * 0.92)));
+  const movingCount = Math.min(count, Math.max(lanes, ranks * lanes));
+  const spacing = ranks <= 1 ? 0 : spanPx / (ranks - 1);
 
   const pointAt = (distance: number): { x: number; y: number; ux: number; uy: number } => {
+    if (distance < 0 && points.length >= 2) {
+      const a = points[0];
+      const b = points[1];
+      const fx = b.x - a.x;
+      const fy = b.y - a.y;
+      const flen = Math.hypot(fx, fy) || 1;
+      const bx = a.x - b.x;
+      const by = a.y - b.y;
+      const blen = Math.hypot(bx, by) || 1;
+      return {
+        x: a.x + (bx / blen) * -distance,
+        y: a.y + (by / blen) * -distance,
+        ux: fx / flen,
+        uy: fy / flen,
+      };
+    }
     const dist = Math.max(0, Math.min(total, distance));
     let index = 1;
     while (index < lengths.length - 1 && lengths[index] < dist) index += 1;
@@ -359,26 +476,69 @@ export function fileAlongPath(
   };
 
   const offsets: HerdOffset[] = [];
+  const track = trackKeys(state);
+  const fromId = state.herd.campId;
+  const destId = state.herd.transit?.toCampId ?? fromId;
+  const onCorridor = (tx: number, ty: number) => {
+    for (const tile of path) {
+      if (Math.max(Math.abs(tile.x - tx), Math.abs(tile.y - ty)) <= 2) return true;
+    }
+    return false;
+  };
+  const legal = (px0: number, py0: number) => {
+    const tile = worldToTile(px0, py0, layout, tileW, tileH);
+    const tx = Math.round(tile.x);
+    const ty = Math.round(tile.y);
+    if (tx < 0 || ty < 0 || tx >= state.width || ty >= state.height) return false;
+    const id = state.campIds[ty * state.width + tx];
+    if (id === TILE_HOMESTEAD) return false;
+    if (id === fromId || id === destId || track.has(`${tx},${ty}`)) return true;
+    return onCorridor(tx, ty);
+  };
   for (let i = 0; i < count; i += 1) {
     const phase = cowPhase(seed, i);
+    const waiting = i >= movingCount;
     const laneIndex = i % lanes;
     const rank = Math.floor(i / lanes);
-    const ranks = Math.ceil(count / lanes);
-    const along = ranks <= 1 ? 0 : rank - (ranks - 1) / 2;
-    const wobble = Math.sin(timeMs / 700 + phase * 9) * 2;
-    const at = pointAt(centerDist + along * spacing + wobble);
-    const lane = (laneIndex - (lanes - 1) / 2) * 8;
+    const alongJitter = (unitHash(seed, i, 1) - 0.5) * 0.6 * tilePx;
+    const latJitter = (unitHash(seed, i, 3) - 0.5) * 0.6 * tilePx;
+    const straggle = !waiting && unitHash(seed, i, 5) > 0.88 ? tilePx * (0.16 + unitHash(seed, i, 7) * 0.2) : 0;
+    const stagger = rank % 2 === 1 ? lateral * 0.38 : 0;
+    const wobble = Math.sin(timeMs / 520 + phase * 9) * tilePx * 0.06;
+    const dist = waiting
+      ? 0
+      : Math.max(tilePx * 0.15, Math.min(leadDist + tilePx * 0.12, leadDist - rank * spacing + wobble + alongJitter - straggle));
+    const at = pointAt(dist);
+    const lane = (laneIndex - (lanes - 1) / 2) * lateral + stagger + (waiting ? 0 : latJitter);
     const px = -at.uy;
     const py = at.ux;
-    const foot = nudgeInsideCamp(state, at.x + px * lane, at.y + py * lane, layout, tileW, tileH);
+    let foot = { x: at.x + px * lane, y: at.y + py * lane };
+    if (!legal(foot.x, foot.y)) foot = { x: at.x + px * lane * 0.45, y: at.y + py * lane * 0.45 };
+    if (!legal(foot.x, foot.y)) foot = { x: at.x, y: at.y };
+    foot = shiftOffWater(state, layout, tileW, tileH, foot, { x: at.x, y: at.y }, legal);
+    const stood = worldToTile(foot.x, foot.y, layout, tileW, tileH);
+    const sx = Math.round(stood.x);
+    const sy = Math.round(stood.y);
+    const stoodId =
+      sx >= 0 && sy >= 0 && sx < state.width && sy < state.height
+        ? state.campIds[sy * state.width + sx]
+        : TILE_OUTSIDE;
+    if (stoodId === fromId || stoodId === destId) {
+      const nudged = nudgeInsideCamp(state, foot.x, foot.y, layout, tileW, tileH);
+      if (legal(nudged.x, nudged.y)) foot = nudged;
+    }
+    foot = shiftOffWater(state, layout, tileW, tileH, foot, { x: at.x, y: at.y }, legal);
+    const heading = Math.atan2(at.uy, at.ux) + (unitHash(seed, i, 9) - 0.5) * 0.8;
+    const octant = cowOctantFromScreen(Math.cos(heading), Math.sin(heading));
     offsets.push({
       x: foot.x - herdX,
       y: foot.y - herdY,
       flip: false,
       coat: Math.floor(phase * 6) % 6,
       scale: 0.58 + (phase % 0.1),
-      view: cowViewFromOctant(cowOctantFromScreen(at.ux, at.uy)),
-      octant: cowOctantFromScreen(at.ux, at.uy),
+      view: cowViewFromOctant(octant),
+      octant,
+      moving: !waiting,
     });
   }
   return offsets;
@@ -622,7 +782,7 @@ export function offsetsForHerd(
   tileW: number,
   tileH: number,
   inTransit: boolean,
-  progress: number,
+  _progress: number,
   _tangent: { x: number; y: number },
   timeMs: number,
   herdX: number,
@@ -634,17 +794,32 @@ export function offsetsForHerd(
   const fromCampId = state.herd.campId;
   const fromCamp = state.camps.find((c) => c.id === fromCampId);
   if (!fromCamp) return [];
-  let spreadCamp = fromCamp;
-  if (inTransit && progress > 0.85 && state.herd.transit) {
-    spreadCamp = state.camps.find((c) => c.id === state.herd.transit!.toCampId) ?? fromCamp;
-  }
-  let spread = spreadInCamp(spreadCamp, count, state.seed, layout, tileW, tileH, state);
+  const spread = spreadInCamp(fromCamp, count, state.seed, layout, tileW, tileH, state);
   if (inTransit) {
     const file = fileAlongPath(state, layout, tileW, tileH, count, state.seed, timeMs, herdX, herdY);
-    let fileWeight = 1;
-    if (progress < 0.12) fileWeight = progress / 0.12;
-    else if (progress > 0.86) fileWeight = Math.max(0, (1 - progress) / 0.14);
-    spread = blendOffsets(spread, file, fileWeight);
+    const anchor = tileCenter(fromCamp.anchor.x, fromCamp.anchor.y, layout, tileW, tileH);
+    return file.map((step, index) => {
+      if (step.moving) return step;
+      const home = spread[index] ?? step;
+      return {
+        ...home,
+        x: anchor.x + home.x - herdX,
+        y: anchor.y + home.y - herdY,
+        moving: false,
+      };
+    });
+  }
+  const graze = state.story?.grazeIn;
+  if (graze && graze.campId === fromCampId) {
+    const dayLength = state.clock?.settings.dayLengthSeconds ?? 240;
+    const now = fractionalHour(state.date.hour, state.clock?.bankMs ?? 0, dayLength);
+    const elapsed = now >= graze.startedHour ? now - graze.startedHour : now + 24 - graze.startedHour;
+    if (elapsed >= 3 && state.story) state.story.grazeIn = null;
+    else {
+      const t = Math.max(0, Math.min(1, elapsed / 2));
+      const cluster = 0.4 + 0.6 * t;
+      return spread.map((spot) => ({ ...spot, x: spot.x * cluster, y: spot.y * cluster, moving: false }));
+    }
   }
   return clampOffsetsToCamp(state, fromCampId, spread, herdX, herdY, layout, tileW, tileH, inTransit, track);
 }

@@ -57,6 +57,8 @@ export type HerdOffset = {
   view: CowView;
   /** 0 to 7. Screen facing. 2 is toward the camera, 6 is away, 0 is screen-right. */
   octant?: number;
+  /** False while this animal is still grazing, waiting for the mob to reach it. */
+  moving?: boolean;
 };
 
 function canvas(width: number, height: number, draw: (ctx: CanvasRenderingContext2D) => void): HTMLCanvasElement {

@@ -1,6 +1,6 @@
-import { CONFIG } from "../sim/config";
 import type { Feature } from "../sim/types";
 import { SPRITE_KEYS } from "./sprites";
+import { BAKKIE_LENGTH_METRES, COTTAGE_WIDTH_METRES, FARMHOUSE_WIDTH_METRES, SHED_WIDTH_METRES, uniformScale } from "./worldScale";
 
 export type HomesteadSpritePlacement = {
   key: string;
@@ -13,8 +13,8 @@ export type HomesteadSpritePlacement = {
   originY: number;
 };
 
-function scaleToFootprint(nativeWidth: number, tileSpans: number): number {
-  return (CONFIG.view.tileWidth * tileSpans) / nativeWidth;
+function scaleToMetres(nativeWidth: number, metres: number): number {
+  return uniformScale(nativeWidth, metres);
 }
 
 export const HOMESTEAD_FEATURE_KINDS = new Set([
@@ -33,7 +33,7 @@ function push(
   tileX: number,
   tileY: number,
   nativeW: number,
-  span: number,
+  metres: number,
   originY: number,
   offsetX = 0,
   offsetY = 0,
@@ -44,7 +44,7 @@ function push(
     tileY,
     offsetX,
     offsetY,
-    scale: scaleToFootprint(nativeW, span),
+    scale: scaleToMetres(nativeW, metres),
     originX: 0.5,
     originY,
   });
@@ -57,9 +57,9 @@ export function homesteadSpritePlacementsFromFeatures(features: Feature[]): Home
   const shed = byKind("shed");
   const list: HomesteadSpritePlacement[] = [];
 
-  if (house) push(list, SPRITE_KEYS.farmhouse, house.x, house.y, 512, 2.05, 0.91);
-  if (house) push(list, SPRITE_KEYS.bakkie, house.x + 2, house.y, 320, 1.05, 0.9, 0, 4);
-  if (shed) push(list, SPRITE_KEYS.shed, shed.x, shed.y, 512, 1.28, 0.89, 4, 2);
+  if (house) push(list, SPRITE_KEYS.farmhouse, house.x, house.y, 512, FARMHOUSE_WIDTH_METRES, 0.91);
+  if (house) push(list, SPRITE_KEYS.bakkie, house.x + 2, house.y, 320, BAKKIE_LENGTH_METRES, 0.9, 0, 4);
+  if (shed) push(list, SPRITE_KEYS.shed, shed.x, shed.y, 512, SHED_WIDTH_METRES, 0.89, 4, 2);
   return list;
 }
 
@@ -84,7 +84,7 @@ export function workerCottagePlacements(features: Feature[]): HomesteadSpritePla
       cottage.x,
       cottage.y,
       128,
-      1.55,
+      COTTAGE_WIDTH_METRES,
       0.92,
       offsetX,
       offsetY,

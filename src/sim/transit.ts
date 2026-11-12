@@ -1,8 +1,8 @@
 import { moveCampAnimals } from "./animals";
-import { addHours } from "./calendar";
-import { clamp } from "./math";
 import { CONFIG, type GameConfig } from "./config";
-import { pointOnPath, planHerdPath, pathLengthKm } from "./path";
+import { DEFAULT_DAY_LENGTH_S, fractionalHour, realMsPerGameHour, type DayLengthSeconds } from "./clock";
+import { mainHouseTile, workerHouseForFarmhand } from "./housing";
+import { pathLengthKm, planHerdPath, planPersonPath, pointOnPath } from "./path";
 import type { GameState, HerdState, TilePoint } from "./types";
 
 export type TransitSpeed = "pause" | "x1" | "x2" | "x3";
@@ -29,31 +29,37 @@ export function herdMoveActive(herd: HerdState): boolean {
 }
 
 export function walkGameHours(distanceKm: number, config: GameConfig = CONFIG): number {
-  const speed = config.transit.walkSpeedKmH;
-  return Math.max(0.25, distanceKm / speed);
+  const speed = config.transit.cattleWalkKmH;
+  if (speed <= 0) return 0;
+  return Math.max(0, distanceKm / speed);
 }
 
-export function moveDurationMs(
-  distanceKm: number,
-  _mode: TransitSpeed = "x1",
+/** Game hours implied by a real-time slice, on the same clock as tickRanchClock. */
+export function gameHoursElapsed(
+  hour: number,
+  deltaMs: number,
+  mode: TransitSpeed,
+  pace: number,
   config: GameConfig = CONFIG,
 ): number {
-  const span = config.transit.maxSpanKm;
-  const t = clamp(distanceKm / span, 0, 1);
-  const play = config.transit.playMsMin + t * (config.transit.playMsMax - config.transit.playMsMin);
-  return play;
+  if (mode === "pause" || deltaMs <= 0 || pace <= 0) return 0;
+  const mult = transitSpeedMult(mode);
+  if (mult <= 0) return 0;
+  const capped = Math.min(deltaMs, config.time.catchUpCapMs);
+  const dayLength = config.time.dayLengthSecondsDefault as DayLengthSeconds;
+  const msPerHour = realMsPerGameHour(hour, dayLength) / pace;
+  if (msPerHour <= 0) return 0;
+  return (capped * mult) / msPerHour;
 }
 
-function applyWalkHours(state: GameState, transit: NonNullable<HerdState["transit"]>): void {
-  const target = transit.progress * transit.walkGameHours;
-  const delta = target - transit.hoursApplied;
-  if (delta <= 0.001) return;
-  state.date = addHours(state.date, delta);
-  transit.hoursApplied = target;
+export function fractionalRanchHour(state: GameState, config: GameConfig = CONFIG): number {
+  const dayLength = (state.clock?.settings.dayLengthSeconds ?? config.time.dayLengthSecondsDefault) as DayLengthSeconds;
+  return fractionalHour(state.date.hour, state.clock?.bankMs ?? 0, dayLength ?? DEFAULT_DAY_LENGTH_S);
 }
 
 /**
- * The only place herd walk progress advances. Real time by speed mode; pause does nothing.
+ * The only place herd walk progress advances. Distance is cattle speed times game hours.
+ * Pause does nothing. The ranch clock itself is not touched here.
  */
 export function tickTransitRealtime(
   state: GameState,
@@ -63,22 +69,26 @@ export function tickTransitRealtime(
 ): void {
   const transit = state.herd.transit;
   if (!transit || transit.phase === "approach" || mode === "pause") return;
-  const mult = transitSpeedMult(mode);
-  if (mult <= 0) return;
-  const duration = moveDurationMs(transit.distanceKm, "x1", config);
-  transit.progress = Math.min(1, transit.progress + (deltaMs * mult) / duration);
-  applyWalkHours(state, transit);
+  const hours = gameHoursElapsed(state.date.hour, deltaMs, mode, config.transit.driveClockFactor, config);
+  const km = hours * config.transit.cattleWalkKmH;
+  const distance = Math.max(transit.distanceKm, config.transit.minDistanceKm);
+  transit.progress = Math.min(1, transit.progress + km / distance);
   if (transit.progress >= 1) finishTransit(state);
 }
 
-function finishTransit(state: GameState): void {
+function homeFor(state: GameState, who: "farmer" | "piet" | undefined): TilePoint {
+  if (who === "piet") return workerHouseForFarmhand(state) ?? mainHouseTile(state);
+  return mainHouseTile(state);
+}
+
+function presenceOf(state: GameState, who: "farmer" | "piet" | undefined) {
+  if (who === "piet") return state.story?.farmhandPresence ?? null;
+  return state.story?.farmerPresence ?? null;
+}
+
+export function finishTransit(state: GameState): void {
   const transit = state.herd.transit;
   if (!transit) return;
-  const remainder = transit.walkGameHours - transit.hoursApplied;
-  if (remainder > 0.001) {
-    state.date = addHours(state.date, remainder);
-    transit.hoursApplied = transit.walkGameHours;
-  }
   const dest = state.camps.find((c) => c.id === transit.toCampId);
   const fromCampId = state.herd.campId;
   state.herd.campId = transit.toCampId;
@@ -87,8 +97,50 @@ function finishTransit(state: GameState): void {
   state.herd.transit = null;
   if (dest) dest.restDays = 0;
   const story = state.story;
-  if (story?.farmerPresence?.onHerdingDuty) story.farmerPresence.onHerdingDuty = false;
-  if (story?.farmhandPresence?.onHerdingDuty) story.farmhandPresence.onHerdingDuty = false;
+  if (story) {
+    story.grazeIn = { campId: transit.toCampId, startedHour: fractionalRanchHour(state) };
+    const presence = presenceOf(state, transit.herder);
+    const home = homeFor(state, transit.herder);
+    if (presence && transit.herder) {
+      const path = planPersonPath(state, { x: presence.tileX, y: presence.tileY }, home);
+      story.returnWalk = {
+        path,
+        progress: 0,
+        distanceKm: Math.max(pathLengthKm(path), 0.01),
+        who: transit.herder,
+      };
+      presence.onHerdingDuty = true;
+      presence.walkProgress = 0.4;
+      presence.activityLabel = "Walking home";
+      presence.atHome = false;
+    }
+  }
+}
+
+/** A save that froze at dusk: the herd is put in the destination camp and the clock is a whole hour. */
+export function repairStuckTransit(state: GameState): void {
+  if (!Number.isInteger(state.date.hour)) {
+    state.date = { ...state.date, hour: Math.min(23, Math.max(0, Math.round(state.date.hour))) };
+  }
+  const transit = state.herd.transit;
+  if (!transit) return;
+  const hour = ((state.date.hour % 24) + 24) % 24;
+  if (hour >= 6 && hour < 18) return;
+  finishTransit(state);
+  const story = state.story;
+  if (story?.returnWalk) story.returnWalk = null;
+  const farmer = story?.farmerPresence;
+  if (farmer) {
+    const home = mainHouseTile(state);
+    farmer.tileX = home.x;
+    farmer.tileY = home.y;
+    farmer.targetTileX = home.x;
+    farmer.targetTileY = home.y;
+    farmer.walkProgress = 1;
+    farmer.onHerdingDuty = false;
+    farmer.atHome = true;
+    farmer.activityLabel = "At the main house";
+  }
 }
 
 export function startHerdMove(state: GameState, toCampId: number, config: GameConfig = CONFIG): void {
