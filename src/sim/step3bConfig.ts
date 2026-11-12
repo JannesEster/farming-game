@@ -24,8 +24,8 @@ export const STEP3B = {
   saleCrushMs: 3500,
   saleLoadMs: 5500,
   saleTruckDepartMs: 4500,
-  homesteadKraalTile: { x: 12, y: 14 },
-  crushTile: { x: 13, y: 14 },
-  loadingRampTile: { x: 14, y: 15 },
-  truckArrivalTile: { x: 16, y: 15 },
+  homesteadKraalTile: { x: 11, y: 15 },
+  crushTile: { x: 13, y: 15 },
+  loadingRampTile: { x: 14, y: 16 },
+  truckArrivalTile: { x: 14, y: 18 },
 } as const;

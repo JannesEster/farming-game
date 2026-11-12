@@ -379,6 +379,20 @@ export type PropSpriteDef = {
   scale: number;
 };
 
+/**
+ * TODO(A): the herd cow texture stands for a 1.4 m animal. Prop metres below use that
+ * so a windmill and a reservoir read next to the cattle, not as towers over dots.
+ */
+export const COW_SHOULDER_METRES = 1.4;
+
+export function worldPxPerMetre(): number {
+  return (128 * cattleDisplayScale()) / COW_SHOULDER_METRES;
+}
+
+export function scaleToSpanMetres(nativePx: number, metres: number): number {
+  return (metres * worldPxPerMetre()) / nativePx;
+}
+
 /** Homestead prop scale tuned for 64×32 iso tiles on phone zoom. */
 export function propSpriteForKind(kind: string, x: number, y: number, featureScale: number): PropSpriteDef {
   const tileW = CONFIG.view.tileWidth;
@@ -387,23 +401,30 @@ export function propSpriteForKind(kind: string, x: number, y: number, featureSca
     case "house":
       return { key: SPRITE_KEYS.farmhouse, originX: 0.5, originY: 0.9, scale: (tileW * 2.45) / tw };
     case "windmill":
-      return { key: SPRITE_KEYS.windmill, originX: 0.48, originY: 0.94, scale: (tileW * 2.2) / tw };
+      // Painted art is 512×739. TODO(A): full sprite height stands for an 8 m mill (about 6 to 10 m).
+      return { key: SPRITE_KEYS.windmill, originX: 0.48, originY: 0.94, scale: scaleToSpanMetres(739, 8) };
     case "shed":
-      return { key: SPRITE_KEYS.shed, originX: 0.5, originY: 0.88, scale: (tileW * 2.2) / tw };
+      return { key: SPRITE_KEYS.shed, originX: 0.5, originY: 0.88, scale: (tileW * 1.28) / 512 };
     case "kraal":
-      return { key: SPRITE_KEYS.kraal, originX: 0.5, originY: 0.82, scale: (tileW * 2.6) / tw };
+      // Art is 512 px wide. Keep the pen smaller than the house footprint (2.05 tiles).
+      return { key: SPRITE_KEYS.kraal, originX: 0.5, originY: 0.82, scale: (tileW * 1.3) / 512 };
     case "trough":
       return { key: SPRITE_KEYS.trough, originX: 0.5, originY: 0.85, scale: (tileW * 1.35) / tw };
     case "reservoir":
-      return { key: SPRITE_KEYS.reservoir, originX: 0.5, originY: 0.9, scale: (tileW * 1.6) / 112 };
+      // TODO(A): dam about 10 m across (about 8 to 12 m).
+      return { key: SPRITE_KEYS.reservoir, originX: 0.5, originY: 0.9, scale: scaleToSpanMetres(112, 10) };
     case "solar_pump":
-      return { key: SPRITE_KEYS.solarPump, originX: 0.5, originY: 0.94, scale: (tileW * 2.1) / 112 };
+      // TODO(A): a small array about 6 m across.
+      return { key: SPRITE_KEYS.solarPump, originX: 0.5, originY: 0.94, scale: scaleToSpanMetres(112, 6) };
     case "crush":
-      return { key: SPRITE_KEYS.crush, originX: 0.5, originY: 0.88, scale: (tileW * 1.7) / 112 };
+      // TODO(A): crush reads about 5 m long beside the kraal.
+      return { key: SPRITE_KEYS.crush, originX: 0.5, originY: 0.88, scale: scaleToSpanMetres(112, 5) };
     case "loading_ramp":
-      return { key: SPRITE_KEYS.loadingRamp, originX: 0.5, originY: 0.92, scale: (tileW * 2) / 112 };
+      // TODO(A): ramp reads about 7 m, facing the farm road.
+      return { key: SPRITE_KEYS.loadingRamp, originX: 0.5, originY: 0.92, scale: scaleToSpanMetres(112, 7) };
     case "cattle_truck":
-      return { key: SPRITE_KEYS.cattleTruck, originX: 0.35, originY: 0.92, scale: (tileW * 3.2) / 280 };
+      // TODO(A): cab plus trailer about 16 m.
+      return { key: SPRITE_KEYS.cattleTruck, originX: 0.35, originY: 0.92, scale: scaleToSpanMetres(280, 16) };
     case "lick_feeder":
       return { key: SPRITE_KEYS.lickFeeder, originX: 0.5, originY: 0.9, scale: (tileW * 1.1) / 112 };
     case "tree":

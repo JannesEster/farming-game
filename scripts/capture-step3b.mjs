@@ -44,8 +44,8 @@ async function spriteHeightOk(page, needle) {
   }, needle);
 }
 
-async function prepPage(page) {
-  await page.goto("http://127.0.0.1:4173/?capture=1&farm=default", { waitUntil: "networkidle" });
+async function prepPage(page, query = "capture=1&farm=default") {
+  await page.goto(`http://127.0.0.1:4173/?${query}`, { waitUntil: "networkidle" });
   await page.waitForFunction(() => window.__farmCapture?.sampleFps);
   await page.evaluate(() => {
     window.__farmCapture?.prepareForScreenshot?.();
@@ -158,6 +158,30 @@ async function main() {
       const pietPath = path.join(outDir, `${viewport.name}-piet-cottage-yard.png`);
       await page.screenshot({ path: pietPath });
       hashes.piet = await fileHash(pietPath);
+
+      if (viewport.name === "desktop") {
+        await prepPage(page, "capture=1&offer=otjozondjupa-ranch");
+        const pickerOk = await page.evaluate(() => window.__farmCapture?.preparePickerWaterCapture?.());
+        await page.waitForTimeout(400);
+        const pickerAudit = await page.evaluate(() => ({
+          windmill: window.__farmCapture.auditKind("windmill"),
+          solar: window.__farmCapture.auditKind("solar_pump"),
+          reservoir: window.__farmCapture.auditKind("reservoir"),
+          trough: window.__farmCapture.auditKind("trough"),
+          drinks: window.__farmCapture.drinkCowsNearTrough(),
+        }));
+        const pump = Math.max(pickerAudit.windmill.inView, pickerAudit.solar.inView);
+        const pumpPx = Math.max(pickerAudit.windmill.maxScreenPx, pickerAudit.solar.maxScreenPx);
+        if (!pickerOk || pump < 1 || pumpPx < 20 || pickerAudit.reservoir.inView < 1 || pickerAudit.reservoir.maxScreenPx < 20) {
+          throw new Error(`desktop: picker water not in view ${JSON.stringify(pickerAudit)}`);
+        }
+        if (pickerAudit.trough.inView < 1 || pickerAudit.trough.maxScreenPx < 20 || pickerAudit.drinks < 3) {
+          throw new Error(`desktop: picker trough or cows missing ${JSON.stringify(pickerAudit)}`);
+        }
+        const pickerPath = path.join(outDir, "desktop-picker-farm-water.png");
+        await page.screenshot({ path: pickerPath });
+        hashes.picker = await fileHash(pickerPath);
+      }
 
       assertDistinct(hashes, viewport.name);
       Object.assign(allHashes, Object.fromEntries(Object.entries(hashes).map(([k, v]) => [`${viewport.name}-${k}`, v])));

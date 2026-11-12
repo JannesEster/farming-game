@@ -68,3 +68,53 @@ export function kraalDestinationCampId(state: GameState): number | null {
   }
   return best;
 }
+
+/** Track tile the cattle truck backs onto, just outside the loading ramp. */
+export function roadTileBesideRamp(state: GameState): TilePoint | null {
+  const ramp = state.features.find((f) => f.kind === "loading_ramp");
+  if (!ramp) return null;
+  const tracks = new Set(state.features.filter((f) => f.kind === "track").map((f) => `${f.x},${f.y}`));
+  const house = state.features.find((f) => f.kind === "house");
+  let best: TilePoint | null = null;
+  let bestD = -1;
+  for (const [dx, dy] of [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ] as const) {
+    const tile = { x: ramp.x + dx, y: ramp.y + dy };
+    if (!tracks.has(`${tile.x},${tile.y}`)) continue;
+    const dist = house ? Math.hypot(tile.x - house.x, tile.y - house.y) : 0;
+    if (dist > bestD) {
+      bestD = dist;
+      best = tile;
+    }
+  }
+  return best;
+}
+
+/** One track tile further out, so the truck body sits on the road and the trailer points at the ramp. */
+export function truckParkTile(state: GameState): TilePoint | null {
+  const beside = roadTileBesideRamp(state);
+  const ramp = state.features.find((f) => f.kind === "loading_ramp");
+  if (!beside || !ramp) return beside;
+  const tracks = new Set(state.features.filter((f) => f.kind === "track").map((f) => `${f.x},${f.y}`));
+  let best: TilePoint | null = null;
+  let bestD = Math.hypot(beside.x - ramp.x, beside.y - ramp.y);
+  for (const [dx, dy] of [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ] as const) {
+    const tile = { x: beside.x + dx, y: beside.y + dy };
+    if (!tracks.has(`${tile.x},${tile.y}`)) continue;
+    const dist = Math.hypot(tile.x - ramp.x, tile.y - ramp.y);
+    if (dist > bestD) {
+      bestD = dist;
+      best = tile;
+    }
+  }
+  return best ?? beside;
+}

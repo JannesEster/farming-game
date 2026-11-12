@@ -536,7 +536,7 @@ export const CONFIG: GameConfig = {
     treeScaleMax: 1.15,
     bushScaleMin: 0.8,
     bushScaleMax: 1.2,
-    // A. A small yard so the house, windmill, reservoir and kraal read as one homestead. Not a measured plan.
+    // Fallback offsets. generateFarm places the live yard from the road in waterLayout.ts.
     yard: {
       house: { x: 1, y: 1 },
       windmill: { x: 3, y: 1 },
