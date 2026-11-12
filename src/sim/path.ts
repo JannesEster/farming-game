@@ -25,8 +25,18 @@ function centroid(tiles: TilePoint[]): TilePoint {
   return { x: x / tiles.length, y: y / tiles.length };
 }
 
+const campTileKeys = new WeakMap<CampState, { tiles: readonly TilePoint[]; keys: Set<string> }>();
+
+/** Membership follows the current tiles array. A replaced array rebuilds the set. */
 function tileInCamp(camp: CampState, x: number, y: number): boolean {
-  return camp.tiles.some((t) => t.x === x && t.y === y);
+  let cached = campTileKeys.get(camp);
+  if (!cached || cached.tiles !== camp.tiles) {
+    const keys = new Set<string>();
+    for (const tile of camp.tiles) keys.add(`${tile.x},${tile.y}`);
+    cached = { tiles: camp.tiles, keys };
+    campTileKeys.set(camp, cached);
+  }
+  return cached.keys.has(`${x},${y}`);
 }
 
 /** Nearest camp edge tile toward another point (exit gate). */
