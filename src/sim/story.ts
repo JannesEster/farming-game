@@ -1,5 +1,5 @@
 import { CONFIG, type GameConfig } from "./config";
-import { applyStarvationDay, feedContextForHerd } from "./consequences";
+import { applyStarvationDay, feedContextForHerd, queueHusbandryWarnings } from "./consequences";
 import { tickDrought, droughtWatchScore } from "./drought";
 import { farmhandWaterBonus, tickFarmhand } from "./workers";
 import {
@@ -42,7 +42,16 @@ export function createStoryState(headCount: number, config: GameConfig = CONFIG)
     seasonEventsFired: [],
     eatenYesterdayKg: 0,
     demandYesterdayKg: 0,
+    moveWarnCampId: null,
+    thirstWarnCampId: null,
   };
+}
+
+const BLOCKING_CARD_KINDS = new Set(["warning", "summary", "drought", "season"]);
+
+/** A card the player must read before the clock may move on. Weekly notes stay as toasts. */
+export function hasBlockingCard(state: GameState): boolean {
+  return Boolean(state.story?.pendingCards.some((card) => BLOCKING_CARD_KINDS.has(card.kind)));
 }
 
 export function afterFeedDay(
@@ -54,6 +63,7 @@ export function afterFeedDay(
   if (!state.story) state.story = createStoryState(state.herd.headCount, config);
   state.story.eatenYesterdayKg = eatenKg;
   state.story.demandYesterdayKg = demandKg;
+  queueHusbandryWarnings(state, config);
 
   if (state.story.supplementDaysLeft > 0) {
     state.story.supplementDaysLeft -= 1;

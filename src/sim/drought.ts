@@ -44,7 +44,7 @@ export function tickDrought(state: GameState, config: GameConfig = CONFIG): void
       id: `drought-warn-${state.date.year}-${month}`,
       kind: "warning",
       title: "Late rains",
-      body: `Season rain is ${Math.round(state.seasonRainMm)} mm, below a normal start. Mets outlook warned a hot, drier 2026/27 season.`,
+      body: `Season rain is ${Math.round(state.seasonRainMm)} mm, below a normal start. The outlook flagged a hot, drier 2026/27 season.`,
       priority: 4,
     });
   }
@@ -60,7 +60,7 @@ export function tickDrought(state: GameState, config: GameConfig = CONFIG): void
       id: `drought-choice-${state.date.year}-${month}`,
       kind: "drought",
       title: "Drought building",
-      body: "Choose: sell down weaners, cut boskos with camelthorn pods, or move to greener camps.",
+      body: "Choose: sell some weaners, buy boskos with camelthorn pods, or move to greener camps.",
       priority: 6,
     });
   }

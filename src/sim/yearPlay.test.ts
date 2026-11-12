@@ -27,6 +27,16 @@ function marketSales(state: GameState): void {
   sellClass("ox", 4);
 }
 
+function runToNextSeasonStart(state: GameState, act: (state: GameState) => void): void {
+  const startYear = state.date.year;
+  for (let guard = 0; guard < 400; guard += 1) {
+    act(state);
+    stepDay(state);
+    if (state.date.month === 7 && state.date.day === 1 && state.date.year > startYear) return;
+  }
+  throw new Error("season start was not reached");
+}
+
 function rotateToBetterGrass(state: GameState): void {
   const camp = findCamp(state, state.herd.campId);
   if (!camp) return;
@@ -53,6 +63,23 @@ function rotateToBetterGrass(state: GameState): void {
 }
 
 describe("year of play", () => {
+  it("opens the bought farm with grass and water, and no deaths in the first weeks", () => {
+    const state = otjozondu();
+    const camp = findCamp(state, state.herd.campId);
+    if (!camp) throw new Error("expected opening camp");
+    const days = grazingDaysLeft(camp, state.herd);
+    const atPeak = grazingDaysLeft({ ...camp, standingDmKgPerHa: camp.peakDmKgPerHa }, state.herd);
+    expect(days).toBeGreaterThanOrEqual(Math.min(CONFIG.pasture.openingMinGrassDays, atPeak) - 0.2);
+    const tiles = new Set(camp.tiles.map((tile) => `${tile.x},${tile.y}`));
+    expect(state.features.some((feature) => feature.kind === "trough" && tiles.has(`${feature.x},${feature.y}`))).toBe(
+      true,
+    );
+    expect(state.features.some((feature) => feature.kind === "windmill")).toBe(true);
+    const head = state.herd.headCount;
+    for (let day = 0; day < 20; day += 1) stepDay(state);
+    expect(state.herd.headCount).toBe(head);
+  });
+
   it("kills cattle that are left on a bare camp", () => {
     const state = otjozondu();
     const startHead = state.herd.headCount;
@@ -82,14 +109,38 @@ describe("year of play", () => {
     const state = otjozondu();
     const startCash = state.cashNad;
     const startHead = state.herd.headCount;
-    for (let day = 0; day < 370; day += 1) {
-      rotateToBetterGrass(state);
-      marketSales(state);
-      stepDay(state);
-    }
+    runToNextSeasonStart(state, (current) => {
+      rotateToBetterGrass(current);
+      marketSales(current);
+    });
+    expect(state.date.month).toBe(7);
+    expect(state.date.day).toBe(1);
     expect(state.herd.headCount).toBeGreaterThanOrEqual(startHead - 12);
     expect(state.herd.condition).toBeGreaterThan(50);
     expect(state.cashNad).toBeGreaterThan(startCash * 0.9);
     expect(state.cashNad).toBeLessThan(startCash * 1.2);
+  });
+
+  it("warns a careless herd before deaths and leaves them worse off at year end", () => {
+    const careful = otjozondu();
+    runToNextSeasonStart(careful, (current) => {
+      rotateToBetterGrass(current);
+      marketSales(current);
+    });
+    const state = otjozondu();
+    const startHead = state.herd.headCount;
+    let warnDay = -1;
+    let deathDay = -1;
+    const startYear = state.date.year;
+    for (let day = 0; day < 400; day += 1) {
+      stepDay(state);
+      if (warnDay < 0 && state.story?.pendingCards.some((card) => card.kind === "warning")) warnDay = day;
+      if (deathDay < 0 && state.herd.headCount < startHead) deathDay = day;
+      if (state.date.month === 7 && state.date.day === 1 && state.date.year > startYear) break;
+    }
+    expect(warnDay).toBeGreaterThanOrEqual(0);
+    expect(deathDay).toBeGreaterThan(warnDay);
+    expect(state.herd.headCount).toBeLessThan(careful.herd.headCount);
+    expect(state.cashNad).toBeLessThan(careful.cashNad);
   });
 });

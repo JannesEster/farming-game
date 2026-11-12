@@ -103,7 +103,7 @@ function buildOffer(
     subtitle,
     hectares: region.listingHectares,
     rainfallMm: region.rainThreeSeasonMm,
-    rainfallSource: "NSA commercial census 2011–2014 three-season mean",
+    rainfallSource: "NSA commercial census 2011 to 2014 three season mean",
     campCount,
     water,
     buildings: {

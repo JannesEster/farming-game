@@ -8,6 +8,18 @@ import {
 } from "./goals";
 
 describe("goals and farm score", () => {
+  it("scores herd condition on the 0 to 100 scale", () => {
+    const state = createGame(42);
+    const baseline = createYearBaseline(state, 1);
+    state.herd.condition = 3.5;
+    const low = evaluateFirstYearGoals(state, baseline).find((row) => row.id === "herdCondition");
+    expect(low?.met).toBe(false);
+    state.herd.condition = 55;
+    const held = evaluateFirstYearGoals(state, baseline).find((row) => row.id === "herdCondition");
+    expect(held?.met).toBe(true);
+    expect(held?.label).toContain("55");
+  });
+
   it("evaluates first-year cash or head goal", () => {
     const state = createGame(42);
     const baseline = createYearBaseline(state, 1);

@@ -1,3 +1,4 @@
+import { CONFIG } from "../sim/config";
 import { applySale, quoteSale } from "../sim/economy";
 import { resolveDroughtChoice } from "../sim/drought";
 import { formatHudMoney, formatMoney } from "../sim/format";
@@ -51,7 +52,7 @@ export function mountMarketSheet(options: {
       <hr class="market-divider" />
       <p class="extra"><strong>Farmhand</strong></p>
       <p class="extra" id="market-worker"></p>
-      <button type="button" class="pill-btn ghost" id="market-hire-btn">Hire farmhand (N$2,730/mo)</button>
+      <button type="button" class="pill-btn ghost" id="market-hire-btn">Hire farmhand (N$${Math.round(CONFIG.economy.farmhandMonthlyCashNad).toLocaleString("en-NA")}/mo)</button>
       <div class="market-jobs" id="market-jobs" hidden>
         <button type="button" class="pill-btn ghost" data-job="check_water">Check water</button>
         <button type="button" class="pill-btn ghost" data-job="move_herd">Help move herd</button>

@@ -27,6 +27,37 @@ describe("starvation timeline", () => {
     expect(state.herd.headCount).toBeLessThan(deathsBefore);
   });
 
+  it("warns before the first death on a bare camp", () => {
+    const state = createGame(3300);
+    const camp = findCamp(state, state.herd.campId);
+    if (!camp || !state.story) throw new Error("expected camp");
+    camp.standingDmKgPerHa = CONFIG.pasture.residualDmKgPerHaMin;
+    const startHead = state.herd.headCount;
+    let warnDay = -1;
+    let deathDay = -1;
+    for (let day = 0; day < 80; day += 1) {
+      stepDayWithRain(state, 0);
+      if (warnDay < 0 && state.story.pendingCards.some((card) => card.kind === "warning")) warnDay = day;
+      if (deathDay < 0 && state.herd.headCount < startHead) deathDay = day;
+    }
+    expect(warnDay).toBeGreaterThanOrEqual(0);
+    expect(deathDay).toBeGreaterThan(warnDay);
+  });
+
+  it("warns when the camp has no trough and does not kill that day", () => {
+    const state = createGame(3300);
+    const camp = findCamp(state, state.herd.campId);
+    if (!camp) throw new Error("expected camp");
+    const tiles = new Set(camp.tiles.map((tile) => `${tile.x},${tile.y}`));
+    state.features = state.features.filter(
+      (feature) => !(feature.kind === "trough" && tiles.has(`${feature.x},${feature.y}`)),
+    );
+    const head = state.herd.headCount;
+    stepDayWithRain(state, 0);
+    expect(state.herd.headCount).toBe(head);
+    expect(state.story?.pendingCards.some((card) => card.title === "Water warning")).toBe(true);
+  });
+
   it("condition drops when camp has no grazeable grass", () => {
     const state = createGame(3300);
     state.story = createStoryState(state.herd.headCount);

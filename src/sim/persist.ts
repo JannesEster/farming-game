@@ -13,7 +13,7 @@ import { migrateState, parseLegacySaved } from "./stateMigrate";
 export { LEGACY_SAVE_KEY, LEGACY_SINGLE_V2_KEY } from "./saveKeys";
 import { LEGACY_SAVE_KEY, LEGACY_SINGLE_V2_KEY } from "./saveKeys";
 
-/** @deprecated Single-key v2 slot writer removed — use slot saves. */
+/** @deprecated Single-key v2 slot writer removed. Use slot saves. */
 export const SAVE_KEY = LEGACY_SINGLE_V2_KEY;
 
 export type SavedGame = {
@@ -44,7 +44,7 @@ export function loadSavedGame(): GameState | null {
   return slot?.state ?? null;
 }
 
-/** @deprecated Use GameFlowService.persist() — kept for picker tests. */
+/** @deprecated Use GameFlowService.persist(). Kept for picker tests. */
 export function saveGame(state: GameState): void {
   if (typeof localStorage === "undefined") return;
   const slotId = getActiveSlotId();

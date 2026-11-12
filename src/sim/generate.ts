@@ -1,6 +1,11 @@
 import { CONFIG, type GameConfig } from "./config";
 import { clamp, lerp } from "./math";
-import { grazeableFraction } from "./pasture";
+import {
+  dailyDemandKg,
+  effectiveGrazingHectares,
+  grazeableFraction,
+  residualDmKgPerHa,
+} from "./pasture";
 import { createStoryState } from "./story";
 import { campGateToward } from "./path";
 import { createRng, type Rng } from "./rng";
@@ -314,6 +319,7 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
     camp.restDays =
       camp.id === start.id ? 0 : Math.floor(rng.next() * (config.pasture.initialRestDaysMax + 1));
   }
+  ensureOpeningCamp(start, features, config);
 
   const state: GameState = {
     seed: 0,
@@ -344,6 +350,29 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
     story: createStoryState(config.herd.headCount, config),
   };
   return { state, score };
+}
+
+/** Top up the opening camp so a new player is not already out of grass or water. */
+function ensureOpeningCamp(camp: CampState, features: Feature[], config: GameConfig): void {
+  const herd = {
+    name: config.herd.name,
+    headCount: config.herd.headCount,
+    averageLiveweightKg: config.herd.averageLiveweightKg,
+    condition: config.herd.startingCondition,
+    campId: camp.id,
+    daysInCamp: config.herd.startingDaysInCamp,
+    transit: null,
+  };
+  const demand = dailyDemandKg(herd, config);
+  const grazeHa = effectiveGrazingHectares(camp.hectares, config);
+  const floor = residualDmKgPerHa(camp.peakDmKgPerHa, config);
+  if (demand > 0 && grazeHa > 0) {
+    const needed = floor + (config.pasture.openingMinGrassDays * demand) / grazeHa;
+    camp.standingDmKgPerHa = Math.min(camp.peakDmKgPerHa, Math.max(camp.standingDmKgPerHa, needed));
+  }
+  const tiles = new Set(camp.tiles.map((tile) => `${tile.x},${tile.y}`));
+  const hasTrough = features.some((feature) => feature.kind === "trough" && tiles.has(`${feature.x},${feature.y}`));
+  if (!hasTrough) features.push({ kind: "trough", x: camp.anchor.x, y: camp.anchor.y, scale: 1 });
 }
 
 export function generateFarm(seed: number, config: GameConfig = CONFIG): GameState {

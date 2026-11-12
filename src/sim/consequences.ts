@@ -1,9 +1,10 @@
 import { CONFIG, type GameConfig } from "./config";
+import { moveAdvice } from "./grazing";
 import { grazeableFraction } from "./pasture";
 import { findCamp } from "./simulation";
 import { syncHeadFromComposition } from "./economy";
 import type { StoryState } from "./storyTypes";
-import type { GameState } from "./types";
+import type { CampState, GameState } from "./types";
 
 export type FeedContext = {
   eatenKg: number;
@@ -94,6 +95,51 @@ function applyDeaths(state: GameState, count: number, _cause: string): void {
   story.starvation.totalDeathsSeason += count - left;
   story.ledger.deathCount += count - left;
   syncHeadFromComposition(state);
+}
+
+function campHasTrough(state: GameState, camp: CampState): boolean {
+  const tiles = new Set(camp.tiles.map((tile) => `${tile.x},${tile.y}`));
+  return state.features.some((feature) => feature.kind === "trough" && tiles.has(`${feature.x},${feature.y}`));
+}
+
+/**
+ * Overgrazing and a dry camp warn before any death.
+ * Thirst has no sourced death rate, so a missing trough warns and does not invent mortality.
+ */
+export function queueHusbandryWarnings(state: GameState, config: GameConfig = CONFIG): void {
+  const story = state.story;
+  if (!story) return;
+  const camp = findCamp(state, state.herd.campId);
+  if (!camp) return;
+
+  if (story.thirstWarnCampId !== null && story.thirstWarnCampId !== camp.id) story.thirstWarnCampId = null;
+  if (!campHasTrough(state, camp) && story.thirstWarnCampId !== camp.id) {
+    story.thirstWarnCampId = camp.id;
+    story.pendingCards.push({
+      id: `thirst-${camp.id}-${state.date.year}-${state.date.month}-${state.date.day}`,
+      kind: "warning",
+      title: "Water warning",
+      body: "This camp has no trough. Move the herd to water before you trust this grass.",
+      priority: 4,
+    });
+  }
+
+  if (story.moveWarnCampId !== null && story.moveWarnCampId !== camp.id) story.moveWarnCampId = null;
+  const advice = moveAdvice(state.herd, camp, state.date, config);
+  if (!advice.shouldWarn) return;
+  if (story.moveWarnCampId === camp.id) return;
+  story.moveWarnCampId = camp.id;
+  const body =
+    advice.reason === "time"
+      ? "This camp has had its graze spell. Move the herd so the grass can rest."
+      : "This camp is overgrazed. Move the herd before they go hungry.";
+  story.pendingCards.push({
+    id: `move-${camp.id}-${state.date.year}-${state.date.month}-${state.date.day}`,
+    kind: "warning",
+    title: "Time to move",
+    body,
+    priority: 4,
+  });
 }
 
 export function feedContextForHerd(state: GameState, config: GameConfig = CONFIG): FeedContext {

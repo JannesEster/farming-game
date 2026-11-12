@@ -93,6 +93,9 @@ body {
   font-size: 13px;
   line-height: 1.35;
   color: var(--muted);
+  max-height: 9.5em;
+  overflow: auto;
+  white-space: pre-line;
 }
 
 .market-sheet .market-field {

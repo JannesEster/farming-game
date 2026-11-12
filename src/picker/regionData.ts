@@ -14,7 +14,7 @@ export type RegionTemplate = {
   rainThreeSeasonMm: number;
   /** S: NSA ALPI 2023 N$/ha. */
   landRateNadPerHa: number;
-  /** S: savanna 8–10 ha/LSU; arid south higher. */
+  /** S: savanna 8 to 10 ha/LSU; arid south higher. */
   hectaresPerLsu: number;
   hectaresPerLsuSource: string;
   biome: string;
@@ -43,7 +43,7 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
     rainThreeSeasonMm: Math.round((130 + 91 + 100) / 3),
     landRateNadPerHa: 804,
     hectaresPerLsu: 27,
-    hectaresPerLsuSource: "Karas land use plan 24–30 ha/LSU (eastern/north-eastern band)",
+    hectaresPerLsuSource: "Karas land use plan 24 to 30 ha/LSU (eastern/north-eastern band)",
     biome: "Nama Karoo dwarf shrubland",
     terrain: {
       campCountMin: 14,
@@ -64,7 +64,7 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
     rainThreeSeasonMm: Math.round((375 + 170 + 325) / 3),
     landRateNadPerHa: 1_857,
     hectaresPerLsu: 9,
-    hectaresPerLsuSource: "Savanna farms often quoted 8–10 ha/LSU (indicative)",
+    hectaresPerLsuSource: "Savanna farms often quoted 8 to 10 ha/LSU (indicative)",
     biome: "Acacia savanna, hilly highlands",
     terrain: {
       campCountMin: 10,
@@ -85,7 +85,7 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
     rainThreeSeasonMm: OTJO_RAIN,
     landRateNadPerHa: 1_951,
     hectaresPerLsu: 10,
-    hectaresPerLsuSource: "Savanna 8–10 ha/LSU (prototype uses 10)",
+    hectaresPerLsuSource: "Savanna 8 to 10 ha/LSU (prototype uses 10)",
     biome: "Thornbush savanna",
     terrain: {
       campCountMin: 12,

@@ -16,9 +16,18 @@ describe("presentStoryCard", () => {
     expect(seen).toEqual(["card:Month in review:August is closed."]);
   });
 
-  it("uses one hint for a season note", () => {
+  it("shows a season note on the event card so the clock can pause", () => {
     const seen: string[] = [];
     presentStoryCard(card("season"), {
+      showEventCard: (title, body) => seen.push(`card:${title}:${body}`),
+      setHint: (text) => seen.push(text),
+    });
+    expect(seen).toEqual(["card:Month in review:August is closed."]);
+  });
+
+  it("keeps a weekly note as one hint", () => {
+    const seen: string[] = [];
+    presentStoryCard(card("weekly"), {
       showEventCard: () => seen.push("card"),
       setHint: (text) => seen.push(text),
     });

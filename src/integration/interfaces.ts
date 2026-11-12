@@ -18,7 +18,7 @@ export type FarmOffer = {
 };
 
 export interface FarmPickerPort {
-  /** Return 3–4 offers for the current roll (deterministic if seed provided). */
+  /** Return 3 to 4 offers for the current roll (deterministic if seed provided). */
   listOffers(rollSeed: number): FarmOffer[];
   /** Build initial {@link GameState} from a chosen offer. */
   createGameStateFromOffer(offer: FarmOffer): GameState;

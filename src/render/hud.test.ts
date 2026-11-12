@@ -81,7 +81,7 @@ describe("compact phone HUD", () => {
   it("keeps the tutorial card as the only message and drops its echo", () => {
     document.body.insertAdjacentHTML(
       "beforeend",
-      `<aside id="flow-tutorial"><h2 id="flow-tutorial-title">Select the herd</h2><p id="flow-tutorial-body">Tap the cattle once. The bottom strip shows camp, head count, and grass.</p></aside>`,
+      `<aside id="flow-tutorial"><h2 id="flow-tutorial-title">Select the herd</h2><p id="flow-tutorial-body">Tap the cattle once. The strip shows camp, head count, and grass. Time stays paused while this tip is open.</p></aside>`,
     );
     const hud = mountHud({
       onSpeed: () => {},
@@ -94,7 +94,9 @@ describe("compact phone HUD", () => {
       onOpenMarket: () => {},
     });
     hud.holdToasts();
-    hud.setHint("Select the herd: Tap the cattle once. The bottom strip shows camp, head count, and grass.");
+    hud.setHint(
+      "Select the herd: Tap the cattle once. The strip shows camp, head count, and grass. Time stays paused while this tip is open.",
+    );
     expect(document.getElementById("toast")?.hidden).toBe(true);
 
     document.getElementById("flow-tutorial")!.hidden = true;

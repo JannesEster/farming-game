@@ -263,6 +263,10 @@ function mountPickerUi(): void {
   };
 
   const showPicker = () => {
+    if (!pickerOffers[pickerIndex]?.playable) {
+      const playable = pickerOffers.findIndex((offer) => offer.playable);
+      if (playable >= 0) pickerIndex = playable;
+    }
     renderCard();
   };
 

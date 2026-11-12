@@ -3,8 +3,9 @@ import { CONFIG } from "../sim/config";
 import { COPY } from "../sim/format";
 import { clamp } from "../sim/math";
 import { getGameFlow } from "../integration/GameFlowService";
-import { popNextCard } from "../sim/story";
+import { hasBlockingCard, popNextCard } from "../sim/story";
 import { presentStoryCard } from "./storyPresent";
+import { dayStepsThisFrame, elementVisible, isSimBlocked as simClockBlocked, transitMayAdvance } from "./simGate";
 import { campIdAt, moveHerd, stepDay } from "../sim/simulation";
 import { herdInTransit, herdWorldTile, pathTangent, tickTransitRealtime } from "../sim/transit";
 import {
@@ -473,26 +474,33 @@ export class FarmScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
-    const interval = this.msPerDay();
+    this.presentQueuedCard();
+    const blocked = this.clockBlocked();
     const walking = herdInTransit(this.state.herd);
-    if (interval !== null && !walking) {
-      this.bank += Math.min(delta, CONFIG.view.maxFrameMs);
-      let steps = 0;
-      while (this.bank >= interval && steps < CONFIG.view.maxDaysPerFrame) {
-        this.bank -= interval;
-        stepDay(this.state);
-        steps += 1;
-      }
-      if (steps > 0) {
-        this.refreshGrass();
-        this.flushStoryCards();
-        this.syncHud();
-        this.market.refresh(this.state);
-        this.persist();
-        getGameFlow().onSimDayAdvanced(this.state);
-      }
+    const plan = dayStepsThisFrame({
+      blocked,
+      speed: this.mode,
+      bankMs: this.bank,
+      deltaMs: delta,
+      intervalMs: walking ? null : this.msPerDay(),
+      maxFrameMs: CONFIG.view.maxFrameMs,
+      maxDays: CONFIG.view.maxDaysPerFrame,
+    });
+    let steps = 0;
+    for (let i = 0; i < plan.days; i += 1) {
+      stepDay(this.state);
+      steps += 1;
+      if (hasBlockingCard(this.state)) break;
     }
-    if (walking) {
+    this.bank = steps < plan.days ? 0 : plan.bankMs;
+    if (steps > 0) {
+      this.refreshGrass();
+      this.syncHud();
+      this.market.refresh(this.state);
+      this.persist();
+      getGameFlow().onSimDayAdvanced(this.state);
+    }
+    if (walking && transitMayAdvance(blocked, this.mode)) {
       const was = this.state.herd.transit?.progress ?? 0;
       tickTransitRealtime(this.state, delta, this.mode);
       if (!herdInTransit(this.state.herd)) {
@@ -544,12 +552,24 @@ export class FarmScene extends Phaser.Scene {
     this.hud.setHerdLocator(true, arrow, edge);
   }
 
-  private flushStoryCards(): void {
-    for (let i = 0; i < 2; i += 1) {
-      const card = popNextCard(this.state);
-      if (!card) break;
-      presentStoryCard(card, this.hud);
-    }
+  private clockBlocked(): boolean {
+    const flow = getGameFlow();
+    return simClockBlocked({
+      tutorialHolding: flow.isTutorialHoldingSim() || elementVisible(document, "flow-tutorial"),
+      eventCard: elementVisible(document, "event-card"),
+      yearEnd: elementVisible(document, "flow-yearend"),
+      gameOver: elementVisible(document, "flow-gameover"),
+      market: elementVisible(document, "market-sheet"),
+      startOrPicker: elementVisible(document, "picker-root"),
+    });
+  }
+
+  /** Show one queued card before the clock moves, so reading it cannot cost a day. */
+  private presentQueuedCard(): void {
+    if (this.clockBlocked()) return;
+    const card = popNextCard(this.state);
+    if (!card) return;
+    presentStoryCard(card, this.hud);
   }
 
   private setSpeed(mode: SpeedMode): void {

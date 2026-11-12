@@ -91,7 +91,7 @@ export function mountFlowUi(handlers: FlowUiHandlers): FlowUi {
         goals.innerHTML = "";
         for (const g of model.yearEnd.goalResults) {
           const li = document.createElement("li");
-          li.textContent = `${g.met ? "✓" : "·"} ${g.label} — ${g.detail}`;
+          li.textContent = `${g.met ? "Yes" : "No"}. ${g.label}. ${g.detail}`;
           goals.appendChild(li);
         }
         const miles = required(root, "flow-yearend-milestones");

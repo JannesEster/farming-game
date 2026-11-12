@@ -38,6 +38,8 @@ export type GameConfig = {
     startingCoverMin: number;
     startingCoverMax: number;
     initialRestDaysMax: number;
+    /** A. TODO tune. Opening camp is topped up to about this many days of grass when the camp can hold it. */
+    openingMinGrassDays: number;
   };
   herd: {
     name: string;
@@ -59,7 +61,10 @@ export type GameConfig = {
     operatingCostAnchorHectares: number;
     operatingCostAnchorHead: number;
     operatingCostAnchorMonthlyNad: number;
-  /** Exponents for sub-linear scale (starter ranch smaller than head × ha). */
+    /**
+     * A. TODO: not a published NAU formula. Sub-linear fit so a smaller starter ranch
+     * is not charged as if it were 13,000 ha and 500 head.
+     */
     operatingCostHaExponent: number;
     operatingCostHeadExponent: number;
     operatingCostShareLabour: number;
@@ -67,6 +72,8 @@ export type GameConfig = {
     operatingCostShareDiesel: number;
     operatingCostShareRepairs: number;
     operatingCostShareOther: number;
+    /** A. TODO tune. Game over when cash is at or below this. */
+    bankruptFloorNad: number;
     dieselNadPerLitre: number;
     stateVetAdminNadPerMonth: number;
     vaccineNadPerHeadPerYear: number;
@@ -118,9 +125,9 @@ export type GameConfig = {
     droughtChoiceMonth: number;
     droughtSellWeaners: number;
     droughtSupplementDays: number;
-    /** Boskos drought feed, kg per head per day (Reuben: cattle 150–250 g/day). */
+    /** Boskos drought feed, kg per head per day (Reuben: cattle 150 to 250 g/day). */
     droughtBoskosKgPerHeadDay: number;
-    /** Reuben lick N$5,000–7,000/t as proxy until boskos cash price is sourced (TODO). */
+    /** Reuben lick N$5,000 to 7,000/t as proxy until boskos cash price is sourced (TODO). */
     droughtBoskosNadPerKg: number;
     droughtCamelthornPodsKgPerHeadDay: number;
     supplementConditionPerDay: number;
@@ -273,6 +280,8 @@ export const CONFIG: GameConfig = {
     startingCoverMax: 0.96,
     // A. Camps the herd is not in have already had some rest when the game opens.
     initialRestDaysMax: 50,
+    // A. TODO tune. Enough opening grass that the first days are a choice, not a crisis.
+    openingMinGrassDays: 18,
   },
 
   herd: {
@@ -303,14 +312,17 @@ export const CONFIG: GameConfig = {
     operatingCostAnchorHectares: 13000,
     operatingCostAnchorHead: 500,
     operatingCostAnchorMonthlyNad: 90000,
+    // A. TODO: exponents are a fit, not a published NAU formula. See the type comment.
     operatingCostHaExponent: 0.52,
     operatingCostHeadExponent: 0.62,
-    // S-ish: Ox Production 2025 cost mix (labour, feeds, fuel, repair & maintenance, other).
+    // S-ish: Ox Production 2025 cost mix (labour, feeds, fuel, repairs, other).
     operatingCostShareLabour: 0.16,
     operatingCostShareLick: 0.2,
     operatingCostShareDiesel: 0.18,
     operatingCostShareRepairs: 0.1,
     operatingCostShareOther: 0.36,
+    // A. TODO tune. Cash at or under this ends the run.
+    bankruptFloorNad: -20000,
     // S: Reuben Nov 2026 ~N$30/L diesel (NAU sheet: N$21.36/L).
     dieselNadPerLitre: 30,
     // S-ish: Reuben state vets, admin only; NAU cites N$9,815/yr private visit on 488 head.
@@ -336,11 +348,11 @@ export const CONFIG: GameConfig = {
     seasonStartMonth: 7,
     // A for the label. These are the months that hold most of the rain in the table below, November to April.
     rainyMonths: [11, 12, 1, 2, 3, 4],
-    // S: calving ~Oct after Jan/Feb mating in south (namibian-livestock §2.2, seasonal calendar Sep–Oct).
+    // S: calving ~Oct after Jan/Feb mating in south (namibian-livestock §2.2, seasonal calendar Sep to Oct).
     calvingMonths: [9, 10],
     // S: wean early calves in May (namibian-livestock §4.5).
     weaningMonths: [5],
-    // S: weaner sales Apr–Jun (namibian-livestock §4.5; Agra weaner championship H2).
+    // S: weaner sales Apr to Jun (namibian-livestock §4.5; Agra weaner championship H2).
     weanerSaleMonths: [4, 5, 6],
     // A. Opening morning, early in the dry season, so grass holds or falls until the rains.
     startYear: 2026,
