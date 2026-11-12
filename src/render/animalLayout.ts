@@ -5,6 +5,7 @@ import type { GameState } from "../sim/types";
 import type { HerdOffset } from "./art";
 import { offsetsForHerd } from "./herdLayout";
 import { tileCenter, type IsoLayout } from "./iso";
+import { cowOctantFromScreen } from "./sprites";
 
 export type AnimalSpriteRole = "herd-animal" | "escaped-animal" | "cut-out-animal" | "other-camp-animal";
 
@@ -80,6 +81,11 @@ export function layoutAnimals(
       continue;
     }
     if (animal.whereabouts === "cut_out") {
+      const lined = saleLinePoint(state, animal, layout, tileW, tileH);
+      if (lined) {
+        placed.push({ animal, x: lined.x, y: lined.y, octant: lined.octant, role: "cut-out-animal", calf });
+        continue;
+      }
       const point = tileCenter(animal.tileX, animal.tileY, layout, tileW, tileH);
       placed.push({
         animal,
@@ -106,4 +112,34 @@ export function layoutAnimals(
     });
   }
   return placed;
+}
+
+/** Sale animals stand in a short file from the kraal toward the loading ramp. */
+function saleLinePoint(
+  state: GameState,
+  animal: AnimalRecord,
+  layout: IsoLayout,
+  tileW: number,
+  tileH: number,
+): { x: number; y: number; octant: number } | null {
+  const sale = state.story?.saleConvoy;
+  const ids = sale?.animalIds ?? [];
+  const atRamp = sale && (sale.phase === "kraal" || sale.phase === "ramp" || sale.phase === "loading") && ids.includes(animal.id);
+  if (!atRamp) return null;
+  const kraal = state.features.find((feature) => feature.kind === "kraal");
+  const ramp = state.features.find((feature) => feature.kind === "loading_ramp");
+  if (!kraal || !ramp) return null;
+  const from = tileCenter(kraal.x, kraal.y, layout, tileW, tileH);
+  const to = tileCenter(ramp.x, ramp.y, layout, tileW, tileH);
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const index = Math.max(0, ids.indexOf(animal.id));
+  const gap = tileW * 0.78;
+  const along = index * gap;
+  return {
+    x: from.x + (dx / len) * along,
+    y: from.y + (dy / len) * along * 0.85,
+    octant: cowOctantFromScreen(dx, dy),
+  };
 }

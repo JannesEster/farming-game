@@ -18,7 +18,9 @@ export function columnMetrics(
 ): { total: number; spacingTiles: number; centerTiles: number; rearProgress: number; herderProgress: number } {
   const total = pathLengthTiles(path);
   const safe = Math.max(1, count);
-  const spacingTiles = Math.min(0.42, (total * 0.92) / Math.max(1, safe - 1));
+  // A small cut-out walks as a readable file. A full herd keeps the tighter column.
+  const preferred = safe <= 14 ? 0.9 : 0.42;
+  const spacingTiles = Math.min(preferred, (total * 0.92) / Math.max(1, safe - 1));
   const centerTiles = progress * total;
   const rearTiles = centerTiles - ((safe - 1) / 2) * spacingTiles;
   const herderTiles = Math.max(0, rearTiles - 0.6);

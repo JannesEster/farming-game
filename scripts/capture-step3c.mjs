@@ -52,7 +52,15 @@ async function prepPage(page) {
 
 async function fail(page, viewport, label, extra) {
   const debug = await page.evaluate(() => window.__farmCapture?.debugStep3c?.() ?? null);
-  throw new Error(`${viewport}: ${label} ${JSON.stringify({ extra, debug })}`);
+  const audit = await page.evaluate(() => window.__farmCapture?.pictureAudit?.() ?? null);
+  throw new Error(`${viewport}: ${label} ${JSON.stringify({ extra, audit, debug })}`);
+}
+
+async function assertHerdPicture(page, viewport, label) {
+  const audit = await page.evaluate(() => window.__farmCapture.pictureAudit());
+  if (audit.overlapFraction > 0.18 || audit.herdOverlapFraction > 0.18 || audit.herdCoversHomestead) {
+    await fail(page, viewport, `${label} herd picture`, audit);
+  }
 }
 
 async function main() {
@@ -80,6 +88,7 @@ async function main() {
       if (!escapedOk || escaped.count < 1 || escaped.maxScreenPx < 18) {
         await fail(page, viewport.name, "escaped animal not outside the fence", escaped);
       }
+      await assertHerdPicture(page, viewport.name, "escaped");
       const escapedPath = path.join(outDir, `${viewport.name}-escaped-animal.png`);
       await page.screenshot({ path: escapedPath });
       hashes.escaped = await fileHash(escapedPath);
@@ -96,6 +105,7 @@ async function main() {
       if (!detailOk || !detail.text.title.startsWith("Tag ") || !detailClean || detailSprites.count < 1 || detailSprites.maxScreenPx < 16) {
         await fail(page, viewport.name, "animal detail missing", detail);
       }
+      await assertHerdPicture(page, viewport.name, "detail");
       const detailPath = path.join(outDir, `${viewport.name}-animal-detail.png`);
       await page.screenshot({ path: detailPath });
       hashes.detail = await fileHash(detailPath);
@@ -109,6 +119,7 @@ async function main() {
       if (!selectOk || selected.rows < 2 || selected.herd.count < 2) {
         await fail(page, viewport.name, "multi-select missing", selected);
       }
+      await assertHerdPicture(page, viewport.name, "multi-select");
       const selectPath = path.join(outDir, `${viewport.name}-multi-select.png`);
       await page.screenshot({ path: selectPath });
       hashes.select = await fileHash(selectPath);
@@ -119,16 +130,18 @@ async function main() {
       if (!cutOk || cut.count < 3 || cut.maxScreenPx < 16) {
         await fail(page, viewport.name, "cut-out group not in view", cut);
       }
+      await assertHerdPicture(page, viewport.name, "cut-out");
       const cutPath = path.join(outDir, `${viewport.name}-cut-out-drive.png`);
       await page.screenshot({ path: cutPath });
       hashes.cut = await fileHash(cutPath);
 
       const facingOk = await page.evaluate(() => window.__farmCapture.prepareFacingCapture());
       await page.waitForTimeout(250);
-      const facing = await page.evaluate(() => window.__farmCapture.namedSpritesInView("herd-animal"));
+      const facing = await page.evaluate(() => window.__farmCapture.namedSpritesInView("cut-out-animal"));
       if (!facingOk || facing.count < 4 || facing.octants.length < 3 || facing.maxScreenPx < 12) {
         await fail(page, viewport.name, "cows not facing several directions", facing);
       }
+      await assertHerdPicture(page, viewport.name, "facing");
       const facingPath = path.join(outDir, `${viewport.name}-cows-facing.png`);
       await page.screenshot({ path: facingPath });
       hashes.facing = await fileHash(facingPath);
@@ -139,6 +152,9 @@ async function main() {
       if (!truckOk || truck.count < 1 || truck.maxScreenPx < 24) {
         await fail(page, viewport.name, "cattle truck not at the ramp", truck);
       }
+      const sale = await page.evaluate(() => window.__farmCapture.namedSpritesInView("cut-out-animal"));
+      if (sale.count < 2) await fail(page, viewport.name, "sale animals not at the kraal", sale);
+      await assertHerdPicture(page, viewport.name, "truck");
       const truckPath = path.join(outDir, `${viewport.name}-cattle-truck-ramp.png`);
       await page.screenshot({ path: truckPath });
       hashes.truck = await fileHash(truckPath);

@@ -110,6 +110,8 @@ import {
   ensureCattleOctantTextures,
   cattleOctantKey,
   cattleOctantScale,
+  cattleCoatIndex,
+  cowOctantFromScreen,
   ensureFarmhandTexture,
   ensureFarmerTexture,
   ensureWorkerHouseTexture,
@@ -135,6 +137,19 @@ function clearHerdTransit(state: GameState): void {
 
 function clearCutOut(state: GameState): void {
   if (state.story) state.story.cutOut = null;
+}
+
+/** Put a capture drive back in the grazing herd so the next shot starts clean. */
+function releaseCutOutAnimals(state: GameState): void {
+  clearCutOut(state);
+  const campId = state.herd.campId;
+  for (const animal of state.story?.animals ?? []) {
+    if (animal.whereabouts !== "cut_out") continue;
+    animal.whereabouts = "in_camp";
+    animal.split = false;
+    animal.campId = campId;
+    animal.activity = "graze";
+  }
 }
 
 function clearSaleConvoy(state: GameState): void {
@@ -1009,6 +1024,7 @@ export class FarmScene extends Phaser.Scene {
         return this.state.campIds[cottage.y * this.state.width + cottage.x] === -1;
       },
       namedSpritesInView: (role: string) => this.namedSpritesInView(role),
+      pictureAudit: () => this.pictureAudit(),
       prepareEscapeCapture: () => this.prepareEscapeCapture(),
       prepareAnimalDetailCapture: () => this.prepareAnimalDetailCapture(),
       prepareMultiSelectCapture: () => this.prepareMultiSelectCapture(),
@@ -2280,6 +2296,65 @@ export class FarmScene extends Phaser.Scene {
     return { count, maxScreenPx, octants: [...octants] };
   }
 
+  private pictureAudit(): {
+    overlapFraction: number;
+    herdOverlapFraction: number;
+    herdCoversHomestead: boolean;
+    cowCount: number;
+    herdCount: number;
+  } {
+    const bodyOf = (sprite: Phaser.GameObjects.Image) => {
+      const w = Math.max(8, sprite.displayWidth * 0.42);
+      const h = Math.max(8, sprite.displayHeight * 0.36);
+      return { x: sprite.x - w * 0.5, y: sprite.y - h * 0.78, w, h };
+    };
+    const overlaps = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
+      a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    const fraction = (sprites: Phaser.GameObjects.Image[]) => {
+      const bodies = sprites.map(bodyOf);
+      const hit = new Set<number>();
+      for (let i = 0; i < bodies.length; i += 1) {
+        for (let j = i + 1; j < bodies.length; j += 1) {
+          if (!overlaps(bodies[i], bodies[j])) continue;
+          hit.add(i);
+          hit.add(j);
+        }
+      }
+      return bodies.length === 0 ? 0 : hit.size / bodies.length;
+    };
+    const camera = this.cameras.main;
+    const view = camera.worldView;
+    const inShot = (sprite: Phaser.GameObjects.Image) =>
+      sprite.visible && sprite.x >= view.x && sprite.x <= view.right && sprite.y >= view.y && sprite.y <= view.bottom;
+    const visibleCows = this.cows.filter((cow) => inShot(cow) && typeof cow.getData("captureRole") === "string");
+    const herd = this.cows.filter((cow) => cow.getData("captureRole") === "herd-animal");
+    const house =
+      this.propSprites.find((sprite) => sprite.texture.key === SPRITE_KEYS.farmhouse) ??
+      this.propSprites.find((sprite) => sprite.getData("featureKind") === "house");
+    const cottage = this.workerCottageSprites[0];
+    const yard = [house, cottage].filter((sprite): sprite is Phaser.GameObjects.Image => Boolean(sprite));
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    for (const cow of herd) {
+      minX = Math.min(minX, cow.x);
+      maxX = Math.max(maxX, cow.x);
+      minY = Math.min(minY, cow.y);
+      maxY = Math.max(maxY, cow.y);
+    }
+    const herdCoversHomestead = yard.some(
+      (building) => building.x >= minX && building.x <= maxX && building.y >= minY && building.y <= maxY,
+    );
+    return {
+      overlapFraction: fraction(visibleCows),
+      herdOverlapFraction: fraction(herd),
+      herdCoversHomestead,
+      cowCount: visibleCows.length,
+      herdCount: herd.length,
+    };
+  }
+
   private frameWorldPoints(points: { x: number; y: number }[], fill = 0.5): void {
     if (points.length === 0) return;
     let minX = Number.POSITIVE_INFINITY;
@@ -2408,7 +2483,7 @@ export class FarmScene extends Phaser.Scene {
     this.collapseHerdSheet();
     this.hud.clearHint();
     clearHerdTransit(this.state);
-    clearCutOut(this.state);
+    releaseCutOutAnimals(this.state);
     const group = filterAnimals(story.animals ?? [], TOLLY_OVER_300).slice(0, 6);
     const use = group.length >= 3 ? group : (story.animals ?? []).filter((animal) => animal.whereabouts === "in_camp").slice(0, 6);
     if (use.length < 3) return false;
@@ -2423,7 +2498,7 @@ export class FarmScene extends Phaser.Scene {
       guard += 48;
     }
     if (story.cutOut?.phase !== "drive") return false;
-    while (guard < 180000 && story.cutOut && story.cutOut.progress < 0.28) {
+    while (guard < 180000 && story.cutOut && story.cutOut.progress < 0.42) {
       tickCutOutRealtime(this.state, 48, "x3");
       guard += 48;
     }
@@ -2445,99 +2520,154 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private prepareFacingCapture(): boolean {
-    this.state.date.hour = 11;
-    this.captureLightingHour = 11;
-    clearHerdTransit(this.state);
-    clearCutOut(this.state);
-    const destId = this.pickLongHerdMoveDestination();
-    if (destId === null || !beginHerdMove(this.state, destId)) return false;
-    let best = 0;
-    let guard = 0;
-    while (guard < 160000) {
-      tickHerdingRealtime(this.state, 60, "x3");
-      guard += 60;
-      const transit = this.state.herd.transit;
-      if (!transit || transit.phase !== "drive") continue;
-      this.syncHerdFromSim();
-      this.placeIndividualAnimals(performance.now());
-      const moving = this.cows.filter((sprite) => sprite.visible && sprite.getData("captureRole") === "herd-animal");
-      let framed = moving.slice(0, 8);
-      let bestVariety = 0;
-      let bestSpan = Number.POSITIVE_INFINITY;
-      for (let index = 0; index < moving.length; index += 1) {
-        const cluster = moving.slice(index, index + 10);
-        if (cluster.length < 4) break;
-        const octants = new Set(cluster.map((cow) => cow.getData("octant")));
-        let minX = Number.POSITIVE_INFINITY;
-        let maxX = Number.NEGATIVE_INFINITY;
-        let minY = Number.POSITIVE_INFINITY;
-        let maxY = Number.NEGATIVE_INFINITY;
-        for (const cow of cluster) {
-          minX = Math.min(minX, cow.x);
-          maxX = Math.max(maxX, cow.x);
-          minY = Math.min(minY, cow.y);
-          maxY = Math.max(maxY, cow.y);
-        }
-        const span = Math.max(maxX - minX, maxY - minY);
-        if (octants.size > bestVariety || (octants.size === bestVariety && span < bestSpan)) {
-          bestVariety = octants.size;
-          bestSpan = span;
-          framed = cluster;
-        }
-      }
-      this.frameWorldPoints(framed.map((sprite) => ({ x: sprite.x, y: sprite.y })), 0.62);
-      this.placeIndividualAnimals(performance.now());
-      const seen = this.namedSpritesInView("herd-animal");
-      best = Math.max(best, seen.octants.length);
-      if (seen.octants.length >= 3 && seen.count >= 4 && seen.maxScreenPx >= 18) {
-        this.collapseHerdSheet();
-        this.hud.clearHint();
-        return true;
-      }
-      if ((transit.progress ?? 0) > 0.92) break;
-    }
-    return best >= 3;
-  }
-
-  private prepareTruckRampCapture(): boolean {
     const story = this.state.story;
-    if (!story) return false;
-    const stockClass = story.composition.tolly > 2 ? "tolly" : story.composition.ox > 0 ? "ox" : "cow";
-    const count = Math.min(4, story.composition[stockClass] ?? 0);
-    if (count <= 0) return false;
-    const line = quoteSale(this.state, stockClass, count, "auction");
-    if ("reason" in line) return false;
+    if (!story?.animals) return false;
     this.state.date.hour = 11;
     this.captureLightingHour = 11;
     this.collapseHerdSheet();
     this.hud.clearHint();
     clearHerdTransit(this.state);
-    clearCutOut(this.state);
-    clearSaleConvoy(this.state);
-    const started = beginSaleConvoy(this.state, stockClass, count, "auction", line);
-    if (!started.ok) return false;
+    releaseCutOutAnimals(this.state);
+    const destId = this.pickCornerHerdDestination();
+    const group = story.animals.filter((animal) => animal.whereabouts === "in_camp" && !animal.split && animal.stockClass !== "calf").slice(0, 8);
+    if (destId === null || group.length < 8) return false;
+    story.selectedAnimalIds = group.map((animal) => animal.id);
+    const result = requestCutOut(this.state, story.selectedAnimalIds, { kind: "camp", campId: destId });
+    if (!result.ok || result.queued) return false;
+    const bend = this.cornerProgress(story.cutOut?.path ?? []);
     let guard = 0;
-    while (guard < 200000 && story.saleConvoy && story.saleConvoy.phase !== "ramp" && story.saleConvoy.phase !== "loading") {
-      tickHerdingRealtime(this.state, 50, "x3");
-      tickSaleConvoyRealtime(this.state, 50, 3);
-      guard += 50;
+    while (guard < 220000 && story.cutOut && story.cutOut.phase !== "done") {
+      tickCutOutRealtime(this.state, 40, "x3");
+      guard += 40;
+      const order = story.cutOut;
+      if (!order || order.phase !== "drive") continue;
+      if (bend !== null && Math.abs(order.progress - bend) > 0.04) {
+        if (order.progress > bend + 0.06) break;
+        continue;
+      }
+      if (order.progress < 0.18 || order.progress > 0.8) continue;
+      this.placeIndividualAnimals(performance.now());
+      const ordered = this.cutOutSpritesInOrder();
+      if (ordered.length < 6) continue;
+      const framed = ordered;
+      if (new Set(framed.map((cow) => cow.getData("octant"))).size < 3) continue;
+      this.frameWorldPoints(framed.map((sprite) => ({ x: sprite.x, y: sprite.y })), 0.84);
+      this.placeIndividualAnimals(performance.now());
+      const seen = this.namedSpritesInView("cut-out-animal");
+      if (seen.octants.length >= 3 && seen.count >= 4 && seen.maxScreenPx >= 16) {
+        this.collapseHerdSheet();
+        this.hud.clearHint();
+        return true;
+      }
     }
-    if (!story.saleConvoy || (story.saleConvoy.phase !== "ramp" && story.saleConvoy.phase !== "loading")) return false;
+    return false;
+  }
+
+  private cornerProgress(path: { x: number; y: number }[]): number | null {
+    if (path.length < 6) return null;
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    const octants: number[] = [];
+    for (let index = 1; index < path.length; index += 1) {
+      const from = tileCenter(path[index - 1].x, path[index - 1].y, this.layout, tileW, tileH);
+      const to = tileCenter(path[index].x, path[index].y, this.layout, tileW, tileH);
+      octants.push(cowOctantFromScreen(to.x - from.x, to.y - from.y));
+    }
+    let bestLength = 99;
+    let bestProgress: number | null = null;
+    for (let length = 3; length <= 10; length += 1) {
+      for (let index = 0; index + length <= octants.length; index += 1) {
+        if (new Set(octants.slice(index, index + length)).size < 3) continue;
+        const progress = (index + length / 2) / path.length;
+        if (progress < 0.4 || progress > 0.72) continue;
+        if (length < bestLength) {
+          bestLength = length;
+          bestProgress = progress;
+        }
+      }
+    }
+    return bestProgress;
+  }
+
+  private cutOutSpritesInOrder(): Phaser.GameObjects.Image[] {
+    const ids = this.state.story?.cutOut?.animalIds ?? [];
+    const animals = this.state.story?.animals ?? [];
+    const sprites: Phaser.GameObjects.Image[] = [];
+    for (const id of ids) {
+      const animal = animals.find((item) => item.id === id);
+      if (!animal) continue;
+      const sprite = this.cows.find((cow) => cow.visible && cow.getData("animalTag") === animal.tag);
+      if (sprite) sprites.push(sprite);
+    }
+    return sprites;
+  }
+
+  private pickCornerHerdDestination(): number | null {
+    let bestId: number | null = null;
+    let bestScore = -1;
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    for (const camp of this.state.camps) {
+      if (camp.id === this.state.herd.campId) continue;
+      const path = planHerdPath(this.state, this.state.herd.campId, camp.id);
+      if (path.length < 8) continue;
+      const octants = new Set<number>();
+      for (let index = 1; index < path.length; index += 1) {
+        const from = tileCenter(path[index - 1].x, path[index - 1].y, this.layout, tileW, tileH);
+        const to = tileCenter(path[index].x, path[index].y, this.layout, tileW, tileH);
+        octants.add(cowOctantFromScreen(to.x - from.x, to.y - from.y));
+      }
+      const score = octants.size * 100 + path.length;
+      if (score > bestScore) {
+        bestScore = score;
+        bestId = camp.id;
+      }
+    }
+    return bestId ?? this.pickLongHerdMoveDestination();
+  }
+
+  private prepareTruckRampCapture(): boolean {
+    const story = this.state.story;
+    if (!story) return false;
+    this.state.date.hour = 11;
+    this.captureLightingHour = 11;
+    this.collapseHerdSheet();
+    this.hud.clearHint();
+    clearHerdTransit(this.state);
+    releaseCutOutAnimals(this.state);
+    clearSaleConvoy(this.state);
+    const group = filterAnimals(story.animals ?? [], TOLLY_OVER_300).filter((animal) => animal.whereabouts === "in_camp").slice(0, 4);
+    const use = group.length >= 2 ? group : (story.animals ?? []).filter((animal) => animal.whereabouts === "in_camp" && animal.stockClass !== "calf").slice(0, 4);
+    if (use.length < 2) return false;
+    story.selectedAnimalIds = use.map((animal) => animal.id);
+    const started = requestCutOut(this.state, story.selectedAnimalIds, { kind: "kraal" });
+    if (!started.ok || started.queued) return false;
+    let guard = 0;
+    while (guard < 240000 && story.cutOut && story.cutOut.phase !== "done") {
+      tickCutOutRealtime(this.state, 40, "x3");
+      guard += 40;
+    }
+    if (!story.saleConvoy || story.cutOut?.phase !== "done") return false;
+    story.saleConvoy.phase = "ramp";
+    story.saleConvoy.phaseProgress = 0.35;
+    clearHerdTransit(this.state);
+    this.placeIndividualAnimals(performance.now());
     this.syncCattleTruckVisual();
     const ramp = this.state.features.find((feature) => feature.kind === "loading_ramp");
     const truck = this.cattleTruck;
     if (!ramp || !truck?.visible) return false;
+    const saleCows = this.cows.filter((sprite) => sprite.visible && sprite.getData("captureRole") === "cut-out-animal");
     const rampPos = tileCenter(ramp.x, ramp.y, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
     this.frameWorldPoints(
-      [
-        { x: truck.x, y: truck.y },
-        { x: rampPos.x, y: rampPos.y },
-      ],
-      0.55,
+      [{ x: truck.x, y: truck.y }, { x: rampPos.x, y: rampPos.y }, ...saleCows.map((sprite) => ({ x: sprite.x, y: sprite.y }))],
+      0.58,
     );
+    this.placeIndividualAnimals(performance.now());
     this.syncCattleTruckVisual();
     const seen = this.namedSpritesInView("cattle-truck");
-    return seen.count >= 1 && seen.maxScreenPx >= 24 && truck.name === "cattle-truck";
+    const sale = this.namedSpritesInView("cut-out-animal");
+    const herdOnYard = this.pictureAudit().herdCoversHomestead;
+    return seen.count >= 1 && seen.maxScreenPx >= 24 && truck.name === "cattle-truck" && sale.count >= 2 && !herdOnYard;
   }
 
   private prepareHerdDriveCapture(): boolean {
@@ -2791,8 +2921,8 @@ export class FarmScene extends Phaser.Scene {
   private ensureCowCount(count: number): void {
     while (this.cows.length < count) {
       const cow = this.add
-        .image(0, 0, cattleOctantKey(0))
-        .setOrigin(0.5, 0.82);
+        .image(0, 0, cattleOctantKey(0, false, 0))
+        .setOrigin(0.5, 0.86);
       this.cows.push(cow);
     }
     while (this.cows.length > count) {
@@ -2825,7 +2955,6 @@ export class FarmScene extends Phaser.Scene {
         view: "right" as const,
         octant: spot.octant,
       }));
-    const selected = new Set(this.state.story?.selectedAnimalIds ?? []);
     const zoom = this.cameras.main.zoom;
     const cowLod = this.paintedSprites && zoom <= COW_LOD_ZOOM && !this.captureHideHerdLabel;
     placed.forEach((spot, index) => {
@@ -2840,14 +2969,13 @@ export class FarmScene extends Phaser.Scene {
       if (cowLod) {
         cow.setTexture(SPRITE_KEYS.cowDot);
         cow.setScale(1.15);
-      } else if (this.textures.exists(cattleOctantKey(spot.octant, spot.calf))) {
-        cow.setTexture(cattleOctantKey(spot.octant, spot.calf));
-        const grown = spot.animal.stockClass === "calf" ? 1 : spot.animal.weightKg > 420 ? 1.08 : 0.96;
+      } else if (this.textures.exists(cattleOctantKey(spot.octant, spot.calf, cattleCoatIndex(spot.animal.tag)))) {
+        const coat = cattleCoatIndex(spot.animal.tag);
+        cow.setTexture(cattleOctantKey(spot.octant, spot.calf, coat));
+        const grown = spot.animal.stockClass === "calf" ? 1 : spot.animal.weightKg > 420 ? 1.06 : 0.96;
         cow.setScale(cattleOctantScale(spot.calf) * grown);
       }
-      const marked = selected.has(spot.animal.id) && spot.role !== "cut-out-animal";
-      if (marked) cow.setTint(0xffc56a);
-      else cow.clearTint();
+      cow.clearTint();
       cow.setFlipX(false);
       cow.setRotation(0);
       cow.setPosition(spot.x, spot.y + bob);

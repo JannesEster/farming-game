@@ -564,145 +564,306 @@ export function cowViewFromVector(ux: number, uy: number): CowView {
   return cowViewFromOctant(cowOctantFromTile(ux, uy));
 }
 
-export function cattleOctantKey(octant: number, calf = false): string {
-  return `${calf ? "calf" : "cow"}-oct-${((octant % 8) + 8) % 8}`;
+type CattleCoat = {
+  body: string;
+  dark: string;
+  belly: string;
+  hump: boolean;
+  patches: boolean;
+};
+
+/** Brahman grey, Bonsmara red, black, Nguni, brown, speckled. */
+const CATTLE_COATS: readonly CattleCoat[] = [
+  { body: "#ddd6c8", dark: "#6e675c", belly: "#f7f3ea", hump: true, patches: false },
+  { body: "#b55238", dark: "#6a2c1c", belly: "#d47858", hump: false, patches: false },
+  { body: "#2c2624", dark: "#100e0d", belly: "#4a403c", hump: false, patches: false },
+  { body: "#f4f0e6", dark: "#1a1816", belly: "#fffdf8", hump: true, patches: true },
+  { body: "#8d5a34", dark: "#4e3018", belly: "#c48a56", hump: false, patches: false },
+  { body: "#c56a32", dark: "#f3ecdf", belly: "#e6c49a", hump: false, patches: true },
+];
+
+export const CATTLE_COAT_COUNT = CATTLE_COATS.length;
+
+export function cattleCoatIndex(tag: string): number {
+  let n = 0;
+  for (const ch of tag) n = (n * 33 + ch.charCodeAt(0)) >>> 0;
+  return n % CATTLE_COAT_COUNT;
+}
+
+export function cattleOctantKey(octant: number, calf = false, coat = 0): string {
+  const oct = ((octant % 8) + 8) % 8;
+  const c = ((coat % CATTLE_COAT_COUNT) + CATTLE_COAT_COUNT) % CATTLE_COAT_COUNT;
+  return `${calf ? "calf" : "cow"}-oct-${oct}-c${c}`;
 }
 
 /**
- * TODO(A): the windmill painting includes its tank, so a true 1.45 m shoulder
- * reads as a speck beside it. This boost keeps a cow believable next to that sprite.
+ * Nose-to-tail length painted in the octant canvas.
+ * A cow is drawn at about 0.62 tiles: shorter than the bakkie (1.05 tiles)
+ * and clearly smaller than the worker cottage (1.55 tiles).
+ * TODO(A): visual size chosen against those sprites, not a measured shoulder.
  */
-export const COW_READABILITY_BOOST = 1.75;
+export const COW_ART_BODY_PX = 80;
+export const COW_BODY_TILES = 0.62;
 
 export function cattleOctantScale(calf = false): number {
-  const shoulderMetres = calf ? 0.95 : 1.45;
-  const artShoulderPx = calf ? 34 : 46;
-  return ((shoulderMetres * worldPxPerMetre()) / artShoulderPx) * COW_READABILITY_BOOST;
+  const bodyPx = calf ? COW_ART_BODY_PX * 0.68 : COW_ART_BODY_PX;
+  const tiles = calf ? COW_BODY_TILES * 0.62 : COW_BODY_TILES;
+  return (CONFIG.view.tileWidth * tiles) / bodyPx;
 }
 
-function paintOctantCow(octant: number, calf: boolean): HTMLCanvasElement {
+function paintOctantCow(octant: number, calf: boolean, coatIndex: number): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
-  canvas.width = 128;
-  canvas.height = 104;
+  canvas.width = 112;
+  canvas.height = 80;
   const ctx = canvas.getContext("2d");
   if (!ctx) return canvas;
+  const coat = CATTLE_COATS[coatIndex % CATTLE_COAT_COUNT];
   const oct = ((octant % 8) + 8) % 8;
-  const angle = (oct * Math.PI) / 4;
-  const dx = Math.cos(angle);
-  const dy = Math.sin(angle);
-  const px = -dy;
-  const py = dx;
-  const s = calf ? 0.72 : 1;
-  const cx = 64;
-  const cy = 50;
-  const bodyLen = 34 * s;
-  const bodyWid = 22 * s;
-  const at = (along: number, across: number, lift = 0): { x: number; y: number } => ({
-    x: cx + dx * bodyLen * along + px * bodyWid * across,
-    y: cy + dy * bodyLen * along * 0.55 + py * bodyWid * across * 0.55 - lift,
-  });
-
-  ctx.fillStyle = "rgba(42, 30, 18, 0.32)";
-  ctx.beginPath();
-  ctx.ellipse(cx, 90, 30 * s, 7, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.strokeStyle = "#5c5348";
-  ctx.lineWidth = 5 * s;
-  ctx.lineCap = "round";
-  for (const [along, across] of [
-    [-0.32, -0.42],
-    [-0.32, 0.42],
-    [0.28, -0.36],
-    [0.28, 0.36],
-  ] as const) {
-    const hip = at(along, across, 0);
-    ctx.beginPath();
-    ctx.moveTo(hip.x, hip.y);
-    ctx.lineTo(hip.x + px * across * 2, hip.y + 16 * s);
-    ctx.stroke();
-  }
-
   ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate(Math.atan2(dy * 0.55, dx));
-  ctx.fillStyle = calf ? "#efe4d2" : "#e4d8c6";
-  ctx.strokeStyle = "#3f362c";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.ellipse(0, 0, bodyLen, bodyWid * 0.7, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-  if (!calf) {
-    ctx.fillStyle = "#d5c6b0";
-    ctx.beginPath();
-    ctx.ellipse(bodyLen * 0.22, -bodyWid * 0.62, 14, 9, -0.35, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
+  if (calf) {
+    ctx.translate(56, 48);
+    ctx.scale(0.72, 0.72);
+    ctx.translate(-56, -48);
   }
+  const mirror = oct === 3 || oct === 4 || oct === 5;
+  if (mirror) {
+    ctx.translate(112, 0);
+    ctx.scale(-1, 1);
+  }
+  if (oct === 2) drawCowFront(ctx, coat);
+  else if (oct === 6) drawCowBack(ctx, coat);
+  else drawCowSide(ctx, coat, oct === 1 || oct === 7 || oct === 3 || oct === 5);
   ctx.restore();
+  return canvas;
+}
 
-  const head = at(1.15, 0, 10 * s);
-  ctx.fillStyle = "#f7f1e6";
-  ctx.strokeStyle = "#3f362c";
-  ctx.lineWidth = 2.6;
+function drawLeg(ctx: CanvasRenderingContext2D, x: number, y: number, h: number, color: string): void {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 4.2;
+  ctx.lineCap = "round";
   ctx.beginPath();
-  ctx.ellipse(head.x, head.y, 10 * s + Math.max(0, dy) * 3, 9 * s, Math.atan2(dy, dx), 0, Math.PI * 2);
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + 1, y + h);
+  ctx.stroke();
+  ctx.strokeStyle = "#2a2118";
+  ctx.lineWidth = 4.6;
+  ctx.beginPath();
+  ctx.moveTo(x - 1, y + h - 2);
+  ctx.lineTo(x + 4, y + h);
+  ctx.stroke();
+}
+
+function fillBody(ctx: CanvasRenderingContext2D, coat: CattleCoat, path: () => void): void {
+  path();
+  ctx.fillStyle = coat.body;
+  ctx.fill();
+  if (coat.patches) {
+    ctx.save();
+    path();
+    ctx.clip();
+    ctx.fillStyle = coat.dark;
+    ctx.beginPath();
+    ctx.ellipse(40, 38, 10, 7, -0.4, 0, Math.PI * 2);
+    ctx.ellipse(58, 44, 8, 5, 0.5, 0, Math.PI * 2);
+    ctx.ellipse(30, 46, 6, 4, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  path();
+  ctx.strokeStyle = "#2c241c";
+  ctx.lineWidth = 2.2;
+  ctx.stroke();
+}
+
+function drawCowSide(ctx: CanvasRenderingContext2D, coat: CattleCoat, threeQuarter: boolean): void {
+  ctx.fillStyle = "rgba(40, 26, 14, 0.28)";
+  ctx.beginPath();
+  ctx.ellipse(58, 70, 28, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  drawLeg(ctx, 32, 50, 18, coat.dark);
+  drawLeg(ctx, 66, 50, 18, coat.dark);
+  const squash = threeQuarter ? 0.86 : 1;
+  ctx.save();
+  ctx.translate(56, 42);
+  ctx.scale(squash, 1);
+  ctx.translate(-56, -42);
+  fillBody(ctx, coat, () => {
+    ctx.beginPath();
+    ctx.moveTo(24, 48);
+    ctx.quadraticCurveTo(16, 36, 28, 30);
+    ctx.quadraticCurveTo(42, coat.hump ? 12 : 24, 58, coat.hump ? 16 : 26);
+    ctx.quadraticCurveTo(74, 20, 80, 32);
+    ctx.quadraticCurveTo(76, 50, 64, 54);
+    ctx.quadraticCurveTo(44, 60, 28, 54);
+    ctx.closePath();
+  });
+  if (coat.hump) {
+    ctx.fillStyle = coat.dark;
+    ctx.beginPath();
+    ctx.ellipse(52, 20, 12, 7, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#2c241c";
+    ctx.stroke();
+  }
+  ctx.fillStyle = coat.body;
+  ctx.strokeStyle = "#2c241c";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(88, 34, 13, 11, 0.15, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
-
-  ctx.fillStyle = "#d9cbb6";
-  for (const side of [-1, 1]) {
-    const ear = at(0.92, side * 0.62, 12 * s);
+  ctx.fillStyle = coat.belly;
+  ctx.beginPath();
+  ctx.ellipse(100, 40, 7, 5, 0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = coat.dark;
+  ctx.beginPath();
+  ctx.ellipse(78, 28, 8, 3.5, -0.9, 0, Math.PI * 2);
+  ctx.fill();
+  if (!coat.hump) {
+    ctx.strokeStyle = "#c8b48a";
+    ctx.lineWidth = 2.4;
     ctx.beginPath();
-    ctx.ellipse(ear.x, ear.y, 6 * s, 3.2 * s, side * 0.6, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.moveTo(84, 24);
+    ctx.quadraticCurveTo(76, 10, 70, 18);
     ctx.stroke();
-  }
-
-  if (!calf && dy > -0.75) {
-    ctx.strokeStyle = "#8a8072";
-    ctx.lineWidth = 2.2;
-    ctx.beginPath();
-    ctx.moveTo(head.x - 3 * s, head.y - 3 * s);
-    ctx.quadraticCurveTo(head.x - 12 * s, head.y - 14 * s, head.x - 2 * s, head.y - 1 * s);
-    ctx.moveTo(head.x + 3 * s, head.y - 3 * s);
-    ctx.quadraticCurveTo(head.x + 12 * s, head.y - 14 * s, head.x + 2 * s, head.y - 1 * s);
-    ctx.stroke();
-  }
-  if (dy > -0.15) {
-    ctx.fillStyle = "#1b140e";
-    ctx.beginPath();
-    ctx.arc(head.x - 3.2 * s, head.y + 0.5, 1.35, 0, Math.PI * 2);
-    ctx.arc(head.x + 3.2 * s, head.y + 0.5, 1.35, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#c48b8b";
-    ctx.beginPath();
-    ctx.ellipse(head.x + dx * 6 * s, head.y + 2, 3.2 * s, 2.2 * s, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  if (dy < 0.25) {
-    const tail = at(-1.05, 0, 2);
-    ctx.strokeStyle = "#5a5044";
+  } else {
+    ctx.strokeStyle = "#b7a88a";
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(tail.x, tail.y);
-    ctx.quadraticCurveTo(tail.x - dx * 8, tail.y + 10, tail.x - dx * 2, tail.y + 16);
+    ctx.moveTo(86, 24);
+    ctx.quadraticCurveTo(92, 12, 84, 16);
     ctx.stroke();
-    ctx.fillStyle = "#3f362c";
+  }
+  ctx.fillStyle = "#1a120e";
+  ctx.beginPath();
+  ctx.arc(94, 32, 1.7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = coat.dark;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(22, 36);
+  ctx.quadraticCurveTo(12, 44, 16, 58);
+  ctx.stroke();
+  ctx.fillStyle = coat.dark;
+  ctx.beginPath();
+  ctx.ellipse(16, 58, 4, 3, 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  drawLeg(ctx, 40, 52, 16, coat.body);
+  drawLeg(ctx, 72, 50, 18, coat.body);
+  ctx.restore();
+}
+
+function drawCowFront(ctx: CanvasRenderingContext2D, coat: CattleCoat): void {
+  ctx.fillStyle = "rgba(40, 26, 14, 0.28)";
+  ctx.beginPath();
+  ctx.ellipse(56, 70, 16, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  drawLeg(ctx, 42, 50, 18, coat.dark);
+  drawLeg(ctx, 66, 50, 18, coat.dark);
+  ctx.fillStyle = coat.body;
+  ctx.strokeStyle = "#2c241c";
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.ellipse(56, 48, 18, 16, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  if (coat.hump) {
+    ctx.fillStyle = coat.dark;
     ctx.beginPath();
-    ctx.ellipse(tail.x - dx * 2, tail.y + 16, 3.5, 2.4, 0.4, 0, Math.PI * 2);
+    ctx.ellipse(56, 30, 14, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.fillStyle = coat.body;
+  ctx.beginPath();
+  ctx.ellipse(56, 28, 16, 14, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = coat.belly;
+  ctx.beginPath();
+  ctx.ellipse(56, 36, 8, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = coat.dark;
+  ctx.beginPath();
+  ctx.ellipse(40, 26, 7, 3.5, -0.6, 0, Math.PI * 2);
+  ctx.ellipse(72, 26, 7, 3.5, 0.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = coat.hump ? "#b7a88a" : "#c8b48a";
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.moveTo(44, 18);
+  ctx.quadraticCurveTo(36, 6, 48, 14);
+  ctx.moveTo(68, 18);
+  ctx.quadraticCurveTo(76, 6, 64, 14);
+  ctx.stroke();
+  ctx.fillStyle = "#1a120e";
+  ctx.beginPath();
+  ctx.arc(50, 28, 1.8, 0, Math.PI * 2);
+  ctx.arc(62, 28, 1.8, 0, Math.PI * 2);
+  ctx.fill();
+  if (coat.patches) {
+    ctx.fillStyle = coat.dark;
+    ctx.beginPath();
+    ctx.ellipse(48, 46, 6, 4, 0.2, 0, Math.PI * 2);
     ctx.fill();
   }
-  return canvas;
+}
+
+function drawCowBack(ctx: CanvasRenderingContext2D, coat: CattleCoat): void {
+  ctx.fillStyle = "rgba(40, 26, 14, 0.28)";
+  ctx.beginPath();
+  ctx.ellipse(56, 70, 16, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  drawLeg(ctx, 40, 50, 18, coat.dark);
+  drawLeg(ctx, 68, 50, 18, coat.dark);
+  ctx.fillStyle = coat.body;
+  ctx.strokeStyle = "#2c241c";
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.ellipse(56, 46, 20, 16, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  if (coat.hump) {
+    ctx.fillStyle = coat.dark;
+    ctx.beginPath();
+    ctx.ellipse(56, 30, 16, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  if (coat.patches) {
+    ctx.fillStyle = coat.dark;
+    ctx.beginPath();
+    ctx.ellipse(48, 44, 7, 5, -0.3, 0, Math.PI * 2);
+    ctx.ellipse(64, 50, 5, 4, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.strokeStyle = coat.dark;
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.moveTo(56, 36);
+  ctx.quadraticCurveTo(64, 48, 56, 64);
+  ctx.stroke();
+  ctx.fillStyle = coat.dark;
+  ctx.beginPath();
+  ctx.ellipse(56, 64, 5, 3.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = coat.dark;
+  ctx.beginPath();
+  ctx.ellipse(40, 34, 5, 3, -0.8, 0, Math.PI * 2);
+  ctx.ellipse(72, 34, 5, 3, 0.8, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 export function ensureCattleOctantTextures(scene: Phaser.Scene): void {
   for (const calf of [false, true]) {
     for (let octant = 0; octant < 8; octant += 1) {
-      const key = cattleOctantKey(octant, calf);
-      if (scene.textures.exists(key)) continue;
-      scene.textures.addCanvas(key, paintOctantCow(octant, calf));
+      for (let coat = 0; coat < CATTLE_COAT_COUNT; coat += 1) {
+        const key = cattleOctantKey(octant, calf, coat);
+        if (scene.textures.exists(key)) continue;
+        scene.textures.addCanvas(key, paintOctantCow(octant, calf, coat));
+      }
     }
   }
 }
