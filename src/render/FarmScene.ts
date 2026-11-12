@@ -10,6 +10,8 @@ import { elementVisible, isSimBlocked as simClockBlocked, speedMultiplier, trans
 import { syncAlertStrip } from "../integration/notificationHub";
 import { bfsCampRoute } from "../sim/path";
 import { campIdAt, moveHerd, stepDay } from "../sim/simulation";
+import { setWorkPriority, tickFarmhandWorld, WORK_JOB_LABELS } from "../sim/workGrid";
+import { hireFarmhand } from "../sim/workers";
 import type { DayLengthSeconds } from "../sim/clock";
 import { herdInTransit, herdWorldTile, pathTangent, tickTransitRealtime } from "../sim/transit";
 import {
@@ -62,6 +64,7 @@ import {
   type SpeedMode,
 } from "./hud";
 import { mountMarketSheet, type MarketSheet } from "./marketSheet";
+import { mountOpsSheet, type OpsSheet } from "./opsSheet";
 import { doubleTapGoesHome } from "./tap";
 import { resolveGroundTap, resolveHerdTap } from "./selection";
 import { isoLayout, tileCenter, tileTop, worldToTile, type IsoLayout } from "./iso";
@@ -78,6 +81,8 @@ import {
   cowPresentationScale,
   ensureCowDotTexture,
   ensureCowViewTextures,
+  ensureFarmhandTexture,
+  FARMHAND_TEXTURE_HEIGHT,
   maybePaintedTermiteAt,
   maybeRockAt,
   paintedSpritesReady,
@@ -103,6 +108,10 @@ export class FarmScene extends Phaser.Scene {
   private layout!: IsoLayout;
   private hud!: Hud;
   private market!: MarketSheet;
+  private ops!: OpsSheet;
+  private farmhandSprite?: Phaser.GameObjects.Image;
+  private farmhandNameTag?: Phaser.GameObjects.Text;
+  private farmhandJobTag?: Phaser.GameObjects.Text;
   private mode: SpeedMode = "x1";
   private nightOverlay?: Phaser.GameObjects.Rectangle;
   private homesteadGlow?: Phaser.GameObjects.Graphics;
@@ -192,6 +201,7 @@ export class FarmScene extends Phaser.Scene {
     this.track = trackKeys(this.state);
     this.paintedSprites = paintedSpritesReady(this.textures);
     ensureCowDotTexture(this);
+    ensureFarmhandTexture(this);
     if (this.paintedSprites) ensureCowViewTextures(this);
     this.buildProceduralFallback();
     if (this.paintedSprites) {
@@ -237,6 +247,7 @@ export class FarmScene extends Phaser.Scene {
       onConfirmMove: () => this.confirmPendingMove(),
       onCancelMove: () => this.cancelPendingMove(),
       onOpenMarket: () => this.market.open(),
+      onOpenOps: () => this.ops.open(),
       onDayLength: (seconds) => this.setDayLength(seconds),
       onSheetExpanded: (expanded) => {
         getGameFlow().setHudPanel("herdSheet", Boolean(expanded));
@@ -258,6 +269,43 @@ export class FarmScene extends Phaser.Scene {
       onOpen: () => getGameFlow().setHudPanel("market", true),
       onClose: () => getGameFlow().setHudPanel("market", false),
     });
+    this.ops = mountOpsSheet({
+      getState: () => this.state,
+      onChange: () => {
+        this.syncHud();
+        this.ops.refresh(this.state);
+        this.persist();
+      },
+      onToast: (text) => this.hud.setHint(text),
+      onCritical: (title, body) => this.hud.showEventCard(title, body),
+      onOpen: () => getGameFlow().setHudPanel("market", true),
+      onClose: () => getGameFlow().setHudPanel("market", false),
+    });
+    this.farmhandSprite = this.add.image(0, 0, SPRITE_KEYS.farmhand);
+    this.farmhandSprite.setOrigin(0.5, 0.92);
+    this.farmhandSprite.setVisible(false);
+    this.farmhandNameTag = this.add
+      .text(0, 0, "Piet", {
+        fontFamily: "system-ui, sans-serif",
+        fontSize: "14px",
+        color: "#fff6e8",
+        backgroundColor: "#1a3550cc",
+        padding: { x: 6, y: 3 },
+      })
+      .setOrigin(0.5, 1)
+      .setVisible(false)
+      .setDepth(26000);
+    this.farmhandJobTag = this.add
+      .text(0, 0, "", {
+        fontFamily: "system-ui, sans-serif",
+        fontSize: "11px",
+        color: "#2b2118",
+        backgroundColor: "#ffcc66ee",
+        padding: { x: 5, y: 2 },
+      })
+      .setOrigin(0.5, 1)
+      .setVisible(false)
+      .setDepth(26000);
     flow.attachFarmHud(this.hud);
     this.hud.setSpeed(this.mode);
     if (!flow.getTutorialStep()) this.hud.setHint(COPY.hintStart);
@@ -278,6 +326,7 @@ export class FarmScene extends Phaser.Scene {
       document.removeEventListener("visibilitychange", this.onVisibilityChange);
       this.hud?.destroy();
       this.market?.destroy();
+      this.ops?.destroy();
     });
     const canvas = this.game.canvas;
     canvas.style.touchAction = "none";
@@ -665,7 +714,7 @@ export class FarmScene extends Phaser.Scene {
         const body = [
           "Income N$0. Expenses N$8,500.",
           "Labour N$2,400. Driven by ranch size and head count share (No farmhand on payroll.). Hint: one farmhand is enough at this herd size until you split camps.",
-          "Lick N$1,800. Driven by 120 head at about N$31.25/head/month (NAU feed split). Hint: match summer phosphate vs winter protein lick in Step 2; skip double fills.",
+          "Lick N$1,800. 120 head on summer phosphate P12. Change lick in Ranch ops to match the season.",
         ].join("\n");
         this.hud.showEventCard("Month in review", body);
         return true;
@@ -687,6 +736,60 @@ export class FarmScene extends Phaser.Scene {
       captureDiagnostics: () => this.captureDiagnostics(),
       canvasMeanLuminance: () => this.canvasMeanLuminance(),
       countCattleInView: () => this.countCattleInView(),
+      countFarmhandInView: () => this.countFarmhandInView(),
+      farmhandScreenHeightPx: () => this.farmhandScreenHeightPx(),
+      openOps: () => {
+        this.ops.open("default");
+        return true;
+      },
+      frameFarmhandForCapture: () => this.frameFarmhandForCapture(),
+      prepareFarmhandWalkCapture: () => {
+        hireFarmhand(this.state);
+        setWorkPriority(this.state, "check_water", 3);
+        for (let i = 0; i < 8; i += 1) tickFarmhandWorld(this.state);
+        this.placeFarmhand();
+        return this.frameFarmhandForCapture();
+      },
+      queueDemoPlayerEvent: () => {
+        if (this.state.story) {
+          this.state.story.pendingPlayerEvent = {
+            id: "demo-event",
+            kind: "pump_fault",
+            title: "Pump fault",
+            body: "Water pressure dropped at the main windmill. Fix it today or risk an emergency callout.",
+            ignoreConsequence: "Emergency repair about N$8,500 if you wait.",
+            critical: false,
+            actions: [
+              { id: "repair_now", label: "Repair now (N$1,200)", costNad: 1200 },
+              { id: "defer_fix", label: "Ignore for now", costNad: 0 },
+            ],
+          };
+        }
+        this.ops.open("event");
+        this.ops.refresh(this.state);
+        return true;
+      },
+      openOpsLeversCapture: () => {
+        this.ops.open("levers");
+        this.ops.refresh(this.state);
+        return true;
+      },
+      openOpsWorkGridCapture: () => {
+        this.ops.open("grid");
+        this.ops.refresh(this.state);
+        return true;
+      },
+      showMonthDiaryDemo: () => {
+        const body = [
+          "What happened",
+          "Jackal scare: night guard posted.",
+          "Cash move: income N$0, spend N$9,200.",
+          "Why the bills moved",
+          "Diesel N$1,450. About 120 L from 6 bakkie runs and windmill.",
+        ].join("\n");
+        this.hud.showEventCard("Farm diary", body);
+        return true;
+      },
       herdInTransit: () => herdInTransit(this.state.herd),
       frameHerdForCapture: (zoom = 1.05) => this.frameHerdForCapture(zoom),
       setSpeed: (mode: SpeedMode) => {
@@ -805,6 +908,7 @@ export class FarmScene extends Phaser.Scene {
       this.refreshGrass();
       this.syncHud();
       this.market.refresh(this.state);
+      this.ops.refresh(this.state);
       this.persist();
       getGameFlow().onSimDayAdvanced(this.state);
     }
@@ -831,6 +935,7 @@ export class FarmScene extends Phaser.Scene {
     this.syncHerdFromSim();
     if (this.state.herd.campId !== prevCamp) this.redrawFences();
     this.placeHerd(time);
+    this.placeFarmhand();
     this.refreshCampLabelScale();
     this.cullProps();
     this.cullChunks();
@@ -1311,6 +1416,92 @@ export class FarmScene extends Phaser.Scene {
       CONFIG.view.tileHeight,
     );
     this.herdLabel.setDepth(20000 + tile.x + tile.y);
+  }
+
+  private frameFarmhandForCapture(): boolean {
+    const presence = this.state.story?.farmhandPresence;
+    if (!presence) return false;
+    const foot = tileCenter(
+      presence.tileX,
+      presence.tileY,
+      this.layout,
+      CONFIG.view.tileWidth,
+      CONFIG.view.tileHeight,
+    );
+    this.jumpCameraTo(foot.x, foot.y, true);
+    const camera = this.cameras.main;
+    const targetScreenPx = 46;
+    const worldH = FARMHAND_TEXTURE_HEIGHT * this.farmhandTargetScale();
+    const zoom = clampZoom(targetScreenPx / Math.max(8, worldH), this.minZoom, this.maxZoom);
+    camera.setZoom(zoom);
+    camera.centerOn(foot.x, foot.y - 8);
+    this.clampScroll();
+    this.placeFarmhand();
+    return this.countFarmhandInView() >= 1 && this.farmhandScreenHeightPx() >= 30;
+  }
+
+  private farmhandTargetScale(): number {
+    const cowScale = cattleDisplayScale(1);
+    return cowScale * 2.85;
+  }
+
+  private farmhandScreenHeightPx(): number {
+    if (!this.farmhandSprite?.visible) return 0;
+    return this.farmhandSprite.displayHeight * this.cameras.main.zoom;
+  }
+
+  private placeFarmhand(): void {
+    if (!this.farmhandSprite) return;
+    const hired = this.state.story?.farmhand.hired;
+    const presence = this.state.story?.farmhandPresence;
+    if (!hired || !presence) {
+      this.farmhandSprite.setVisible(false);
+      this.farmhandNameTag?.setVisible(false);
+      this.farmhandJobTag?.setVisible(false);
+      return;
+    }
+    const foot = tileCenter(
+      presence.tileX,
+      presence.tileY,
+      this.layout,
+      CONFIG.view.tileWidth,
+      CONFIG.view.tileHeight,
+    );
+    const bob =
+      presence.walkProgress < 1 && !this.reduceMotion
+        ? Math.sin(performance.now() / 200) * 2
+        : 0;
+    const scale = this.farmhandTargetScale();
+    this.farmhandSprite.setPosition(foot.x, foot.y + bob);
+    this.farmhandSprite.setScale(scale);
+    this.farmhandSprite.setDepth(20000 + presence.tileX + presence.tileY);
+    this.farmhandSprite.setVisible(true);
+    const jobShort =
+      presence.activeJob && WORK_JOB_LABELS[presence.activeJob]
+        ? WORK_JOB_LABELS[presence.activeJob]
+        : "On duty";
+    if (this.farmhandNameTag) {
+      this.farmhandNameTag.setPosition(foot.x, foot.y - this.farmhandSprite.displayHeight - 6 + bob);
+      this.farmhandNameTag.setDepth(this.farmhandSprite.depth + 2);
+      this.farmhandNameTag.setVisible(true);
+    }
+    if (this.farmhandJobTag) {
+      this.farmhandJobTag.setText(jobShort);
+      this.farmhandJobTag.setPosition(foot.x, foot.y - this.farmhandSprite.displayHeight - 28 + bob);
+      this.farmhandJobTag.setDepth(this.farmhandSprite.depth + 2);
+      this.farmhandJobTag.setVisible(true);
+    }
+  }
+
+  private countFarmhandInView(): number {
+    if (!this.farmhandSprite?.visible) return 0;
+    const view = this.cameras.main.worldView;
+  const pad = 8;
+    const x = this.farmhandSprite.x;
+    const y = this.farmhandSprite.y;
+    return x >= view.x - pad && x <= view.right + pad && y >= view.y - pad && y <= view.bottom + pad
+      ? 1
+      : 0;
   }
 
   private placeHerd(time: number): void {

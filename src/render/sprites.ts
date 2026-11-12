@@ -29,7 +29,30 @@ export const SPRITE_KEYS = {
   cattleAngus: "spr-cattle-angus",
   cattleCalf: "spr-cattle-calf",
   cowDot: "spr-cow-dot",
+  farmhand: "spr-farmhand",
 } as const;
+
+/** Large readable worker until step 3 walk art lands. */
+export function ensureFarmhandTexture(scene: Phaser.Scene): void {
+  const key = SPRITE_KEYS.farmhand;
+  if (scene.textures.exists(key)) return;
+  const g = scene.make.graphics({ x: 0, y: 0 });
+  g.fillStyle(0xff8c1a, 1);
+  g.fillRoundedRect(14, 26, 36, 44, 4);
+  g.fillStyle(0xf2c9a0, 1);
+  g.fillCircle(32, 20, 14);
+  g.fillStyle(0x3d2c1e, 1);
+  g.fillEllipse(32, 16, 20, 10);
+  g.fillStyle(0x1a3550, 1);
+  g.fillRoundedRect(22, 62, 20, 26, 3);
+  g.fillStyle(0x2a2a2a, 1);
+  g.fillRect(18, 86, 14, 8);
+  g.fillRect(38, 86, 14, 8);
+  g.generateTexture(key, 64, 96);
+  g.destroy();
+}
+
+export const FARMHAND_TEXTURE_HEIGHT = 96;
 
 export const SPRITE_FILES: { key: string; file: string }[] = [
   { key: SPRITE_KEYS.farmhouse, file: "farmhouse.png" },

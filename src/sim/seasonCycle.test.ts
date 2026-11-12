@@ -41,7 +41,8 @@ describe("month in review", () => {
     state.date = { year: 2026, month: 8, day: 31, hour: 6 };
     closeMonth(state);
     const card = state.story!.pendingCards.find((c) => c.kind === "summary");
-    expect(card?.body).toContain("Costs\nLabour");
+    expect(card?.body).toContain("Why the bills moved");
+    expect(card?.body).toContain("Labour N$");
     expect(card?.body).not.toContain("Dry season ended");
   });
 });

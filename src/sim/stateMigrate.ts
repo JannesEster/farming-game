@@ -2,14 +2,16 @@ import { CONFIG } from "./config";
 import { defaultRanchClock } from "./clock";
 import { defaultClassLiveweights, migrateLegacyComposition } from "./cattleClasses";
 import { defaultNotificationState } from "./notifications";
+import { defaultCostLevers, defaultInfrastructureWear } from "./levers";
+import { defaultWorkGrid, freshDailyPlay } from "./workGrid";
 import { createStoryState, defaultComposition } from "./story";
 import type { GameState } from "./types";
 import type { HerdComposition } from "./storyTypes";
 
-export const GAME_STATE_VERSION = 4;
+export const GAME_STATE_VERSION = 5;
 
 export type LegacySavedGame = {
-  version?: 1 | 2 | 3 | 4;
+  version?: 1 | 2 | 3 | 4 | 5;
   savedAt?: string;
   state?: GameState;
 };
@@ -49,6 +51,29 @@ export function migrateState(state: GameState): GameState {
   }
   if (!state.notifications) state.notifications = defaultNotificationState();
   if (state.date.hour < 0 || state.date.hour > 23) state.date.hour = CONFIG.calendar.startHour;
+  if (state.story) {
+    if (!state.story.costLevers) state.story.costLevers = defaultCostLevers();
+    if (!state.story.workGrid) state.story.workGrid = defaultWorkGrid();
+    if (!state.story.infrastructure) state.story.infrastructure = defaultInfrastructureWear();
+    if (!state.story.dailyPlay) state.story.dailyPlay = freshDailyPlay();
+    if (!state.story.monthDiary) state.story.monthDiary = [];
+    if (state.story.pendingPlayerEvent === undefined) state.story.pendingPlayerEvent = null;
+    if (state.story.farmhand.hired && !state.story.farmhandPresence) {
+      state.story.farmhandPresence = {
+        tileX: state.width / 2,
+        tileY: state.height / 2,
+        targetTileX: state.width / 2,
+        targetTileY: state.height / 2,
+        activeJob: null,
+        activityLabel: "At the yard",
+        walkProgress: 1,
+      };
+    }
+    if (state.story.farmhand.job && state.story.workGrid.check_water === 0 && state.story.workGrid.move_herd_help === 0) {
+      if (state.story.farmhand.job === "check_water") state.story.workGrid.check_water = 2;
+      if (state.story.farmhand.job === "move_herd") state.story.workGrid.move_herd_help = 2;
+    }
+  }
   return state;
 }
 
@@ -56,7 +81,9 @@ export function parseLegacySaved(raw: string): GameState | null {
   try {
     const data = JSON.parse(raw) as LegacySavedGame;
     if (!data.state) return null;
-    if (data.version !== undefined && data.version !== 1 && data.version !== 2 && data.version !== 3) return null;
+    if (data.version !== undefined && data.version !== 1 && data.version !== 2 && data.version !== 3 && data.version !== 4) {
+    return null;
+  }
     const state = data.state;
     if (!Array.isArray(state.camps) || !state.herd || !state.date) return null;
     return migrateState(state);

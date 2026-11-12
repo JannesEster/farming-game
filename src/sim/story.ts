@@ -8,7 +8,17 @@ import {
 } from "./cattleClasses";
 import { applyStarvationDay, feedContextForHerd, queueHusbandryWarnings } from "./consequences";
 import { tickDrought, droughtWatchScore } from "./drought";
-import { farmhandWaterBonus, tickFarmhand } from "./workers";
+import {
+  defaultCostLevers,
+  defaultInfrastructureWear,
+  ensureStep2State,
+  tickInfrastructureWear,
+  tickLickCondition,
+} from "./levers";
+import { refreshDailyGoal, rollMorningDecision } from "./morningPlay";
+import { tickPlayerEvents } from "./playerEvents";
+import { defaultWorkGrid, freshDailyPlay, tickDailyGoal, tickFarmhandWorld } from "./workGrid";
+import { tickFarmhand } from "./workers";
 import { isLastGameDayOfMonth } from "./calendar";
 import {
   closeMonth,
@@ -61,6 +71,12 @@ export function createStoryState(headCount: number, config: GameConfig = CONFIG)
     demandYesterdayKg: 0,
     moveWarnCampId: null,
     thirstWarnCampId: null,
+    costLevers: defaultCostLevers(),
+    workGrid: defaultWorkGrid(),
+    infrastructure: defaultInfrastructureWear(),
+    dailyPlay: freshDailyPlay(),
+    monthDiary: [],
+    pendingPlayerEvent: null,
   };
 }
 
@@ -79,6 +95,9 @@ export function afterFeedDay(
   ecologyScale = 1,
 ): void {
   if (!state.story) state.story = createStoryState(state.herd.headCount, config);
+  ensureStep2State(state);
+  refreshDailyGoal(state);
+  rollMorningDecision(state);
   state.story.eatenYesterdayKg = eatenKg;
   state.story.demandYesterdayKg = demandKg;
   queueHusbandryWarnings(state, config);
@@ -94,10 +113,10 @@ export function afterFeedDay(
     );
   }
 
-  const bonus = farmhandWaterBonus(state, config);
-  if (bonus > 0) {
-    state.herd.condition = Math.min(config.herd.conditionMax, state.herd.condition + bonus);
-  }
+  tickInfrastructureWear(state, config);
+  tickLickCondition(state, config);
+  tickFarmhandWorld(state, config);
+  tickDailyGoal(state, config);
 
   const notes = applyStarvationDay(state, feedContextForHerd(state, config), config);
   if (notes.length) state.story.lastDailyNote = notes[notes.length - 1];
@@ -108,6 +127,7 @@ export function afterFeedDay(
   tickDrought(state, config);
   const farmNote = tickFarmhand(state, config);
   if (farmNote) state.story.lastDailyNote = farmNote;
+  tickPlayerEvents(state, config);
   weeklyDigest(state, config);
 
   if (isLastGameDayOfMonth(state, config)) closeMonth(state, config);

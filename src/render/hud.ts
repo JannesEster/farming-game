@@ -74,6 +74,7 @@ export function mountHud(options: {
   onConfirmMove: () => void;
   onCancelMove: () => void;
   onOpenMarket: () => void;
+  onOpenOps?: () => void;
   onSheetExpanded?: (expanded: boolean) => void;
   onHerdLocator?: () => void;
   onDayLength?: (seconds: DayLengthSeconds) => void;
@@ -97,11 +98,15 @@ export function mountHud(options: {
           <button type="button" id="speed-x2" aria-label="Speed 2x">${ICONS.x2}</button>
           <button type="button" id="speed-x3" aria-label="Speed 3x">${ICONS.x3}</button>
         </div>
+        <button type="button" class="chip dock-ranch" id="ranch-open" title="Ranch jobs and costs">
+          Ranch <span class="dock-badge" id="ranch-badge" hidden aria-hidden="true">!</span>
+        </button>
         <button type="button" class="icon-btn" id="menu-overflow" aria-label="More actions" aria-expanded="false">${ICONS.menu}</button>
       </div>
       <div class="overflow-menu" id="overflow-menu" hidden>
         <button type="button" id="view-home">Home</button>
         <button type="button" id="market-open">Sell / market</button>
+        <button type="button" id="ops-open">Ranch ops</button>
         <label class="settings-row" for="day-length-select">Day length</label>
         <select id="day-length-select" aria-label="Day length in minutes">
           <option value="180">3 minutes</option>
@@ -111,6 +116,7 @@ export function mountHud(options: {
         <button type="button" id="new-farm">${COPY.newFarmLabel}</button>
       </div>
     </header>
+    <p class="daily-goal-strip" id="daily-goal-strip" hidden></p>
     <aside class="news-rail" id="news-rail" aria-label="News">
       <div class="letter-stack" id="letter-stack" hidden></div>
       <ul class="alert-strip" id="alert-strip" hidden></ul>
@@ -186,6 +192,10 @@ export function mountHud(options: {
   const moveConfirmBtn = requiredButton(root, "move-confirm-btn");
   const moveCancelBtn = requiredButton(root, "move-cancel-btn");
   const marketBtn = requiredButton(root, "market-open");
+  const opsBtn = requiredButton(root, "ops-open");
+  const ranchBtn = requiredButton(root, "ranch-open");
+  const ranchBadge = required(root, "ranch-badge");
+  const dailyGoalStrip = required(root, "daily-goal-strip");
   const overflowBtn = requiredButton(root, "menu-overflow");
   const eventCard = required(root, "event-card");
   const eventTitle = required(root, "event-title");
@@ -227,6 +237,16 @@ export function mountHud(options: {
     overflowMenu.hidden = true;
     overflowBtn.setAttribute("aria-expanded", "false");
     options.onOpenMarket();
+  });
+  opsBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    overflowMenu.hidden = true;
+    overflowBtn.setAttribute("aria-expanded", "false");
+    options.onOpenOps?.();
+  });
+  ranchBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    options.onOpenOps?.();
   });
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
   let toastHeld = false;
@@ -387,6 +407,16 @@ export function mountHud(options: {
       seasonEl.innerHTML = dry ? ICONS.dry : ICONS.rain;
       seasonEl.title = seasonText;
       cashEl.textContent = formatHudMoney(state.cashNad);
+      const play = state.story?.dailyPlay;
+      if (play) {
+        dailyGoalStrip.hidden = false;
+        dailyGoalStrip.textContent = play.goalMet ? `Goal done: ${play.goalText}` : play.goalText;
+      } else {
+        dailyGoalStrip.hidden = true;
+      }
+      const pendingEvent = state.story?.pendingPlayerEvent;
+      ranchBadge.hidden = !pendingEvent;
+      ranchBadge.setAttribute("aria-hidden", pendingEvent ? "false" : "true");
       rainEl.textContent = formatHudRain(state.seasonRainMm);
       rainEl.classList.toggle("is-raining", state.todayRainMm > 0);
 
@@ -443,8 +473,12 @@ export function mountHud(options: {
           }
           leftEl.textContent = formatGrassLeft(daysLeft, fraction);
           const status = formatFeedStatus(daysLeft);
-          statusEl.textContent = status;
-          statusEl.hidden = status.length === 0;
+          const farmhand = state.story?.farmhand;
+          const presence = state.story?.farmhandPresence;
+          const farmLine =
+            farmhand?.hired && presence ? `Piet: ${presence.activityLabel}` : "";
+          statusEl.textContent = [status, farmLine].filter(Boolean).join(" · ");
+          statusEl.hidden = statusEl.textContent.length === 0;
         }
 
         if (ui.pendingCampId !== null) {

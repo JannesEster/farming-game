@@ -134,7 +134,10 @@ export function mountMarketSheet(options: {
     if (fh?.hired) {
       hireBtn.hidden = true;
       jobsEl.hidden = false;
-      workerEl.textContent = `Piet on the payroll · job: ${fh.job ?? "none"}`;
+      const presence = state.story?.farmhandPresence;
+      workerEl.textContent = presence
+        ? `Piet · ${presence.activityLabel}. Set priorities in Ranch ops.`
+        : "Piet on the payroll. Open Ranch ops for the work grid.";
     } else {
       hireBtn.hidden = false;
       jobsEl.hidden = true;

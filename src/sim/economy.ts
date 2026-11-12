@@ -3,6 +3,14 @@ import {
   tollyNadPerKgLive,
   totalCompositionHead,
 } from "./cattleClasses";
+import {
+  dieselCostNad,
+  ensureStep2State,
+  lickCostNad,
+  lickLabel,
+  pumpLabel,
+  repairCostNad,
+} from "./levers";
 import type { SaleChannel, SaleLine, StockClass } from "./storyTypes";
 import type { GameState } from "./types";
 
@@ -51,13 +59,17 @@ export function monthlyOperatingTotalNad(
 }
 
 export function monthlyOperatingCosts(state: GameState, config: GameConfig = CONFIG): MonthlyCostBreakdown {
+  ensureStep2State(state);
   const totalBase = monthlyOperatingTotalNad(state, config);
   const labourShare =
     totalBase * config.economy.operatingCostShareLabour +
     (state.story?.farmhand.hired ? state.story.farmhand.wageCashNad : 0);
-  const lick = totalBase * config.economy.operatingCostShareLick;
-  const diesel = totalBase * config.economy.operatingCostShareDiesel;
-  const repairs = totalBase * config.economy.operatingCostShareRepairs;
+  const lickBase = totalBase * config.economy.operatingCostShareLick;
+  const dieselBase = totalBase * config.economy.operatingCostShareDiesel;
+  const repairsBase = totalBase * config.economy.operatingCostShareRepairs;
+  const lick = lickCostNad(state, lickBase);
+  const diesel = dieselCostNad(state, dieselBase, config);
+  const repairs = repairCostNad(state, repairsBase);
   const other =
     totalBase * config.economy.operatingCostShareOther +
     config.economy.stateVetAdminNadPerMonth +
@@ -76,20 +88,23 @@ export function monthlyOperatingCosts(state: GameState, config: GameConfig = CON
   return { total, labour, lick, diesel, repairs, other, lines };
 }
 
-/** Player facing hints for month review lines. TODO assumptions where noted. */
+/** @deprecated use buildMonthDiaryBody in monthDiary.ts */
 export function monthlyCostExplainers(
   state: GameState,
   costs: MonthlyCostBreakdown,
-  config: GameConfig = CONFIG,
+  _config: GameConfig = CONFIG,
 ): string[] {
   const head = state.herd.headCount;
-  const hired = state.story?.farmhand.hired ? "Includes farmhand wage." : "No farmhand on payroll.";
+  const levers = state.story?.costLevers;
+  const hired = state.story?.farmhand.hired ? "Includes farmhand wage." : "You did not pay a farmhand wage.";
+  const lickNote = levers ? lickLabel(levers.lick) : "standard lick";
+  const pumpNote = levers ? pumpLabel(levers.pump) : "windmill";
   return [
-    `Labour N$${Math.round(costs.labour)}. Driven by ranch size and head count share (${hired}). Hint: one farmhand is enough at this herd size until you split camps.`,
-    `Lick N$${Math.round(costs.lick)}. Driven by ${head} head at about N$${config.economy.lickNadPerHeadPerMonth.toFixed(2)}/head/month (NAU feed split). Hint: match summer phosphate vs winter protein lick in Step 2; skip double fills.`,
-    `Diesel N$${Math.round(costs.diesel)}. Driven by water runs and vehicle trips (anchor farm uses about 18% of running costs). Hint: batch lick and water rounds; solar pump cuts trips over time.`,
-    `Repairs N$${Math.round(costs.repairs)}. Driven by fence and windmill wear on camp kilometres. Hint: fix fences before they fail; maintain windmills instead of emergency callouts.`,
-    `Other N$${Math.round(costs.other)}. Vet admin and vaccine levy per head. Hint: keep head count records tidy to avoid rework fees.`,
+    `Labour N$${Math.round(costs.labour)}. Ranch size and head count. ${hired}`,
+    `Lick N$${Math.round(costs.lick)}. ${head} head on ${lickNote}. Match season in Ranch ops.`,
+    `Diesel N$${Math.round(costs.diesel)}. Bakkie runs and ${pumpNote.toLowerCase()}. Cut runs or upgrade pump to save.`,
+    `Repairs N$${Math.round(costs.repairs)}. Fence and pump wear. Stay on maintenance to avoid callouts.`,
+    `Other N$${Math.round(costs.other)}. Vet admin and vaccines per head.`,
   ];
 }
 
