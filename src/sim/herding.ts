@@ -12,8 +12,8 @@ import {
   walkGameHours,
   type TransitSpeed,
 } from "./transit";
-import { herderPathProgressBehindTail } from "./convoy";
-import { pathLengthKm, planHerdPath, planPersonPath, pointOnPath } from "./path";
+import { columnMetrics, herderPathProgressBehindTail, herderStandTile } from "./convoy";
+import { pathLengthKm, planHerdPath, planPersonPath, pointOnPath, WATER_STRUCTURE_CLEAR_TILES } from "./path";
 import type { GameState, HerdTransit, TilePoint } from "./types";
 import type { PersonPresence } from "./storyTypes";
 import type { HerderId } from "./types";
@@ -250,13 +250,38 @@ export function syncHerderToApproach(state: GameState): void {
   presence.atHome = false;
 }
 
-export function syncHerderOnDrive(state: GameState, config: GameConfig = CONFIG): void {
+function standClearsWater(state: GameState, tile: TilePoint): boolean {
+  const limit = WATER_STRUCTURE_CLEAR_TILES * WATER_STRUCTURE_CLEAR_TILES;
+  for (const feature of state.features) {
+    if (feature.kind !== "windmill" && feature.kind !== "trough" && feature.kind !== "reservoir" && feature.kind !== "solar_pump") {
+      continue;
+    }
+    const dx = tile.x - feature.x;
+    const dy = tile.y - feature.y;
+    if (dx * dx + dy * dy < limit) return false;
+  }
+  return true;
+}
+
+function standOnRoute(state: GameState, transit: HerdTransit, tile: TilePoint): boolean {
+  const x = Math.round(tile.x);
+  const y = Math.round(tile.y);
+  if (x < 0 || y < 0 || x >= state.width || y >= state.height) return false;
+  const id = state.campIds[y * state.width + x];
+  if (id === state.herd.campId || id === transit.toCampId) return true;
+  return transit.path.some((step) => Math.max(Math.abs(step.x - x), Math.abs(step.y - y)) <= 1);
+}
+
+export function syncHerderOnDrive(state: GameState, _config: GameConfig = CONFIG): void {
   const transit = state.herd.transit;
   if (!transit || transit.phase !== "drive") return;
   const presence = presenceForHerder(state, transit.herder);
   if (!presence || transit.path.length < 2) return;
-  const trail = herderPathProgressBehindTail(state, config);
-  const tile = pointOnPath(transit.path, trail);
+  const metrics = columnMetrics(transit.path, transit.progress, state.herd.headCount);
+  let tile = herderStandTile(transit.path, transit.progress, state.herd.headCount);
+  if (!standOnRoute(state, transit, tile) || !standClearsWater(state, tile)) {
+    tile = pointOnPath(transit.path, metrics.herderProgress);
+  }
   const moved = stepPerson(presence, tile);
   presence.targetTileX = tile.x;
   presence.targetTileY = tile.y;

@@ -1,4 +1,5 @@
 import { CONFIG, type GameConfig } from "./config";
+import { pointOnPath } from "./path";
 import type { GameState, TilePoint } from "./types";
 
 function pathLengthTiles(path: TilePoint[]): number {
@@ -45,7 +46,8 @@ export function columnMetrics(
   const centerTiles = progress * total;
   const span = Math.min(MOB_LENGTH_TILES, Math.max(0, centerTiles * 0.5));
   const rearTiles = Math.max(0, centerTiles - span);
-  const gap = Math.min(HERDER_BEHIND_TILES, 0.85 + centerTiles * 0.052);
+  // Stay close at the first steps so he keeps walking, then open to 3.2 tiles behind the tail.
+  const gap = Math.min(3, 0.6 + Math.max(0, centerTiles - 1.2) * 0.28);
   const herderTiles = Math.max(0, rearTiles - gap);
   return {
     total,
@@ -71,4 +73,27 @@ export function herderPathProgressBehindTail(state: GameState, _config: GameConf
   const transit = state.herd.transit;
   if (!transit || transit.path.length < 2) return transit?.progress ?? 0;
   return columnMetrics(transit.path, transit.progress, state.herd.headCount).herderProgress;
+}
+
+/**
+ * Stand the herder on the reverse of the mob's travel heading, behind the rear
+ * animal. A bend in the path must not leave him beside or in front of the tail.
+ * Once the column has moved, he sits about 3.2 tiles behind that tail.
+ */
+export function herderStandTile(path: TilePoint[], progress: number, count: number): TilePoint {
+  const metrics = columnMetrics(path, progress, count);
+  const rear = pointOnPath(path, metrics.rearProgress);
+  const look = Math.min(1, metrics.rearProgress + 1.4 / Math.max(metrics.total, 1));
+  const ahead = pointOnPath(path, Math.max(look, metrics.rearProgress));
+  let dx = ahead.x - rear.x;
+  let dy = ahead.y - rear.y;
+  let len = Math.hypot(dx, dy);
+  if (len < 0.04) {
+    const fallback = pointOnPath(path, metrics.herderProgress);
+    return { x: fallback.x, y: fallback.y };
+  }
+  dx /= len;
+  dy /= len;
+  const back = metrics.centerTiles < 2.4 ? Math.max(0.45, metrics.centerTiles * 0.4) : 3.2;
+  return { x: rear.x - dx * back, y: rear.y - dy * back };
 }

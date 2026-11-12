@@ -562,7 +562,7 @@ export const CONFIG: GameConfig = {
     placementAttempts: 48,
     homesteadTilesX: 7,
     homesteadTilesY: 6,
-    treeChance: 0.026,
+    treeChance: 0.065,
     bushChanceOpen: 0.12,
     bushChanceBushy: 0.3,
     outsidePlantFactor: 0.4,

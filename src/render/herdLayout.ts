@@ -339,6 +339,75 @@ function nudgeInsideCamp(
   return { x: x + (pushX / len) * 14, y: y + (pushY / len) * 14 };
 }
 
+const WATER_KINDS = new Set(["windmill", "trough", "reservoir", "solar_pump"]);
+/**
+ * How far a cow's feet stay from each structure, in tiles.
+ * The windmill cut-out reaches about 5 tile-steps from its foot (11 m tower),
+ * so 5.1 tiles keeps bodies off the legs and the wheel. Tanks and troughs are smaller.
+ */
+function waterFootClearTiles(kind: string): number {
+  if (kind === "windmill") return 5.6;
+  if (kind === "reservoir") return 2.8;
+  if (kind === "trough") return 2.3;
+  return 2.4;
+}
+
+function shiftOffWater(
+  state: GameState,
+  layout: IsoLayout,
+  tileW: number,
+  tileH: number,
+  foot: { x: number; y: number },
+  fallback: { x: number; y: number },
+  legal: (x: number, y: number) => boolean,
+): { x: number; y: number } {
+  const tilePx = Math.hypot(tileW / 2, tileH / 2);
+  const centers = state.features
+    .filter((feature) => WATER_KINDS.has(feature.kind))
+    .map((feature) => ({
+      ...tileCenter(feature.x, feature.y, layout, tileW, tileH),
+      need: waterFootClearTiles(feature.kind) * tilePx,
+    }));
+  const score = (point: { x: number; y: number }) => {
+    let worst = Number.POSITIVE_INFINITY;
+    for (const center of centers) {
+      worst = Math.min(worst, Math.hypot(point.x - center.x, point.y - center.y) / center.need);
+    }
+    return worst;
+  };
+  let pushed = { x: foot.x, y: foot.y };
+  for (const center of centers) {
+    const dx = pushed.x - center.x;
+    const dy = pushed.y - center.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist >= center.need) continue;
+    const awayX = dist < 1 ? fallback.x - center.x : dx;
+    const awayY = dist < 1 ? fallback.y - center.y : dy;
+    const away = Math.hypot(awayX, awayY) || 1;
+    pushed = {
+      x: center.x + (awayX / away) * center.need,
+      y: center.y + (awayY / away) * center.need,
+    };
+  }
+  if (legal(pushed.x, pushed.y)) return pushed;
+  let best = legal(foot.x, foot.y) ? foot : fallback;
+  let bestScore = score(best);
+  for (let step = 9; step >= 1; step -= 1) {
+    const t = step / 10;
+    const trial = {
+      x: foot.x + (pushed.x - foot.x) * t,
+      y: foot.y + (pushed.y - foot.y) * t,
+    };
+    if (!legal(trial.x, trial.y)) continue;
+    const next = score(trial);
+    if (next > bestScore) {
+      best = trial;
+      bestScore = next;
+    }
+  }
+  return best;
+}
+
 /** Queue the herd along the walked path so they file through the gate on camp or track tiles. */
 export function fileAlongPath(
   state: GameState,
@@ -446,6 +515,7 @@ export function fileAlongPath(
     let foot = { x: at.x + px * lane, y: at.y + py * lane };
     if (!legal(foot.x, foot.y)) foot = { x: at.x + px * lane * 0.45, y: at.y + py * lane * 0.45 };
     if (!legal(foot.x, foot.y)) foot = { x: at.x, y: at.y };
+    foot = shiftOffWater(state, layout, tileW, tileH, foot, { x: at.x, y: at.y }, legal);
     const stood = worldToTile(foot.x, foot.y, layout, tileW, tileH);
     const sx = Math.round(stood.x);
     const sy = Math.round(stood.y);
@@ -454,9 +524,10 @@ export function fileAlongPath(
         ? state.campIds[sy * state.width + sx]
         : TILE_OUTSIDE;
     if (stoodId === fromId || stoodId === destId) {
-      foot = nudgeInsideCamp(state, foot.x, foot.y, layout, tileW, tileH);
+      const nudged = nudgeInsideCamp(state, foot.x, foot.y, layout, tileW, tileH);
+      if (legal(nudged.x, nudged.y)) foot = nudged;
     }
-    if (!legal(foot.x, foot.y)) foot = { x: at.x, y: at.y };
+    foot = shiftOffWater(state, layout, tileW, tileH, foot, { x: at.x, y: at.y }, legal);
     const heading = Math.atan2(at.uy, at.ux) + (unitHash(seed, i, 9) - 0.5) * 0.8;
     const octant = cowOctantFromScreen(Math.cos(heading), Math.sin(heading));
     offsets.push({

@@ -48,7 +48,7 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
     terrain: {
       campCountMin: 14,
       campCountMax: 20,
-      treeChance: 0.006,
+      treeChance: 0.015,
       bushChanceOpen: 0.045,
       bushChanceBushy: 0.12,
       peakDmKgPerHa: 900,
@@ -69,7 +69,7 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
     terrain: {
       campCountMin: 10,
       campCountMax: 14,
-      treeChance: 0.034,
+      treeChance: 0.085,
       bushChanceOpen: 0.09,
       bushChanceBushy: 0.2,
       peakDmKgPerHa: 1_500,
@@ -90,7 +90,7 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
     terrain: {
       campCountMin: 12,
       campCountMax: 18,
-      treeChance: 0.026,
+      treeChance: 0.065,
       bushChanceOpen: 0.1,
       bushChanceBushy: 0.24,
       peakDmKgPerHa: 1_600,
@@ -111,7 +111,7 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
     terrain: {
       campCountMin: 11,
       campCountMax: 16,
-      treeChance: 0.016,
+      treeChance: 0.04,
       bushChanceOpen: 0.07,
       bushChanceBushy: 0.16,
       peakDmKgPerHa: 1_350,

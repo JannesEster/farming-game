@@ -336,32 +336,68 @@ function offsetChain(points: RoadPoint[], distance: number): RoadPoint[] {
   });
 }
 
-function strokeChain(
+function pointAlong(points: RoadPoint[], lengths: number[], distance: number): RoadPoint {
+  const total = lengths[lengths.length - 1] ?? 0;
+  const dist = Math.max(0, Math.min(total, distance));
+  let index = 1;
+  while (index < lengths.length - 1 && lengths[index] < dist) index += 1;
+  const start = lengths[index - 1] ?? 0;
+  const span = (lengths[index] ?? start) - start || 1;
+  const t = (dist - start) / span;
+  const a = points[index - 1] ?? points[0];
+  const b = points[index] ?? a;
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+}
+
+/** Dusty brown, only a little lighter than the Kalahari sand (about rgb 194, 107, 38). */
+const RUT_RGB = [198, 118, 48] as const;
+
+function strokeFaded(
   ctx: CanvasRenderingContext2D,
   points: RoadPoint[],
   width: number,
-  color: string,
+  alpha: number,
   blur: number,
+  fadeStart: boolean,
+  fadeEnd: boolean,
+  fadePx: number,
 ): void {
   if (points.length < 2) return;
+  const lengths = [0];
+  for (let i = 1; i < points.length; i += 1) {
+    lengths.push(lengths[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y));
+  }
+  const total = lengths[lengths.length - 1] ?? 0;
+  if (total < 1) return;
   ctx.save();
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  ctx.strokeStyle = color;
   ctx.lineWidth = width;
-  ctx.shadowColor = color;
   ctx.shadowBlur = blur;
-  ctx.beginPath();
-  ctx.moveTo(points[0].x, points[0].y);
-  for (let i = 1; i < points.length; i += 1) ctx.lineTo(points[i].x, points[i].y);
-  ctx.stroke();
+  const step = Math.max(5, width * 0.7);
+  for (let dist = 0; dist < total; dist += step) {
+    const a = pointAlong(points, lengths, dist);
+    const b = pointAlong(points, lengths, Math.min(total, dist + step + 0.8));
+    let fade = 1;
+    if (fadeStart) fade = Math.min(fade, dist / fadePx);
+    if (fadeEnd) fade = Math.min(fade, (total - dist) / fadePx);
+    fade = Math.max(0, Math.min(1, fade));
+    const paint = `rgba(${RUT_RGB[0]}, ${RUT_RGB[1]}, ${RUT_RGB[2]}, ${(alpha * fade).toFixed(3)})`;
+    ctx.strokeStyle = paint;
+    ctx.shadowColor = paint;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
 /**
- * One ground decal for the farm road: a continuous two-track about 4 m wide,
- * plus a soft gravel apron where the truck turns. Drawn once in world space
- * so chunk edges cannot cut it.
+ * One ground decal for the farm road: a narrow two-track, plus a soft gravel
+ * apron where the truck turns. Drawn once in world space so chunk edges cannot cut it.
+ * Each rut is 0.4 m wide and the ruts are 1.6 m centre to centre. The grass between
+ * them is unpainted ground. Ends of the track fade over about 3.5 m.
  */
 export function renderFarmRoad(
   scene: Phaser.Scene,
@@ -433,10 +469,10 @@ export function renderFarmRoad(
   const samples = [...polylines.flat(), ...apron];
   if (samples.length === 0) return null;
 
-  const roadWidth = 4 * PIXELS_PER_METRE;
-  const rutWidth = 0.85 * PIXELS_PER_METRE;
-  const rutOffset = (roadWidth - rutWidth) / 2;
-  const pad = Math.ceil(roadWidth * 1.4);
+  const rutWidth = 0.4 * PIXELS_PER_METRE;
+  const rutOffset = 0.8 * PIXELS_PER_METRE;
+  const fadePx = 3.5 * PIXELS_PER_METRE;
+  const pad = Math.ceil(rutOffset * 2 + rutWidth + fadePx * 0.35);
   let minX = Number.POSITIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
   let maxX = Number.NEGATIVE_INFINITY;
@@ -464,20 +500,26 @@ export function renderFarmRoad(
     const x = point.x - minX;
     const y = point.y - minY;
     const paint = ctx.createRadialGradient(x, y, apronRadius * 0.15, x, y, apronRadius);
-    paint.addColorStop(0, "rgba(214, 186, 140, 0.42)");
-    paint.addColorStop(0.5, "rgba(204, 174, 126, 0.16)");
-    paint.addColorStop(1, "rgba(204, 174, 126, 0)");
+    paint.addColorStop(0, "rgba(176, 112, 46, 0.22)");
+    paint.addColorStop(0.55, "rgba(170, 104, 42, 0.08)");
+    paint.addColorStop(1, "rgba(170, 104, 42, 0)");
     ctx.fillStyle = paint;
     ctx.beginPath();
     ctx.arc(x, y, apronRadius, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  for (const line of polylines) {
+  const degree = new Map<string, number>();
+  for (const key of spineKeys) degree.set(key, neighbours(key).length);
+  for (let chainIndex = 0; chainIndex < polylines.length; chainIndex += 1) {
+    const line = polylines[chainIndex];
+    const keys = chains[chainIndex];
+    const fadeStart = (degree.get(keys[0]) ?? 0) <= 1;
+    const fadeEnd = (degree.get(keys[keys.length - 1]) ?? 0) <= 1;
     const shifted = [-rutOffset, rutOffset].map((distance) => local(offsetChain(line, distance)));
     for (const rut of shifted) {
-      strokeChain(ctx, rut, rutWidth + 5, "rgba(196, 158, 104, 0.35)", 2);
-      strokeChain(ctx, rut, rutWidth, "rgba(224, 192, 136, 0.96)", 0);
+      strokeFaded(ctx, rut, rutWidth + 1.4, 0.16, 0.7, fadeStart, fadeEnd, fadePx);
+      strokeFaded(ctx, rut, rutWidth, 0.48, 0, fadeStart, fadeEnd, fadePx);
     }
   }
 

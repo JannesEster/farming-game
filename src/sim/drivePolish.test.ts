@@ -7,11 +7,11 @@ import {
   realMsPerGameHour,
   tickRanchClock,
 } from "./clock";
-import { columnMetrics } from "./convoy";
+import { columnMetrics, herderStandTile } from "./convoy";
 import { clearYardRadiusTiles, generateFarm } from "./generate";
 import { CONFIG } from "./config";
 import { tickHerdingRealtime } from "./herding";
-import { campGateBetween, fenceCrossingsOffGate, planHerdPath } from "./path";
+import { campGateBetween, fenceCrossingsOffGate, planHerdPath, pointOnPath } from "./path";
 import { createGame, moveHerd, primeDefaultFarmCache } from "./simulation";
 import { migrateState } from "./stateMigrate";
 import { gameHoursElapsed, repairStuckTransit, walkGameHours } from "./transit";
@@ -233,6 +233,11 @@ describe("drive polish", () => {
       if (herder < rear - 0.3) behind += 1;
     }
     expect(behind).toBe(samples.length);
+    const stand = herderStandTile(path, 0.5, 80);
+    const filed = columnMetrics(path, 0.5, 80);
+    const rear = pointOnPath(path, filed.rearProgress);
+    expect(rear.x - stand.x).toBeGreaterThan(2);
+    expect(Math.abs(stand.y - rear.y)).toBeLessThan(0.2);
   });
 
   it("leaves a clear yard around the house and plants an open scatter of trees", () => {
@@ -249,7 +254,7 @@ describe("drive polish", () => {
       );
       expect(onTrack).toBe(false);
     }
-    expect(trees.length).toBeGreaterThan(12);
-    expect(trees.length).toBeLessThan(80);
+    expect(trees.length).toBeGreaterThan(20);
+    expect(trees.length).toBeLessThan(180);
   });
 });

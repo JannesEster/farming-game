@@ -146,13 +146,81 @@ function stepIntoCamp(camp: CampState, gate: TilePoint, steps: number): TilePoin
   return current;
 }
 
-/** Shortest walk that stays inside one camp. A clear straight line is used when it fits. */
-function routeInsideCamp(camp: CampState, from: TilePoint, to: TilePoint): TilePoint[] {
-  const start = snapToCamp(camp, from);
+const WATER_STRUCTURE_KINDS = new Set(["windmill", "trough", "reservoir", "solar_pump"]);
+/**
+ * The herd path stays this far from a water point, in tiles.
+ * Assumption: 1.6 tiles is about 3.5 m at the travel step, a few tiles around
+ * the windmill legs and the round tank. Tighter camps fall back to the direct
+ * gate walk so a water point cannot force a fence crossing.
+ */
+export const WATER_STRUCTURE_CLEAR_TILES = 1.6;
+
+/** Tiles the herd should not use. Radius 0 blocks only the structure tile itself. */
+export function waterStructureBlock(state: GameState, radius = WATER_STRUCTURE_CLEAR_TILES): Set<string> {
+  const blocked = new Set<string>();
+  if (radius <= 0) {
+    for (const feature of state.features) {
+      if (!WATER_STRUCTURE_KINDS.has(feature.kind)) continue;
+      blocked.add(`${feature.x},${feature.y}`);
+    }
+    return blocked;
+  }
+  const reach = Math.ceil(radius);
+  const limit = radius * radius;
+  for (const feature of state.features) {
+    if (!WATER_STRUCTURE_KINDS.has(feature.kind)) continue;
+    for (let dy = -reach; dy <= reach; dy += 1) {
+      for (let dx = -reach; dx <= reach; dx += 1) {
+        if (dx * dx + dy * dy > limit) continue;
+        blocked.add(`${feature.x + dx},${feature.y + dy}`);
+      }
+    }
+  }
+  return blocked;
+}
+
+function nearestClearTile(camp: CampState, point: TilePoint, blocked: Set<string>): TilePoint {
+  const start = snapToCamp(camp, point);
+  const key = (tile: TilePoint) => `${tile.x},${tile.y}`;
+  if (!blocked.has(key(start))) return start;
+  const allowed = new Set(camp.tiles.map((tile) => key(tile)));
+  const queue = [start];
+  const seen = new Set<string>([key(start)]);
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    for (const [dx, dy] of STEPS) {
+      const next = { x: current.x + dx, y: current.y + dy };
+      const id = key(next);
+      if (!allowed.has(id) || seen.has(id)) continue;
+      if (!blocked.has(id)) return next;
+      seen.add(id);
+      queue.push(next);
+    }
+  }
+  return start;
+}
+
+/** Shortest walk that stays inside one camp and steps around water structures. */
+function routeInsideCamp(
+  camp: CampState,
+  from: TilePoint,
+  to: TilePoint,
+  blocked: Set<string> = new Set(),
+  pinStart = false,
+): TilePoint[] {
   const goal = snapToCamp(camp, to);
-  const line = straightPath(start, goal);
-  if (line.every((point) => tileInCamp(camp, point.x, point.y))) return line;
+  const snappedStart = snapToCamp(camp, from);
+  const start =
+    pinStart || !blocked.has(`${snappedStart.x},${snappedStart.y}`)
+      ? snappedStart
+      : nearestClearTile(camp, from, blocked);
   const key = (point: TilePoint) => `${point.x},${point.y}`;
+  const avoid = new Set(blocked);
+  avoid.delete(key(goal));
+  avoid.delete(key(start));
+  const line = straightPath(start, goal);
+  const lineFits = line.every((point) => tileInCamp(camp, point.x, point.y) && !avoid.has(key(point)));
+  if (lineFits) return line;
   const allowed = new Set(camp.tiles.map((tile) => key(tile)));
   const queue = [start];
   const came = new Map<string, string>();
@@ -163,12 +231,17 @@ function routeInsideCamp(camp: CampState, from: TilePoint, to: TilePoint): TileP
     for (const [dx, dy] of STEPS) {
       const next = { x: current.x + dx, y: current.y + dy };
       const id = key(next);
-      if (!allowed.has(id) || came.has(id)) continue;
+      if (!allowed.has(id) || came.has(id) || avoid.has(id)) continue;
       came.set(id, key(current));
       queue.push(next);
     }
   }
-  if (!came.has(key(goal))) return [start, goal];
+  if (!came.has(key(goal))) {
+    if (blocked.size > 0) return routeInsideCamp(camp, from, to, new Set(), pinStart);
+    const open = straightPath(start, goal);
+    if (open.every((point) => tileInCamp(camp, point.x, point.y))) return open;
+    return [start, goal];
+  }
   const path: TilePoint[] = [];
   let cursor: string | undefined = key(goal);
   while (cursor && cursor.length > 0) {
@@ -491,7 +564,7 @@ function bfsTrackPath(state: GameState, start: TilePoint, goal: TilePoint, track
 }
 
 /** Camps that do not share a gate meet via the farm track, not through another herd. */
-function trackLeg(state: GameState, from: CampState, to: CampState): TilePoint[] {
+function trackLeg(state: GameState, from: CampState, to: CampState, blocked: Set<string>): TilePoint[] {
   const tracks = trackTileSet(state);
   const fromGate = campGateToward(from, centroid(to.tiles));
   const toGate = campGateToward(to, centroid(from.tiles));
@@ -512,9 +585,9 @@ function trackLeg(state: GameState, from: CampState, to: CampState): TilePoint[]
   const start = snapToCamp(from, from.anchor);
   const end = stepIntoCamp(to, toGate, 2);
   return dedupe([
-    ...routeInsideCamp(from, start, fromGate),
+    ...routeInsideCamp(from, start, fromGate, blocked, false),
     ...middle,
-    ...routeInsideCamp(to, toGate, end),
+    ...routeInsideCamp(to, toGate, end, blocked, true),
   ]);
 }
 
@@ -523,13 +596,31 @@ function neighbourLeg(
   from: CampState,
   to: CampState,
   shared: { fromGate: TilePoint; toGate: TilePoint },
+  blocked: Set<string>,
 ): TilePoint[] {
   const start = snapToCamp(from, from.anchor);
   const end = stepIntoCamp(to, shared.toGate, 2);
   return dedupe([
-    ...routeInsideCamp(from, start, shared.fromGate),
-    ...routeInsideCamp(to, shared.toGate, end),
+    ...routeInsideCamp(from, start, shared.fromGate, blocked, false),
+    ...routeInsideCamp(to, shared.toGate, end, blocked, true),
   ]);
+}
+
+function pathHitsStructure(state: GameState, path: TilePoint[], gates: Set<string>): boolean {
+  for (const tile of path) {
+    if (gates.has(`${tile.x},${tile.y}`)) continue;
+    for (const feature of state.features) {
+      if (!WATER_STRUCTURE_KINDS.has(feature.kind)) continue;
+      if (tile.x === feature.x && tile.y === feature.y) return true;
+    }
+  }
+  return false;
+}
+
+function buildHerdPath(state: GameState, from: CampState, to: CampState, blocked: Set<string>): TilePoint[] {
+  const shared = campGateBetween(from, to);
+  if (shared) return neighbourLeg(from, to, shared, blocked);
+  return trackLeg(state, from, to, blocked);
 }
 
 export function planHerdPath(state: GameState, fromCampId: number, toCampId: number): TilePoint[] {
@@ -539,9 +630,19 @@ export function planHerdPath(state: GameState, fromCampId: number, toCampId: num
   if (fromCampId === toCampId) return [snapToCamp(from, from.anchor)];
 
   const shared = campGateBetween(from, to);
-  if (shared) return neighbourLeg(from, to, shared);
-
-  return trackLeg(state, from, to);
+  const gates = new Set<string>();
+  if (shared) {
+    gates.add(`${shared.fromGate.x},${shared.fromGate.y}`);
+    gates.add(`${shared.toGate.x},${shared.toGate.y}`);
+  }
+  const plain = buildHerdPath(state, from, to, new Set());
+  for (const radius of [4.2, WATER_STRUCTURE_CLEAR_TILES, 1, 0]) {
+    const avoided = buildHerdPath(state, from, to, waterStructureBlock(state, radius));
+    if (fenceCrossingsOffGate(state, avoided) > 0) continue;
+    if (pathHitsStructure(state, avoided, gates)) continue;
+    return avoided;
+  }
+  return plain;
 }
 
 export function pathLengthKm(path: TilePoint[], config: GameConfig = CONFIG): number {
