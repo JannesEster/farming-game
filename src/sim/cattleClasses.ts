@@ -190,15 +190,28 @@ export function applyYoungstockGrowth(
   if (!story) return;
   const weights = story.classLiveweights;
   const fed = intakeRatio >= config.story.poorFeedIntakeRatio;
-  const delta = (
-    fed
-      ? config.cattle.dailyYoungstockGainKg * Math.min(1, intakeRatio)
-      : -config.story.dailyWeightLossKg
-  ) * ecologyScale;
+  const grass = Math.min(1, Math.max(0, intakeRatio));
+  const condition = state.herd.condition;
+  const cond = Math.min(1, Math.max(0.35, condition / 80));
 
   for (const cls of GROWER_CLASSES) {
     if (story.composition[cls] <= 0) continue;
+    const heavy = weights[cls] >= config.cattle.gainFromKg;
+    const delta = (
+      fed
+        ? (heavy ? config.cattle.gainKgPerDayFrom250 * cond : config.cattle.dailyYoungstockGainKg) * grass
+        : -config.story.dailyWeightLossKg
+    ) * ecologyScale;
     weights[cls] = Math.max(config.cattle.tollyWeightMinKg, weights[cls] + delta);
+  }
+
+  for (const animal of story.animals ?? []) {
+    if (animal.whereabouts === "sold" || animal.weightKg < config.cattle.gainFromKg) continue;
+    const animalCond = Math.min(1, Math.max(0.35, animal.condition / 80));
+    const delta = (
+      fed ? config.cattle.gainKgPerDayFrom250 * animalCond * grass : -config.story.dailyWeightLossKg
+    ) * ecologyScale;
+    animal.weightKg = Math.max(80, animal.weightKg + delta);
   }
 
   if (fed && story.composition.heifer > 0) {

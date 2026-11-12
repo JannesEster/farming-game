@@ -114,7 +114,7 @@ export function layoutAnimals(
   return placed;
 }
 
-/** Sale animals stand in a short file from the kraal toward the loading ramp. */
+/** Sale animals stand in the pens, then the race, then up at the ramp. */
 function saleLinePoint(
   state: GameState,
   animal: AnimalRecord,
@@ -124,22 +124,29 @@ function saleLinePoint(
 ): { x: number; y: number; octant: number } | null {
   const sale = state.story?.saleConvoy;
   const ids = sale?.animalIds ?? [];
-  const atRamp = sale && (sale.phase === "kraal" || sale.phase === "ramp" || sale.phase === "loading") && ids.includes(animal.id);
-  if (!atRamp) return null;
-  const kraal = state.features.find((feature) => feature.kind === "kraal");
+  const showing =
+    sale &&
+    (sale.phase === "kraal" || sale.phase === "crush" || sale.phase === "ramp" || sale.phase === "loading") &&
+    ids.includes(animal.id);
+  if (!showing || !sale) return null;
+  const pens = state.features.filter((feature) => feature.kind === "holding_pen");
+  const races = state.features.filter((feature) => feature.kind === "race");
+  const crush = state.features.find((feature) => feature.kind === "crush");
   const ramp = state.features.find((feature) => feature.kind === "loading_ramp");
-  if (!kraal || !ramp) return null;
-  const from = tileCenter(kraal.x, kraal.y, layout, tileW, tileH);
-  const to = tileCenter(ramp.x, ramp.y, layout, tileW, tileH);
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const len = Math.hypot(dx, dy) || 1;
+  const kraal = state.features.find((feature) => feature.kind === "kraal");
   const index = Math.max(0, ids.indexOf(animal.id));
-  const gap = tileW * 0.78;
-  const along = index * gap;
+  const bucket = sale.phase === "kraal" ? 0 : index % 3;
+  let tile = pens[index % Math.max(1, pens.length)] ?? kraal ?? null;
+  if (bucket === 1) tile = races[index % Math.max(1, races.length)] ?? crush ?? tile;
+  if (bucket === 2) tile = ramp ?? crush ?? tile;
+  if (!tile) return null;
+  const at = tileCenter(tile.x, tile.y, layout, tileW, tileH);
+  const aim = ramp ?? tile;
+  const to = tileCenter(aim.x, aim.y, layout, tileW, tileH);
+  const nudge = (index % 3) * 8 - 8;
   return {
-    x: from.x + (dx / len) * along,
-    y: from.y + (dy / len) * along * 0.85,
-    octant: cowOctantFromScreen(dx, dy),
+    x: at.x + nudge,
+    y: at.y + (index % 2) * 4,
+    octant: cowOctantFromScreen(to.x - at.x, to.y - at.y),
   };
 }

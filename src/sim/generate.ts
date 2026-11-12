@@ -9,6 +9,7 @@ import {
 import { ensureAnimals } from "./animals";
 import { createStoryState, initStoryPeople } from "./story";
 import { campGateToward } from "./path";
+import { placeCattleHandlingYard } from "./cattleYard";
 import { homesteadYardPieces, placeSharedWaterPoints } from "./waterLayout";
 import { createRng, type Rng } from "./rng";
 import {
@@ -291,6 +292,16 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
     features,
     startCampId: start.id,
     config,
+  });
+
+  const house = features.find((feature) => feature.kind === "house") ?? { x: hx + 1, y: hy + 1 };
+  placeCattleHandlingYard({
+    grid: finalGrid,
+    width,
+    height,
+    features,
+    house,
+    avoidCampId: start.id,
   });
 
   const occupied = new Set(features.map((feature) => `${feature.x},${feature.y}`));

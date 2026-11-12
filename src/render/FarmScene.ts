@@ -1031,6 +1031,8 @@ export class FarmScene extends Phaser.Scene {
       prepareCutOutCapture: () => this.prepareCutOutCapture(),
       prepareFacingCapture: () => this.prepareFacingCapture(),
       prepareTruckRampCapture: () => this.prepareTruckRampCapture(),
+      prepareHandlingCapture: () => this.prepareHandlingCapture(),
+      prepareOverviewCapture: () => this.prepareOverviewCapture(),
       animalDetailText: () => ({
         title: document.getElementById("animal-detail-title")?.textContent ?? "",
         body: document.getElementById("animal-detail-body")?.textContent ?? "",
@@ -1375,7 +1377,10 @@ export class FarmScene extends Phaser.Scene {
         "trough",
         "lick_feeder",
         "kraal",
+        "holding_pen",
+        "race",
         "crush",
+        "handling_roof",
         "loading_ramp",
       ]);
       for (const feature of this.state.features) {
@@ -1717,7 +1722,7 @@ export class FarmScene extends Phaser.Scene {
 
   private farmhandTargetScale(): number {
     const cowScale = cattleDisplayScale(1);
-    return cowScale * 2.85;
+    return cowScale * 4.4;
   }
 
   private farmhandScreenHeightPx(): number {
@@ -1757,7 +1762,7 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private farmerTargetScale(): number {
-    return cattleDisplayScale(1) * 2.85;
+    return cattleDisplayScale(1) * 4.4;
   }
 
   private placeFarmer(): void {
@@ -2070,7 +2075,9 @@ export class FarmScene extends Phaser.Scene {
 
   private prepareSaleKraalCapture(): boolean {
     this.clearLogisticsForCapture();
-    const kraal = this.state.features.find((f) => f.kind === "kraal");
+    const kraal =
+      this.state.features.find((f) => f.kind === "holding_pen") ??
+      this.state.features.find((f) => f.kind === "kraal");
     const ramp = this.state.features.find((f) => f.kind === "loading_ramp");
     const crush = this.state.features.find((f) => f.kind === "crush");
     if (!kraal || !ramp || !crush || !this.state.story) return false;
@@ -2088,19 +2095,8 @@ export class FarmScene extends Phaser.Scene {
     this.syncCattleTruckVisual();
     this.syncHerdFromSim();
     this.placeHerd(performance.now());
-    const yardKinds = new Set([
-      "house",
-      "windmill",
-      "reservoir",
-      "shed",
-      "worker_house",
-      "kraal",
-      "crush",
-      "loading_ramp",
-    ]);
-    const tiles = this.state.features.filter(
-      (feature) => yardKinds.has(feature.kind) && this.state.campIds[feature.y * this.state.width + feature.x] === -1,
-    );
+    const yardKinds = new Set(["holding_pen", "race", "crush", "handling_roof", "loading_ramp", "kraal"]);
+    const tiles = this.state.features.filter((feature) => yardKinds.has(feature.kind));
     const bay = truckParkTile(this.state);
     if (bay) tiles.push({ kind: "track", x: bay.x, y: bay.y, scale: 1 });
     this.frameFeatureCluster(tiles.length > 0 ? tiles : [kraal], { x: 110, top: 100, bottom: 48 }, 1.45);
@@ -2150,10 +2146,10 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private truckOnRoad(): { awayTiles: number; screenPx: number } {
-    const kraal = this.state.features.find((f) => f.kind === "kraal");
+    const ramp = this.state.features.find((f) => f.kind === "loading_ramp");
     const tx = (this.cattleTruck?.getData("tileX") as number) ?? 0;
     const ty = (this.cattleTruck?.getData("tileY") as number) ?? 0;
-    const away = kraal ? Math.hypot(tx - kraal.x, ty - kraal.y) : 0;
+    const away = ramp ? Math.hypot(tx - ramp.x, ty - ramp.y) : 0;
     const screenPx = this.cattleTruck?.visible ? this.screenHeightOf(this.cattleTruck) : 0;
     return { awayTiles: away, screenPx };
   }
@@ -2636,8 +2632,8 @@ export class FarmScene extends Phaser.Scene {
     clearHerdTransit(this.state);
     releaseCutOutAnimals(this.state);
     clearSaleConvoy(this.state);
-    const group = filterAnimals(story.animals ?? [], TOLLY_OVER_300).filter((animal) => animal.whereabouts === "in_camp").slice(0, 4);
-    const use = group.length >= 2 ? group : (story.animals ?? []).filter((animal) => animal.whereabouts === "in_camp" && animal.stockClass !== "calf").slice(0, 4);
+    const group = filterAnimals(story.animals ?? [], TOLLY_OVER_300).filter((animal) => animal.whereabouts === "in_camp").slice(0, 6);
+    const use = group.length >= 2 ? group : (story.animals ?? []).filter((animal) => animal.whereabouts === "in_camp" && animal.stockClass !== "calf").slice(0, 6);
     if (use.length < 2) return false;
     story.selectedAnimalIds = use.map((animal) => animal.id);
     const started = requestCutOut(this.state, story.selectedAnimalIds, { kind: "kraal" });
@@ -2668,6 +2664,50 @@ export class FarmScene extends Phaser.Scene {
     const sale = this.namedSpritesInView("cut-out-animal");
     const herdOnYard = this.pictureAudit().herdCoversHomestead;
     return seen.count >= 1 && seen.maxScreenPx >= 24 && truck.name === "cattle-truck" && sale.count >= 2 && !herdOnYard;
+  }
+
+  private handlingPoints(): { x: number; y: number }[] {
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    const kinds = new Set(["holding_pen", "race", "crush", "loading_ramp", "handling_roof"]);
+    return this.state.features
+      .filter((feature) => kinds.has(feature.kind))
+      .map((feature) => tileCenter(feature.x, feature.y, this.layout, tileW, tileH));
+  }
+
+  private prepareHandlingCapture(): boolean {
+    if (!this.prepareTruckRampCapture()) return false;
+    const saleCows = this.cows.filter((sprite) => sprite.visible && sprite.getData("captureRole") === "cut-out-animal");
+    const truck = this.cattleTruck;
+    const points = [
+      ...this.handlingPoints(),
+      ...(truck ? [{ x: truck.x, y: truck.y }] : []),
+      ...saleCows.map((sprite) => ({ x: sprite.x, y: sprite.y })),
+    ];
+    this.frameWorldPoints(points, 0.78);
+    this.placeIndividualAnimals(performance.now());
+    this.syncCattleTruckVisual();
+    const pens = this.auditKind("holding_pen").inView;
+    const crush = this.auditKind("crush").inView;
+    const ramp = this.auditKind("loading_ramp").inView;
+    const truckSeen = this.namedSpritesInView("cattle-truck");
+    const sale = this.namedSpritesInView("cut-out-animal");
+    return pens >= 2 && crush >= 1 && ramp >= 1 && truckSeen.count >= 1 && sale.count >= 2;
+  }
+
+  private prepareOverviewCapture(): boolean {
+    const house = this.state.features.find((feature) => feature.kind === "house");
+    const ramp = this.state.features.find((feature) => feature.kind === "loading_ramp");
+    if (!house || !ramp) return false;
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    const housePos = tileCenter(house.x, house.y, this.layout, tileW, tileH);
+    const rampPos = tileCenter(ramp.x, ramp.y, this.layout, tileW, tileH);
+    this.frameWorldPoints([housePos, rampPos], 0.2);
+    const view = this.cameras.main.worldView;
+    const inside = (point: { x: number; y: number }) =>
+      point.x >= view.x && point.x <= view.right && point.y >= view.y && point.y <= view.bottom;
+    return inside(housePos) && inside(rampPos) && this.auditKind("loading_ramp").inView >= 1;
   }
 
   private prepareHerdDriveCapture(): boolean {
@@ -2899,11 +2939,11 @@ export class FarmScene extends Phaser.Scene {
           ? { x: ramp.x, y: ramp.y }
           : STEP3B.loadingRampTile;
     const pos = tileCenter(tile.x, tile.y, this.layout, tileW, tileH);
-    const truckScale = scaleToSpanMetres(420, 16);
+    const truckScale = scaleToSpanMetres(640, 22);
     if (!this.cattleTruck) {
       this.cattleTruck = this.add
         .image(pos.x, pos.y, SPRITE_KEYS.cattleTruck)
-        .setOrigin(0.22, 0.9)
+        .setOrigin(0.12, 0.9)
         .setScale(truckScale)
         .setName("cattle-truck");
     }

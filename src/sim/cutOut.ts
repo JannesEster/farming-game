@@ -7,7 +7,7 @@ import { findAnimal, livingAnimals } from "./animals";
 import { pathLengthKm, planHerdPath, pointOnPath } from "./path";
 import { STEP3C } from "./step3cConfig";
 import { herdInTransit, moveDurationMs, walkGameHours, type TransitSpeed } from "./transit";
-import { kraalDestinationCampId, saleFeatureTile } from "./yard";
+import { handlingPenTile, kraalDestinationCampId } from "./yard";
 import type { GameState, HerderId, TilePoint } from "./types";
 import type { AnimalRecord, CutOutOrder, PersonPresence, SaleChannel, SaleLine } from "./storyTypes";
 
@@ -50,7 +50,7 @@ function buildPath(state: GameState, animals: AnimalRecord[], order: Pick<CutOut
   } else {
     const kraalCamp = kraalDestinationCampId(state);
     path = kraalCamp === null ? [] : planHerdPath(state, fromCamp, kraalCamp);
-    const kraal = saleFeatureTile(state, "kraal");
+    const kraal = handlingPenTile(state);
     if (kraal) path = [...path, kraal];
   }
   if (path.length === 0) path = [start, start];
@@ -290,7 +290,7 @@ function finishDrive(state: GameState): void {
       }
     }
   } else if (linesReady(state, animals, order)) {
-    const kraal = saleFeatureTile(state, "kraal");
+    const kraal = handlingPenTile(state);
     for (const animal of animals) {
       animal.activity = "idle";
       if (kraal) {

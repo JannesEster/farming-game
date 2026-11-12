@@ -178,7 +178,7 @@ export function mountHud(options: {
           <ul class="animal-list" id="animal-list"></ul>
           <div class="animal-actions">
             <button type="button" class="pill-btn" id="animal-to-camp">To camp</button>
-            <button type="button" class="pill-btn" id="animal-to-kraal">To kraal</button>
+            <button type="button" class="pill-btn" id="animal-to-kraal">To the yards</button>
             <button type="button" class="pill-btn ghost" id="animal-round-up">Round up</button>
           </div>
         </div>

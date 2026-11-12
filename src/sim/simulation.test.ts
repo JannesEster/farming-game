@@ -336,7 +336,9 @@ describe("the running farm", () => {
       expect(kinds.has("house")).toBe(true);
       expect(kinds.has("windmill")).toBe(true);
       expect(kinds.has("reservoir")).toBe(true);
-      expect(kinds.has("kraal")).toBe(true);
+      expect(kinds.has("holding_pen")).toBe(true);
+      expect(kinds.has("loading_ramp")).toBe(true);
+      expect(kinds.has("kraal")).toBe(false);
       const troughs = first.features.filter((feature) => feature.kind === "trough");
       expect(troughs.length).toBeGreaterThan(0);
       expect(troughs.length).toBeLessThan(first.camps.length);

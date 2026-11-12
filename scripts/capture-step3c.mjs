@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { PNG } from "pngjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
@@ -8,6 +9,49 @@ import { chromium } from "playwright";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = path.join(repoRoot, "docs/screenshots/step3c");
 const query = "capture=1&offer=otjozondjupa-ranch";
+
+async function fileExists(file) {
+  try {
+    await access(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function stitchSideBySide(beforeBuf, afterBuf) {
+  const before = PNG.sync.read(beforeBuf);
+  const after = PNG.sync.read(afterBuf);
+  const height = Math.min(before.height, after.height);
+  const gutter = 16;
+  const out = new PNG({ width: before.width + after.width + gutter, height });
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < before.width; x += 1) {
+      const src = (y * before.width + x) << 2;
+      const dst = (y * out.width + x) << 2;
+      out.data[dst] = before.data[src];
+      out.data[dst + 1] = before.data[src + 1];
+      out.data[dst + 2] = before.data[src + 2];
+      out.data[dst + 3] = 255;
+    }
+    for (let x = 0; x < gutter; x += 1) {
+      const dst = (y * out.width + before.width + x) << 2;
+      out.data[dst] = 40;
+      out.data[dst + 1] = 32;
+      out.data[dst + 2] = 24;
+      out.data[dst + 3] = 255;
+    }
+    for (let x = 0; x < after.width; x += 1) {
+      const src = (y * after.width + x) << 2;
+      const dst = (y * out.width + before.width + gutter + x) << 2;
+      out.data[dst] = after.data[src];
+      out.data[dst + 1] = after.data[src + 1];
+      out.data[dst + 2] = after.data[src + 2];
+      out.data[dst + 3] = 255;
+    }
+  }
+  return PNG.sync.write(out);
+}
 
 function waitForServer(url, timeoutMs = 90000) {
   const start = Date.now();
@@ -69,6 +113,13 @@ async function main() {
   const buildCode = await new Promise((resolve) => build.on("close", resolve));
   if (buildCode !== 0) process.exit(buildCode ?? 1);
 
+  const beforeArt = {};
+  for (const name of ["desktop", "phone"]) {
+    const saved = path.join(outDir, "art-before", `${name}-animal-detail.png`);
+    const live = path.join(outDir, `${name}-animal-detail.png`);
+    beforeArt[name] = await readFile(await fileExists(saved) ? saved : live);
+  }
+
   const preview = spawn("npm", ["run", "preview"], { cwd: repoRoot, stdio: "ignore" });
   try {
     await waitForServer("http://127.0.0.1:4173/");
@@ -109,6 +160,9 @@ async function main() {
       const detailPath = path.join(outDir, `${viewport.name}-animal-detail.png`);
       await page.screenshot({ path: detailPath });
       hashes.detail = await fileHash(detailPath);
+      const comparePath = path.join(outDir, `${viewport.name}-art-before-after.png`);
+      await writeFile(comparePath, stitchSideBySide(beforeArt[viewport.name], await readFile(detailPath)));
+      hashes.compare = await fileHash(comparePath);
 
       const selectOk = await page.evaluate(() => window.__farmCapture.prepareMultiSelectCapture());
       await page.waitForTimeout(200);
@@ -153,11 +207,43 @@ async function main() {
         await fail(page, viewport.name, "cattle truck not at the ramp", truck);
       }
       const sale = await page.evaluate(() => window.__farmCapture.namedSpritesInView("cut-out-animal"));
-      if (sale.count < 2) await fail(page, viewport.name, "sale animals not at the kraal", sale);
+      if (sale.count < 2) await fail(page, viewport.name, "sale animals not at the yards", sale);
       await assertHerdPicture(page, viewport.name, "truck");
       const truckPath = path.join(outDir, `${viewport.name}-cattle-truck-ramp.png`);
       await page.screenshot({ path: truckPath });
       hashes.truck = await fileHash(truckPath);
+
+      const handlingOk = await page.evaluate(() => window.__farmCapture.prepareHandlingCapture());
+      await page.waitForTimeout(250);
+      const handling = await page.evaluate(() => ({
+        pens: window.__farmCapture.auditKind("holding_pen"),
+        crush: window.__farmCapture.auditKind("crush"),
+        ramp: window.__farmCapture.auditKind("loading_ramp"),
+        truck: window.__farmCapture.namedSpritesInView("cattle-truck"),
+        sale: window.__farmCapture.namedSpritesInView("cut-out-animal"),
+      }));
+      if (
+        !handlingOk ||
+        handling.pens.inView < 2 ||
+        handling.crush.inView < 1 ||
+        handling.ramp.inView < 1 ||
+        handling.truck.count < 1 ||
+        handling.sale.count < 2
+      ) {
+        await fail(page, viewport.name, "handling yard not in view", handling);
+      }
+      await assertHerdPicture(page, viewport.name, "handling");
+      const handlingPath = path.join(outDir, `${viewport.name}-cattle-handling.png`);
+      await page.screenshot({ path: handlingPath });
+      hashes.handling = await fileHash(handlingPath);
+
+      const overviewOk = await page.evaluate(() => window.__farmCapture.prepareOverviewCapture());
+      await page.waitForTimeout(200);
+      if (!overviewOk) await fail(page, viewport.name, "homestead and handling yard not both in view", {});
+      await assertHerdPicture(page, viewport.name, "overview");
+      const overviewPath = path.join(outDir, `${viewport.name}-farm-overview.png`);
+      await page.screenshot({ path: overviewPath });
+      hashes.overview = await fileHash(overviewPath);
 
       assertDistinct(hashes, viewport.name);
       Object.assign(allHashes, Object.fromEntries(Object.entries(hashes).map(([key, value]) => [`${viewport.name}-${key}`, value])));

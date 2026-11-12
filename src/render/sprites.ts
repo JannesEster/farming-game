@@ -36,6 +36,9 @@ export const SPRITE_KEYS = {
   crush: "spr-crush",
   loadingRamp: "spr-loading-ramp",
   cattleTruck: "spr-cattle-truck",
+  holdingPen: "spr-holding-pen",
+  race: "spr-race",
+  handlingRoof: "spr-handling-roof",
   lickFeeder: "spr-lick-feeder",
   reservoir: "spr-reservoir",
   cowDrink: "spr-cow-drink",
@@ -67,33 +70,42 @@ function drawPersonFrame(
   dir: PersonDir,
 ): void {
   g.clear();
-  const lean = frame === 1 ? 2 : 0;
+  const lean = frame === 1 ? 3 : -1;
+  g.fillStyle(0x3a2a18, 0.35);
+  g.fillEllipse(32, 92, 26, 7);
+  g.fillStyle(0x3d342c, 1);
+  g.fillRoundedRect(20 + lean, 62, 9, 24, 3);
+  g.fillRoundedRect(35 + lean, 62, 9, 24, 3);
+  g.fillStyle(0x241c14, 1);
+  g.fillRoundedRect(18 + lean, 82, 13, 7, 2);
+  g.fillRoundedRect(34 + lean, 82, 13, 7, 2);
   g.fillStyle(shirt, 1);
-  g.fillRoundedRect(14 + lean, 28, 36, 42, 4);
-  g.fillStyle(0xf2c9a0, 1);
-  g.fillCircle(32, 20, 14);
+  g.fillRoundedRect(18 + lean, 34, 28, 32, 6);
+  g.lineStyle(2, 0x2a241c, 1);
+  g.strokeRoundedRect(18 + lean, 34, 28, 32, 6);
+  g.lineStyle(5, 0xd7b394, 1);
+  g.beginPath();
+  g.moveTo(20 + lean, 40);
+  g.lineTo(11 + lean, 58);
+  g.moveTo(44 + lean, 40);
+  g.lineTo(53 + lean, 56);
+  g.strokePath();
+  g.fillStyle(0xe2b48a, 1);
+  g.fillCircle(32 + lean, 24, 10);
+  g.lineStyle(2, 0x2a241c, 1);
+  g.strokeCircle(32 + lean, 24, 10);
   g.fillStyle(hat, 1);
-  g.fillEllipse(32, 15, 22, 11);
-  g.fillStyle(0x1a3550, 1);
-  g.fillRoundedRect(22, 62, 20, 24, 3);
-  g.fillStyle(0x2a2a2a, 1);
-  if (dir === "n") {
-    g.fillRect(20, 84, 12, 10);
-    g.fillRect(32, 84, 12, 10);
-  } else if (dir === "s") {
-    g.fillRect(18, 86, 14, 8);
-    g.fillRect(38, 86, 14, 8);
-  } else if (dir === "e") {
-    g.fillRect(16 + lean, 86, 14, 8);
-    g.fillRect(40 + lean, 84, 14, 8);
-  } else {
-    g.fillRect(18 - lean, 84, 14, 8);
-    g.fillRect(34 - lean, 86, 14, 8);
+  g.fillRoundedRect(24 + lean, 8, 16, 10, 3);
+  g.fillEllipse(32 + lean, 16, 28, 8);
+  if (dir !== "n") {
+    g.fillStyle(0x1a140e, 1);
+    g.fillCircle(28 + lean, 25, 1.3);
+    g.fillCircle(36 + lean, 25, 1.3);
   }
 }
 
 export function ensurePersonWalkTextures(scene: Phaser.Scene, role: "farmer" | "farmhand"): void {
-  const shirt = role === "farmer" ? 0x2d6a4f : 0xff8c1a;
+  const shirt = role === "farmer" ? 0x2d6a4f : 0xc4843c;
   const hat = role === "farmer" ? 0xc4a574 : 0x3d2c1e;
   const base = role === "farmer" ? SPRITE_KEYS.farmer : SPRITE_KEYS.farmhand;
   const dirs: PersonDir[] = ["n", "e", "s", "w"];
@@ -115,10 +127,10 @@ export function ensurePersonWalkTextures(scene: Phaser.Scene, role: "farmer" | "
   }
 }
 
-/** Cab and a slatted livestock trailer, seen from the side the ramp faces. */
+/** White cab and two slatted livestock trailers, the road train in the yard photos. */
 export function paintLivestockTruck(): HTMLCanvasElement {
-  const w = 420;
-  const h = 168;
+  const w = 640;
+  const h = 180;
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
@@ -126,69 +138,62 @@ export function paintLivestockTruck(): HTMLCanvasElement {
   if (!ctx) return canvas;
   ctx.fillStyle = "rgba(30, 20, 12, 0.28)";
   ctx.beginPath();
-  ctx.ellipse(210, 150, 180, 12, 0, 0, Math.PI * 2);
+  ctx.ellipse(320, 158, 280, 12, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.fillStyle = "#2a3138";
-  ctx.fillRect(28, 108, 360, 10);
-
-  ctx.fillStyle = "#6e5438";
-  ctx.fillRect(118, 48, 268, 62);
-  ctx.fillStyle = "#1a120c";
-  for (let i = 0; i < 9; i += 1) {
-    ctx.fillRect(128 + i * 28, 52, 8, 54);
-  }
-  ctx.strokeStyle = "#3a2a1c";
-  ctx.lineWidth = 3;
-  ctx.strokeRect(118, 48, 268, 62);
-  ctx.beginPath();
-  ctx.moveTo(124, 70);
-  ctx.lineTo(380, 70);
-  ctx.moveTo(124, 88);
-  ctx.lineTo(380, 88);
-  ctx.stroke();
-  ctx.fillStyle = "#5c4632";
-  ctx.fillRect(368, 50, 16, 58);
-  ctx.fillStyle = "#c4b8a4";
-  ctx.fillRect(372, 62, 6, 22);
+  const trailer = (x: number, width: number) => {
+    const grad = ctx.createLinearGradient(x, 40, x, 120);
+    grad.addColorStop(0, "#8a6a4a");
+    grad.addColorStop(0.45, "#6e5438");
+    grad.addColorStop(1, "#4a3424");
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, 48, width, 70);
+    ctx.strokeStyle = "#2c241c";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x, 48, width, 70);
+    ctx.strokeStyle = "#3a2a1c";
+    ctx.beginPath();
+    ctx.moveTo(x + 6, 72);
+    ctx.lineTo(x + width - 6, 72);
+    ctx.moveTo(x + 6, 92);
+    ctx.lineTo(x + width - 6, 92);
+    ctx.stroke();
+    ctx.fillStyle = "#1a120c";
+    const slats = Math.floor(width / 28);
+    for (let i = 0; i < slats; i += 1) ctx.fillRect(x + 10 + i * 28, 54, 8, 58);
+    ctx.fillStyle = "#c4b8a4";
+    ctx.fillRect(x + width - 14, 64, 6, 24);
+  };
+  trailer(150, 230);
+  trailer(392, 220);
 
   ctx.fillStyle = "#e7e2d6";
   ctx.beginPath();
-  ctx.moveTo(18, 78);
-  ctx.lineTo(46, 70);
-  ctx.lineTo(78, 70);
-  ctx.lineTo(104, 58);
+  ctx.moveTo(18, 86);
+  ctx.lineTo(46, 74);
+  ctx.lineTo(86, 74);
   ctx.lineTo(118, 58);
-  ctx.lineTo(118, 112);
-  ctx.lineTo(18, 112);
+  ctx.lineTo(148, 58);
+  ctx.lineTo(148, 120);
+  ctx.lineTo(18, 120);
   ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = "#d4cfc3";
-  ctx.fillRect(24, 84, 88, 28);
+  ctx.fillStyle = "rgba(255,255,255,0.28)";
+  ctx.fillRect(24, 78, 70, 16);
   ctx.fillStyle = "#8ec4e4";
   ctx.beginPath();
-  ctx.moveTo(48, 64);
-  ctx.lineTo(100, 56);
-  ctx.lineTo(108, 72);
-  ctx.lineTo(50, 80);
+  ctx.moveTo(52, 68);
+  ctx.lineTo(112, 56);
+  ctx.lineTo(124, 76);
+  ctx.lineTo(54, 86);
   ctx.closePath();
   ctx.fill();
   ctx.fillStyle = "#9fd0ea";
-  ctx.fillRect(28, 88, 22, 16);
+  ctx.fillRect(28, 96, 22, 16);
   ctx.fillStyle = "#2c3440";
-  ctx.fillRect(16, 96, 16, 8);
+  ctx.fillRect(14, 104, 16, 8);
   ctx.fillStyle = "#f2e7a4";
-  ctx.fillRect(18, 98, 8, 4);
-  ctx.fillStyle = "#8a9298";
-  ctx.fillRect(108, 78, 8, 16);
-  ctx.fillStyle = "#222";
-  ctx.beginPath();
-  ctx.moveTo(112, 70);
-  ctx.lineTo(126, 62);
-  ctx.lineTo(126, 78);
-  ctx.lineTo(112, 82);
-  ctx.closePath();
-  ctx.fill();
+  ctx.fillRect(16, 106, 8, 4);
 
   const wheel = (x: number, y: number, r: number) => {
     ctx.fillStyle = "#1c2228";
@@ -200,15 +205,14 @@ export function paintLivestockTruck(): HTMLCanvasElement {
     ctx.arc(x, y, r * 0.42, 0, Math.PI * 2);
     ctx.fill();
   };
-  wheel(48, 122, 16);
-  wheel(86, 122, 16);
-  wheel(196, 124, 17);
-  wheel(236, 124, 17);
-  wheel(330, 124, 17);
-  wheel(368, 124, 17);
-  ctx.fillStyle = "#1a1a1a";
-  ctx.fillRect(176, 112, 18, 16);
-  ctx.fillRect(350, 112, 18, 16);
+  wheel(48, 132, 16);
+  wheel(92, 132, 16);
+  wheel(210, 134, 17);
+  wheel(250, 134, 17);
+  wheel(330, 134, 17);
+  wheel(450, 134, 17);
+  wheel(530, 134, 17);
+  wheel(580, 134, 17);
   return canvas;
 }
 
@@ -255,21 +259,95 @@ export function ensureStep3bPropTextures(scene: Phaser.Scene): void {
   }
   if (!scene.textures.exists(SPRITE_KEYS.crush)) {
     const g = scene.make.graphics({ x: 0, y: 0 });
-    g.lineStyle(5, 0x6a4a2a, 1);
-    g.strokeRect(18, 22, 76, 58);
-    g.lineBetween(18, 50, 94, 50);
-    g.fillStyle(0x8b6b3a, 0.35);
-    g.fillRect(22, 54, 68, 22);
+    g.fillStyle(0x3a2a18, 0.28);
+    g.fillEllipse(56, 86, 70, 12);
+    g.fillStyle(0x8a9298, 1);
+    g.fillRect(22, 28, 8, 52);
+    g.fillRect(82, 28, 8, 52);
+    g.fillStyle(0xb7c0c8, 1);
+    g.fillRect(22, 28, 68, 6);
+    g.fillRect(22, 46, 68, 5);
+    g.fillRect(22, 62, 68, 5);
+    g.lineStyle(2, 0x2c3440, 1);
+    g.strokeRect(22, 28, 68, 52);
     g.generateTexture(SPRITE_KEYS.crush, 112, 96);
+    g.destroy();
+  }
+  if (!scene.textures.exists(SPRITE_KEYS.holdingPen)) {
+    const g = scene.make.graphics({ x: 0, y: 0 });
+    g.fillStyle(0x3a2a18, 0.3);
+    g.fillEllipse(80, 100, 90, 16);
+    g.fillStyle(0x6a5438, 1);
+    g.fillEllipse(80, 78, 78, 28);
+    g.fillStyle(0x8a9298, 1);
+    g.fillRect(28, 36, 7, 48);
+    g.fillRect(124, 36, 7, 48);
+    g.fillRect(76, 30, 7, 52);
+    g.fillStyle(0xd5dde4, 1);
+    g.fillRect(28, 40, 103, 4);
+    g.fillRect(28, 56, 103, 4);
+    g.fillRect(28, 70, 103, 4);
+    g.generateTexture(SPRITE_KEYS.holdingPen, 160, 120);
+    g.destroy();
+  }
+  if (!scene.textures.exists(SPRITE_KEYS.race)) {
+    const g = scene.make.graphics({ x: 0, y: 0 });
+    g.fillStyle(0x3a2a18, 0.28);
+    g.fillEllipse(70, 100, 70, 12);
+    g.lineStyle(5, 0x8a9298, 1);
+    g.beginPath();
+    g.moveTo(24, 80);
+    g.lineTo(48, 48);
+    g.lineTo(90, 28);
+    g.moveTo(48, 88);
+    g.lineTo(78, 62);
+    g.lineTo(110, 46);
+    g.strokePath();
+    g.fillStyle(0xd5dde4, 1);
+    g.fillCircle(24, 80, 4);
+    g.fillCircle(90, 28, 4);
+    g.fillCircle(48, 88, 4);
+    g.fillCircle(110, 46, 4);
+    g.generateTexture(SPRITE_KEYS.race, 140, 110);
+    g.destroy();
+  }
+  if (!scene.textures.exists(SPRITE_KEYS.handlingRoof)) {
+    const g = scene.make.graphics({ x: 0, y: 0 });
+    g.fillStyle(0x3a2a18, 0.25);
+    g.fillEllipse(90, 100, 100, 16);
+    g.fillStyle(0x6a7278, 1);
+    g.fillRect(36, 62, 6, 32);
+    g.fillRect(138, 62, 6, 32);
+    g.fillStyle(0xf4f1ea, 1);
+    g.beginPath();
+    g.moveTo(18, 62);
+    g.lineTo(90, 28);
+    g.lineTo(162, 62);
+    g.closePath();
+    g.fillPath();
+    g.fillStyle(0xd9d3c8, 1);
+    g.fillTriangle(90, 28, 162, 62, 162, 70);
+    g.lineStyle(2, 0x2c3440, 1);
+    g.strokeTriangle(18, 62, 90, 28, 162, 62);
+    g.generateTexture(SPRITE_KEYS.handlingRoof, 180, 110);
     g.destroy();
   }
   if (!scene.textures.exists(SPRITE_KEYS.loadingRamp)) {
     const g = scene.make.graphics({ x: 0, y: 0 });
-    g.fillStyle(0x8b7355, 1);
-    g.fillTriangle(16, 72, 96, 72, 56, 28);
-    g.lineStyle(3, 0x5c4330, 1);
-    g.lineBetween(24, 72, 56, 32);
-    g.lineBetween(56, 32, 88, 72);
+    g.fillStyle(0x3a2a18, 0.3);
+    g.fillEllipse(56, 86, 70, 12);
+    g.fillStyle(0x8d8070, 1);
+    g.fillTriangle(18, 78, 96, 78, 70, 34);
+    g.fillStyle(0xb7c0c8, 1);
+    g.lineStyle(4, 0x8a9298, 1);
+    g.beginPath();
+    g.moveTo(28, 74);
+    g.lineTo(62, 40);
+    g.moveTo(48, 78);
+    g.lineTo(78, 46);
+    g.strokePath();
+    g.fillStyle(0x6a7278, 1);
+    g.fillRect(16, 70, 8, 16);
     g.generateTexture(SPRITE_KEYS.loadingRamp, 112, 96);
     g.destroy();
   }
@@ -484,14 +562,23 @@ export function propSpriteForKind(kind: string, x: number, y: number, featureSca
       // TODO(A): a small array about 6 m across.
       return { key: SPRITE_KEYS.solarPump, originX: 0.5, originY: 0.94, scale: scaleToSpanMetres(112, 6) };
     case "crush":
-      // TODO(A): crush reads about 5 m long beside the kraal.
       return { key: SPRITE_KEYS.crush, originX: 0.5, originY: 0.88, scale: scaleToSpanMetres(112, 5) };
+    case "holding_pen":
+      return {
+        key: SPRITE_KEYS.holdingPen,
+        originX: 0.5,
+        originY: 0.82,
+        scale: ((tileW * 1.35) / 160) * featureScale,
+      };
+    case "race":
+      return { key: SPRITE_KEYS.race, originX: 0.5, originY: 0.84, scale: (tileW * 1.15) / 140 };
+    case "handling_roof":
+      return { key: SPRITE_KEYS.handlingRoof, originX: 0.5, originY: 0.72, scale: (tileW * 2.1) / 180 };
     case "loading_ramp":
-      // TODO(A): ramp reads about 7 m, facing the farm road.
       return { key: SPRITE_KEYS.loadingRamp, originX: 0.5, originY: 0.92, scale: scaleToSpanMetres(112, 7) };
     case "cattle_truck":
-      // TODO(A): cab plus slatted livestock trailer about 16 m.
-      return { key: SPRITE_KEYS.cattleTruck, originX: 0.22, originY: 0.9, scale: scaleToSpanMetres(420, 16) };
+      // Cab plus two slatted trailers. Length is a visual stand-in for the road train in the photos.
+      return { key: SPRITE_KEYS.cattleTruck, originX: 0.12, originY: 0.9, scale: scaleToSpanMetres(640, 22) };
     case "lick_feeder":
       return { key: SPRITE_KEYS.lickFeeder, originX: 0.5, originY: 0.9, scale: (tileW * 1.1) / 112 };
     case "tree":
@@ -570,16 +657,18 @@ type CattleCoat = {
   belly: string;
   hump: boolean;
   patches: boolean;
+  /** White face, used for Simmentaler. */
+  face?: string;
 };
 
-/** Brahman grey, Bonsmara red, black, Nguni, brown, speckled. */
+/** Beef breeds only: Brahman grey, Bonsmara red, Angus black, Nguni fawn, brown, Simmentaler. */
 const CATTLE_COATS: readonly CattleCoat[] = [
-  { body: "#ddd6c8", dark: "#6e675c", belly: "#f7f3ea", hump: true, patches: false },
+  { body: "#c4beb2", dark: "#6a6458", belly: "#e4ddd0", hump: true, patches: false },
   { body: "#b55238", dark: "#6a2c1c", belly: "#d47858", hump: false, patches: false },
   { body: "#2c2624", dark: "#100e0d", belly: "#4a403c", hump: false, patches: false },
-  { body: "#f4f0e6", dark: "#1a1816", belly: "#fffdf8", hump: true, patches: true },
+  { body: "#b08a52", dark: "#3a342c", belly: "#d4b88a", hump: true, patches: true },
   { body: "#8d5a34", dark: "#4e3018", belly: "#c48a56", hump: false, patches: false },
-  { body: "#c56a32", dark: "#f3ecdf", belly: "#e6c49a", hump: false, patches: true },
+  { body: "#c45a32", dark: "#7a341c", belly: "#e6c4a4", hump: false, patches: false, face: "#f6f1e6" },
 ];
 
 export const CATTLE_COAT_COUNT = CATTLE_COATS.length;
@@ -657,15 +746,25 @@ function fillBody(ctx: CanvasRenderingContext2D, coat: CattleCoat, path: () => v
   path();
   ctx.fillStyle = coat.body;
   ctx.fill();
+  ctx.save();
+  path();
+  ctx.clip();
+  const shade = ctx.createLinearGradient(18, 12, 78, 64);
+  shade.addColorStop(0, "rgba(255,255,255,0.32)");
+  shade.addColorStop(0.5, "rgba(255,255,255,0)");
+  shade.addColorStop(1, "rgba(40,24,12,0.32)");
+  ctx.fillStyle = shade;
+  ctx.fillRect(0, 0, 112, 80);
+  ctx.restore();
   if (coat.patches) {
     ctx.save();
     path();
     ctx.clip();
     ctx.fillStyle = coat.dark;
     ctx.beginPath();
-    ctx.ellipse(40, 38, 10, 7, -0.4, 0, Math.PI * 2);
-    ctx.ellipse(58, 44, 8, 5, 0.5, 0, Math.PI * 2);
-    ctx.ellipse(30, 46, 6, 4, 0.2, 0, Math.PI * 2);
+    ctx.ellipse(36, 40, 5, 3.5, -0.4, 0, Math.PI * 2);
+    ctx.ellipse(52, 46, 4, 3, 0.5, 0, Math.PI * 2);
+    ctx.ellipse(44, 34, 3.5, 2.5, 0.2, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
@@ -705,7 +804,7 @@ function drawCowSide(ctx: CanvasRenderingContext2D, coat: CattleCoat, threeQuart
     ctx.strokeStyle = "#2c241c";
     ctx.stroke();
   }
-  ctx.fillStyle = coat.body;
+  ctx.fillStyle = coat.face ?? coat.body;
   ctx.strokeStyle = "#2c241c";
   ctx.lineWidth = 2;
   ctx.beginPath();
