@@ -1,0 +1,13 @@
+{
+  "neighbour": "Otjozondjupa picker farm, 1x, shared gate. Clock stayed HH:MM (10:01 leave, 10:13 mid, 10:55 arrive).",
+  "dusk": "Drive started at 16:30. Herder approached, herd drove, move finished at 16:57, clock kept going 17:00, 17:30, 18:01. No freeze.",
+  "sale": "3 open heifers quoted N$17191.29. After the truck left, cash moved from N$365170 to N$382361.29 and open heifers from 4 to 1.",
+  "assumed": {
+    "cattleWalkKmH": 3.5,
+    "herderWalkKmH": 5,
+    "grazeWalkKmH": 0.4,
+    "driveClockFactor": 0.5,
+    "herderBehindTiles": 2.5,
+    "mobLengthTiles": 12
+  }
+}

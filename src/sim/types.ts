@@ -52,8 +52,10 @@ export type HerdTransit = {
   path: TilePoint[];
   phase?: HerdTransitPhase;
   herder?: HerderId;
-  /** 0..1 walk from home to the herd before the drive starts. */
+  /** 0..1 walk from where the herder actually is to the back of the mob. */
   approachProgress?: number;
+  approachPath?: TilePoint[];
+  approachKm?: number;
 };
 
 export type CampState = {

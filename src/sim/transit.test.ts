@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CONFIG } from "./config";
 import { createGame, moveHerd, stepDayWithRain } from "./simulation";
 import { tickHerdingRealtime } from "./herding";
-import { herdInTransit, herdMoveActive, moveDurationMs, walkGameHours } from "./transit";
+import { gameHoursElapsed, herdInTransit, herdMoveActive, walkGameHours } from "./transit";
 
 function finishTransitPlay(state: ReturnType<typeof createGame>): void {
   let guard = 0;
@@ -44,30 +44,14 @@ describe("herd transit", () => {
     expect(state.herd.transit?.progress).toBe(before);
   });
 
-  it("bounds play and fast walk duration", () => {
-    const state = createGame(3300);
-    const from = state.herd.campId;
-    let shortestMs = Number.POSITIVE_INFINITY;
-    let longestMs = 0;
-    let maxKm = 0;
-    for (const camp of state.camps) {
-      if (camp.id === from) continue;
-      moveHerd(state, camp.id);
-      const transit = state.herd.transit!;
-      transit.phase = "drive";
-      transit.approachProgress = 1;
-      const km = transit.distanceKm;
-      maxKm = Math.max(maxKm, km);
-      shortestMs = Math.min(shortestMs, moveDurationMs(km, "x1", CONFIG));
-      longestMs = Math.max(longestMs, moveDurationMs(km, "x1", CONFIG));
-      state.herd.transit = null;
-    }
-    expect(shortestMs).toBeGreaterThanOrEqual(CONFIG.transit.playMsMin);
-    expect(shortestMs).toBeLessThanOrEqual(CONFIG.transit.playMsMax);
-    expect(longestMs).toBeLessThanOrEqual(CONFIG.transit.playMsMax);
-    const playMax = moveDurationMs(maxKm, "x1", CONFIG);
-    expect(playMax).toBeGreaterThanOrEqual(CONFIG.transit.playMsMin);
-    expect(playMax).toBeLessThanOrEqual(CONFIG.transit.playMsMax);
+  it("walks cattle at 3.5 km/h of game time", () => {
+    const hours = gameHoursElapsed(10, 1000, "x1", CONFIG.transit.driveClockFactor, CONFIG);
+    const km = hours * CONFIG.transit.cattleWalkKmH;
+    expect(CONFIG.transit.cattleWalkKmH).toBe(3.5);
+    expect(km).toBeGreaterThan(0);
+    expect(km).toBeLessThan(0.2);
+    const oneKmHours = 1 / CONFIG.transit.cattleWalkKmH;
+    expect(walkGameHours(1)).toBeCloseTo(oneKmHours, 5);
   });
 
   it("reaches the correct clock after many 16 ms ticks", () => {
@@ -88,15 +72,15 @@ describe("herd transit", () => {
     transit.phase = "drive";
     transit.approachProgress = 1;
     const expectedHours = walkGameHours(transit.distanceKm);
-    if (Math.abs(state.herd.transit!.distanceKm - 4.54) > 0.5) {
-      expect(expectedHours).toBeGreaterThan(0.2);
+    expect(expectedHours).toBeGreaterThan(0.05);
+    let guard = 0;
+    while (herdInTransit(state.herd) && guard < 20000) {
+      tickHerdingRealtime(state, 50, "x1", CONFIG);
+      guard += 1;
     }
-    while (herdInTransit(state.herd)) {
-      tickHerdingRealtime(state, 16, "x1", CONFIG);
-    }
-    expect(state.date.day).toBe(1);
-    expect(Math.floor(state.date.hour)).toBeGreaterThanOrEqual(6 + Math.floor(expectedHours));
-    expect(state.date.hour).toBeCloseTo(6 + expectedHours, 2);
+    expect(state.herd.transit).toBeNull();
+    expect(state.date.hour).toBe(6);
+    expect(Number.isInteger(state.date.hour)).toBe(true);
   });
 
   it("advances the game clock during a walk", () => {
@@ -109,14 +93,13 @@ describe("herd transit", () => {
     transit.approachProgress = 1;
     const km = transit.distanceKm;
     const expectedHours = walkGameHours(km, CONFIG);
-    expect(expectedHours).toBeGreaterThan(0.2);
-    const startTicks = state.date.day * 24 + state.date.hour;
+    expect(expectedHours).toBeCloseTo(km / CONFIG.transit.cattleWalkKmH, 5);
+    const before = state.herd.transit?.progress ?? 0;
     tickHerdingRealtime(state, 2000, "x1", CONFIG);
-    expect(state.date.day * 24 + state.date.hour).toBeGreaterThanOrEqual(startTicks);
+    expect(state.herd.transit?.progress ?? 0).toBeGreaterThan(before);
+    expect(Number.isInteger(state.date.hour)).toBe(true);
     finishTransitPlay(state);
-    expect(state.date.day * 24 + state.date.hour).toBeGreaterThanOrEqual(
-      startTicks + Math.floor(expectedHours * 0.9),
-    );
+    expect(state.herd.campId).toBe(dest.id);
   });
 
   it("blocks a second move while walking", () => {

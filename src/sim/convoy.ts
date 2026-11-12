@@ -10,10 +10,12 @@ function pathLengthTiles(path: TilePoint[]): number {
   return total || 1;
 }
 
-/** Tiles between the last animal's feet and the herder, clear of the cow's body. */
-const HERDER_BEHIND_TILES = 1.75;
+/** Tiles between the last animal in the moving mob and the herder. */
+const HERDER_BEHIND_TILES = 2.5;
+/** The moving mob stays about this long, then more cattle join from the sides. */
+const MOB_LENGTH_TILES = 12;
 
-/** Spacing for a filed column. The herder walks behind the last animal, clear of its body. */
+/** Loose mob on the path. The herder stays 2 to 3 tiles behind the rear of that mob. */
 export function columnMetrics(
   path: TilePoint[],
   progress: number,
@@ -21,17 +23,19 @@ export function columnMetrics(
 ): { total: number; spacingTiles: number; centerTiles: number; rearProgress: number; herderProgress: number } {
   const total = pathLengthTiles(path);
   const safe = Math.max(1, count);
-  // A small cut-out walks as a readable file. A full herd keeps the tighter column.
-  const preferred = safe <= 14 ? 0.9 : 0.42;
-  const spacingTiles = Math.min(preferred, (total * 0.92) / Math.max(1, safe - 1));
+  const abreast = safe <= 6 ? 2 : 8;
+  const spacingTiles = 1.2;
   const centerTiles = progress * total;
-  const rearTiles = centerTiles - ((safe - 1) / 2) * spacingTiles;
+  const started = Math.min(safe, Math.max(1, Math.ceil(centerTiles / spacingTiles)));
+  const movingRanks = Math.max(1, Math.ceil(started / abreast));
+  const span = Math.min(MOB_LENGTH_TILES, Math.max(0, (movingRanks - 1) * spacingTiles), centerTiles);
+  const rearTiles = Math.max(0, centerTiles - span);
   const herderTiles = Math.max(0, rearTiles - HERDER_BEHIND_TILES);
   return {
     total,
     spacingTiles,
     centerTiles,
-    rearProgress: total <= 0 ? 0 : Math.max(0, rearTiles) / total,
+    rearProgress: total <= 0 ? 0 : rearTiles / total,
     herderProgress: total <= 0 ? 0 : herderTiles / total,
   };
 }

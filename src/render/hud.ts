@@ -473,7 +473,11 @@ export function mountHud(options: {
       const dry = !seasonText.toLowerCase().includes("rain");
       const narrow = typeof window !== "undefined" && window.innerWidth <= 430;
       dateEl.textContent = formatHudDate(state.date);
-      timeEl.textContent = formatClockTime(state.date);
+      timeEl.textContent = formatClockTime(
+        state.date,
+        state.clock?.bankMs ?? 0,
+        state.clock?.settings.dayLengthSeconds,
+      );
       timeEl.hidden = false;
       seasonEl.hidden = narrow;
       if (state.clock?.settings.dayLengthSeconds) {

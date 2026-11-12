@@ -256,9 +256,24 @@ function mountPickerUi(): void {
 
     root.querySelector('[data-action="buy"]')?.addEventListener("click", () => {
       if (!offer.playable) return;
-      const state = structuredClone(offer.previewState) as GameState;
-      state.cashNad = cashAfterPurchase(offer.askingPriceNad);
-      finishPicker({ kind: "bought", state, offer });
+      const card = root.querySelector(".picker-card");
+      if (!card || card.querySelector("#picker-farmer-name")) return;
+      const ask = document.createElement("form");
+      ask.className = "picker-name";
+      ask.innerHTML = `<label for="picker-farmer-name">What should we call the farmer?</label>
+        <input id="picker-farmer-name" name="farmer" maxlength="24" autocomplete="name" placeholder="Your name" />
+        <button type="submit" class="picker-btn primary">Start farming</button>`;
+      card.appendChild(ask);
+      const input = ask.querySelector<HTMLInputElement>("#picker-farmer-name");
+      input?.focus();
+      ask.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const state = structuredClone(offer.previewState) as GameState;
+        state.cashNad = cashAfterPurchase(offer.askingPriceNad);
+        const name = input?.value.trim().slice(0, 24);
+        if (state.story && name) state.story.playerDisplayName = name;
+        finishPicker({ kind: "bought", state, offer });
+      });
     });
   };
 

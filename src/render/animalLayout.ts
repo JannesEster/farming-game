@@ -59,6 +59,12 @@ export function layoutAnimals(
     const homeAt = homeIndex.get(animal.id);
     if (homeAt !== undefined && animal.whereabouts === "in_camp") {
       const offset = offsets[homeAt];
+      if (walking && offset?.moving) {
+        animal.activity = "walk";
+        if (offset.octant !== undefined) animal.facing = offset.octant;
+      } else if (walking) {
+        animal.activity = "graze";
+      }
       placed.push({
         animal,
         x: herdPoint.x + (offset?.x ?? 0),

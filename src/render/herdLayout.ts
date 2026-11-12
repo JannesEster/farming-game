@@ -1,3 +1,5 @@
+import { fractionalHour } from "../sim/clock";
+import { pointOnPath } from "../sim/path";
 import type { CampState, GameState, TilePoint } from "../sim/types";
 import { TILE_HOMESTEAD, TILE_OUTSIDE } from "../sim/types";
 import type { CowView, HerdOffset } from "./art";
@@ -25,6 +27,33 @@ function rng(seed: number): () => number {
     state = (state * 1664525 + 1013904223) >>> 0;
     return state / 0x100000000;
   };
+}
+
+function gateWithin(state: GameState, x: number, y: number, tiles: number): boolean {
+  const cx = Math.round(x);
+  const cy = Math.round(y);
+  const idAt = (tx: number, ty: number) => {
+    if (tx < 0 || ty < 0 || tx >= state.width || ty >= state.height) return TILE_OUTSIDE;
+    return state.campIds[ty * state.width + tx];
+  };
+  for (let dy = -tiles; dy <= tiles; dy += 1) {
+    for (let dx = -tiles; dx <= tiles; dx += 1) {
+      if (dx * dx + dy * dy > tiles * tiles) continue;
+      const id = idAt(cx + dx, cy + dy);
+      if (id < 0) continue;
+      const neighbors = [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ] as const;
+      if (neighbors.some(([sx, sy]) => {
+        const other = idAt(cx + dx + sx, cy + dy + sy);
+        return other >= 0 && other !== id;
+      })) return true;
+    }
+  }
+  return false;
 }
 
 function cowPhase(seed: number, index: number): number {
@@ -333,15 +362,14 @@ export function fileAlongPath(
     lengths.push(lengths[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y));
   }
   const total = lengths[lengths.length - 1] || 1;
-  const body = tileW * 0.82;
-  let lanes = 1;
-  const columnLength = (laneCount: number, gap: number) => Math.max(1, Math.ceil(count / laneCount) - 1) * gap;
-  let spacing = body;
-  while (columnLength(lanes, spacing) > total * 0.9 && lanes < 3) lanes += 1;
-  if (columnLength(lanes, spacing) > total * 0.9) {
-    spacing = (total * 0.9) / Math.max(1, Math.ceil(count / lanes) - 1);
-  }
+  const tilePx = Math.hypot(tileW / 2, tileH / 2);
+  const mobPx = 12 * tilePx;
   const centerDist = progress * total;
+  const leadTile = pointOnPath(path, progress);
+  const nearGate = gateWithin(state, leadTile.x, leadTile.y, 3);
+  const lanes = nearGate ? 2 : Math.min(8, Math.max(2, count));
+  const ranks = Math.max(1, Math.ceil(count / lanes));
+  const spacing = Math.min(tilePx * 1.15, mobPx / Math.max(1, ranks - 1));
 
   const pointAt = (distance: number): { x: number; y: number; ux: number; uy: number } => {
     const dist = Math.max(0, Math.min(total, distance));
@@ -363,14 +391,30 @@ export function fileAlongPath(
     const phase = cowPhase(seed, i);
     const laneIndex = i % lanes;
     const rank = Math.floor(i / lanes);
-    const ranks = Math.ceil(count / lanes);
-    const along = ranks <= 1 ? 0 : rank - (ranks - 1) / 2;
+    const along = rank;
     const wobble = Math.sin(timeMs / 700 + phase * 9) * 2;
-    const at = pointAt(centerDist + along * spacing + wobble);
-    const lane = (laneIndex - (lanes - 1) / 2) * 8;
+    const dist = centerDist - along * spacing + wobble;
+    const waiting = dist < tilePx * 0.4;
+    const at = pointAt(Math.max(tilePx * 0.2, dist));
+    const lane = (laneIndex - (lanes - 1) / 2) * (nearGate ? 8 : 12);
     const px = -at.uy;
     const py = at.ux;
-    const foot = nudgeInsideCamp(state, at.x + px * lane, at.y + py * lane, layout, tileW, tileH);
+    const track = trackKeys(state);
+    const fromId = state.herd.campId;
+    const destId = state.herd.transit?.toCampId ?? fromId;
+    const legal = (px0: number, py0: number) => {
+      const tile = worldToTile(px0, py0, layout, tileW, tileH);
+      const tx = Math.round(tile.x);
+      const ty = Math.round(tile.y);
+      if (tx < 0 || ty < 0 || tx >= state.width || ty >= state.height) return false;
+      const id = state.campIds[ty * state.width + tx];
+      return id === fromId || id === destId || track.has(`${tx},${ty}`);
+    };
+    let foot = { x: at.x + px * lane, y: at.y + py * lane };
+    if (!legal(foot.x, foot.y)) foot = { x: at.x + px * lane * 0.35, y: at.y + py * lane * 0.35 };
+    if (!legal(foot.x, foot.y)) foot = { x: at.x, y: at.y };
+    foot = nudgeInsideCamp(state, foot.x, foot.y, layout, tileW, tileH);
+    if (!legal(foot.x, foot.y)) foot = { x: at.x, y: at.y };
     offsets.push({
       x: foot.x - herdX,
       y: foot.y - herdY,
@@ -379,6 +423,7 @@ export function fileAlongPath(
       scale: 0.58 + (phase % 0.1),
       view: cowViewFromOctant(cowOctantFromScreen(at.ux, at.uy)),
       octant: cowOctantFromScreen(at.ux, at.uy),
+      moving: !waiting,
     });
   }
   return offsets;
@@ -622,7 +667,7 @@ export function offsetsForHerd(
   tileW: number,
   tileH: number,
   inTransit: boolean,
-  progress: number,
+  _progress: number,
   _tangent: { x: number; y: number },
   timeMs: number,
   herdX: number,
@@ -634,17 +679,32 @@ export function offsetsForHerd(
   const fromCampId = state.herd.campId;
   const fromCamp = state.camps.find((c) => c.id === fromCampId);
   if (!fromCamp) return [];
-  let spreadCamp = fromCamp;
-  if (inTransit && progress > 0.85 && state.herd.transit) {
-    spreadCamp = state.camps.find((c) => c.id === state.herd.transit!.toCampId) ?? fromCamp;
-  }
-  let spread = spreadInCamp(spreadCamp, count, state.seed, layout, tileW, tileH, state);
+  const spread = spreadInCamp(fromCamp, count, state.seed, layout, tileW, tileH, state);
   if (inTransit) {
     const file = fileAlongPath(state, layout, tileW, tileH, count, state.seed, timeMs, herdX, herdY);
-    let fileWeight = 1;
-    if (progress < 0.12) fileWeight = progress / 0.12;
-    else if (progress > 0.86) fileWeight = Math.max(0, (1 - progress) / 0.14);
-    spread = blendOffsets(spread, file, fileWeight);
+    const anchor = tileCenter(fromCamp.anchor.x, fromCamp.anchor.y, layout, tileW, tileH);
+    return file.map((step, index) => {
+      if (step.moving) return step;
+      const home = spread[index] ?? step;
+      return {
+        ...home,
+        x: anchor.x + home.x - herdX,
+        y: anchor.y + home.y - herdY,
+        moving: false,
+      };
+    });
+  }
+  const graze = state.story?.grazeIn;
+  if (graze && graze.campId === fromCampId) {
+    const dayLength = state.clock?.settings.dayLengthSeconds ?? 240;
+    const now = fractionalHour(state.date.hour, state.clock?.bankMs ?? 0, dayLength);
+    const elapsed = now >= graze.startedHour ? now - graze.startedHour : now + 24 - graze.startedHour;
+    if (elapsed >= 3 && state.story) state.story.grazeIn = null;
+    else {
+      const t = Math.max(0, Math.min(1, elapsed / 2));
+      const cluster = 0.4 + 0.6 * t;
+      return spread.map((spot) => ({ ...spot, x: spot.x * cluster, y: spot.y * cluster, moving: false }));
+    }
   }
   return clampOffsetsToCamp(state, fromCampId, spread, herdX, herdY, layout, tileW, tileH, inTransit, track);
 }

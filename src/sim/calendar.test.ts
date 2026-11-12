@@ -22,9 +22,9 @@ describe("addHours", () => {
     expect(date.hour).toBeCloseTo(0.1, 8);
   });
 
-  it("matches a 4.54 km walk at 3 km/h from 06:00", () => {
+  it("matches a 4.54 km walk at 3.5 km/h from 06:00", () => {
     const hours = walkGameHours(4.54);
-    expect(hours).toBeCloseTo(1.513, 2);
+    expect(hours).toBeCloseTo(4.54 / 3.5, 2);
     const after = addHours({ year: 2026, month: 8, day: 1, hour: 6 }, hours);
     expect(Math.floor(after.hour)).toBe(7);
     expect(after.day).toBe(1);

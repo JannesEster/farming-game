@@ -195,6 +195,14 @@ export type GameConfig = {
     fastMsMax: number;
     minDistanceKm: number;
     walkSpeedKmH: number;
+    /** Cattle walk. Assumption: 3.5 km/h, inside the 3 to 4 km/h range. */
+    cattleWalkKmH: number;
+    /** Farmer or herder walking to the herd, and walking home. */
+    herderWalkKmH: number;
+    /** Daylight clock rate while a drive is on. 0.5 is a tuning value. */
+    driveClockFactor: number;
+    /** Grazing drift after a herd arrives. */
+    grazeWalkKmH: number;
     fastPlayFraction: number;
   };
   map: {
@@ -519,8 +527,24 @@ export const CONFIG: GameConfig = {
     fastMsMin: 1500,
     fastMsMax: 4500,
     minDistanceKm: 0.15,
-    /** Herd walk speed on farm roads for the game clock. */
-    walkSpeedKmH: 3,
+    /**
+     * Cattle walking a drive. Assumption: Jannes said cattle walk about 3 to 4 km/h.
+     * 3.5 is the middle of that band.
+     */
+    cattleWalkKmH: 3.5,
+    /** Kept for older call sites. Same figure as cattleWalkKmH. */
+    walkSpeedKmH: 3.5,
+    /** Herder walking to the herd, and home again. A normal walking pace. */
+    herderWalkKmH: 5,
+    /**
+     * Tuning value for Jannes. While a drive or the walk out to the herd is on,
+     * the ranch clock runs at this fraction of its usual speed. 0.5 makes a
+     * daylight hour about 27 real seconds at 1x, so a 1 km neighbour move is
+     * about 8 seconds. Pause, x2 and x3 still scale everything together.
+     */
+    driveClockFactor: 0.5,
+    /** Drift onto the new camp after a drive. About a slow graze. */
+    grazeWalkKmH: 0.4,
     /** Realtime fast mode is this fraction of play duration (never below fastMsMin). */
     fastPlayFraction: 0.22,
   },

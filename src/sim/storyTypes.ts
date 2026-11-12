@@ -1,4 +1,4 @@
-import type { CalendarDate, TilePoint } from "./types";
+import type { CalendarDate, HerderId, TilePoint } from "./types";
 
 export type StockClass =
   | "cow"
@@ -169,6 +169,10 @@ export type StoryState = {
   farmhandPresence?: FarmhandPresence;
   farmerPresence?: PersonPresence;
   herdMoveQueue?: HerdMoveQueue | null;
+  /** Walk home after a drive. The herd has already arrived. */
+  returnWalk?: { path: TilePoint[]; progress: number; distanceKm: number; who: HerderId } | null;
+  /** Cattle drift out from the gate over the next couple of game hours. */
+  grazeIn?: { campId: number; startedHour: number } | null;
   dailyPlay?: DailyPlayState;
   pendingPlayerEvent?: PendingPlayerEvent | null;
   monthDiary?: string[];
@@ -277,6 +281,8 @@ export type CutOutOrder = {
   phase: CutOutPhase;
   queueReason?: "night" | "no_herder";
   path: TilePoint[];
+  approachPath?: TilePoint[];
+  approachKm?: number;
   progress: number;
   approachProgress: number;
   distanceKm: number;

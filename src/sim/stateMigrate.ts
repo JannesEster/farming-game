@@ -4,6 +4,7 @@ import { defaultClassLiveweights, migrateLegacyComposition } from "./cattleClass
 import { defaultNotificationState } from "./notifications";
 import { defaultCostLevers, defaultInfrastructureWear } from "./levers";
 import { defaultFarmerPresence } from "./herding";
+import { repairStuckTransit } from "./transit";
 import { DEFAULT_PLAYER_DISPLAY_NAME } from "./playerName";
 import { defaultWorkGrid, freshDailyPlay } from "./workGrid";
 import { createStoryState, defaultComposition } from "./story";
@@ -173,6 +174,7 @@ export function migrateState(state: GameState): GameState {
     if (!state.story.bakkieRun) state.story.bakkieRun = defaultBakkieRun();
     if (state.story.bakkieDieselLitresMonth === undefined) state.story.bakkieDieselLitresMonth = 0;
   }
+  repairStuckTransit(state);
   if (!state.farmWaterPoints?.length) {
     state.farmWaterPoints = deriveWaterPointsFromFeatures(state);
   }

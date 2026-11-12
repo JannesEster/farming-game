@@ -5,10 +5,10 @@ import { clamp } from "../sim/math";
 import { getGameFlow } from "../integration/GameFlowService";
 import { hasBlockingCard, popNextCard } from "../sim/story";
 import { presentStoryCard } from "./storyPresent";
-import { isDaylightHour, nightOverlayAlpha, sceneDaylightBlend, tickRanchClock } from "../sim/clock";
+import { formatClockTime, isDaylightHour, nightOverlayAlpha, realMsPerGameHour, sceneDaylightBlend, tickRanchClock } from "../sim/clock";
 import { elementVisible, isSimBlocked as simClockBlocked, speedMultiplier, transitMayAdvance } from "./simGate";
 import { syncAlertStrip } from "../integration/notificationHub";
-import { bfsCampRoute } from "../sim/path";
+import { bfsCampRoute, campGateBetween } from "../sim/path";
 import { campIdAt, moveHerd, stepDay } from "../sim/simulation";
 import { defaultWorkGrid, setWorkPriority, tickFarmhandWorld, WORK_JOB_LABELS } from "../sim/workGrid";
 import { hireFarmhand } from "../sim/workers";
@@ -1029,6 +1029,108 @@ export class FarmScene extends Phaser.Scene {
       bumpHerdCaptureZoom: (zoom: number) => this.bumpHerdCaptureZoom(zoom),
       holdTransitProgress: (progress?: number) => this.holdTransitProgress(progress),
       pickDistantMoveCamp: () => this.pickDistantMoveCamp(),
+      driveCaptureStatus: () => {
+        const transit = this.state.herd.transit;
+        const who = transit?.herder ?? this.state.story?.saleConvoy?.herder ?? "farmer";
+        const presence = who === "piet" ? this.state.story?.farmhandPresence : this.state.story?.farmerPresence;
+        const dayLength = this.state.clock?.settings.dayLengthSeconds;
+        return {
+          clock: formatClockTime(this.state.date, this.state.clock?.bankMs ?? 0, dayLength),
+          hour: this.state.date.hour,
+          day: this.state.date.day,
+          phase: transit?.phase ?? null,
+          progress: transit?.progress ?? null,
+          approach: transit?.approachProgress ?? null,
+          campId: this.state.herd.campId,
+          cash: this.state.cashNad,
+          head: this.state.herd.headCount,
+          herderX: presence?.tileX ?? null,
+          herderY: presence?.tileY ?? null,
+          sale: this.state.story?.saleConvoy?.phase ?? null,
+          paid: Boolean(this.state.story?.saleConvoy?.paid),
+          heifers: this.state.story?.composition.heifer ?? 0,
+          freeze: this.captureFreezeClock,
+          speed: this.mode,
+          event: elementVisible(document, "event-card"),
+          market: elementVisible(document, "market-sheet"),
+          picker: elementVisible(document, "picker-root"),
+          tutorial: elementVisible(document, "flow-tutorial"),
+        };
+      },
+      refreshCapturePanels: () => {
+        this.syncHud();
+        this.market.refresh(this.state);
+        const paid = this.state.story?.saleConvoy?.paid;
+        const quoted = this.state.story?.saleConvoy?.quoted.totalNad;
+        const status = document.getElementById("market-status");
+        if (paid && status && quoted !== undefined) {
+          status.textContent = `Paid N$${Math.round(quoted).toLocaleString("en-ZA")}. Herd and cash are updated.`;
+        }
+        return this.state.cashNad;
+      },
+      dismissCaptureBlockers: () => {
+        this.captureFreezeClock = false;
+        this.captureHoldTransit = false;
+        this.setSpeed("x1");
+        this.hud.hideEventCard();
+        while (popNextCard(this.state)) {
+          /* drop cards that would pause the capture clock */
+        }
+        for (const id of ["picker-root", "flow-tutorial", "flow-yearend", "flow-gameover", "event-card"]) {
+          document.getElementById(id)?.setAttribute("hidden", "true");
+        }
+        return true;
+      },
+      armDriveCapture: () => {
+        this.captureFreezeClock = false;
+        this.captureHoldTransit = false;
+        this.setSpeed("x1");
+        return true;
+      },
+      startNeighbourDriveCapture: (hour = 10, minute = 0) => {
+        this.captureFreezeClock = false;
+        this.captureHoldTransit = false;
+        this.setSpeed("x1");
+        const dayLength = this.state.clock?.settings.dayLengthSeconds ?? 240;
+        this.state.date = { ...this.state.date, hour };
+        if (this.state.clock) {
+          this.state.clock.bankMs = realMsPerGameHour(hour, dayLength) * (minute / 60);
+          this.state.clock.speed = 1;
+        }
+        const from = this.state.camps.find((camp) => camp.id === this.state.herd.campId);
+        let neighbour: (typeof this.state.camps)[number] | undefined;
+        let neighbourLength = Number.POSITIVE_INFINITY;
+        if (from) {
+          for (const camp of this.state.camps) {
+            if (camp.id === from.id || !campGateBetween(from, camp)) continue;
+            const length = planHerdPath(this.state, from.id, camp.id).length;
+            if (length < neighbourLength) {
+              neighbourLength = length;
+              neighbour = camp;
+            }
+          }
+        }
+        const target = neighbour ?? this.state.camps.find((camp) => camp.id !== this.state.herd.campId);
+        if (!from || !target) return { ok: false as const };
+        this.commitMove(target.id);
+        this.frameHerdForCapture(1.05);
+        return { ok: true as const, targetId: target.id, shared: Boolean(neighbour) };
+      },
+      startHeiferSaleCapture: () => {
+        this.captureFreezeClock = false;
+        this.captureHoldTransit = false;
+        this.setSpeed("x1");
+        const count = Math.min(3, this.state.story?.composition.heifer ?? 0);
+        if (count < 1) return { ok: false as const, message: "No open heifers.", cash: this.state.cashNad };
+        const quote = quoteSale(this.state, "heifer", count, "auction");
+        if ("reason" in quote) return { ok: false as const, message: quote.reason, cash: this.state.cashNad };
+        const begin = beginSaleConvoy(this.state, "heifer", count, "auction", quote);
+        this.market.open();
+        const status = document.getElementById("market-status");
+        if (status) status.textContent = begin.message;
+        this.syncHud();
+        return { ok: begin.ok, message: begin.message, cash: this.state.cashNad, quote: quote.totalNad, count };
+      },
       triggerHerdMoveDemo: () => {
         this.captureFreezeClock = false;
         const targetId = this.pickDistantMoveCamp();
@@ -1129,7 +1231,7 @@ export class FarmScene extends Phaser.Scene {
     if (this.capturePin) this.applyCapturePin();
     this.presentQueuedCard();
     const blocked = this.clockBlocked();
-    const walking = herdInTransit(this.state.herd);
+    const driveOn = herdMoveActive(this.state.herd) || Boolean(this.state.story?.returnWalk) || Boolean(this.state.story?.cutOut && this.state.story.cutOut.phase !== "done" && this.state.story.cutOut.phase !== "queued");
     if (!this.state.clock) {
       this.state.clock = {
         settings: {
@@ -1146,16 +1248,17 @@ export class FarmScene extends Phaser.Scene {
     if (this.captureLightingHour !== null) {
       this.state.date.hour = this.captureLightingHour;
     }
-    if (!walking && !this.captureFreezeClock) {
+    if (!this.captureFreezeClock) {
       let catchUp = 0;
       if (this.visibilityCatchMs > 0) {
         catchUp = this.visibilityCatchMs;
         this.visibilityCatchMs = 0;
       }
+      const pace = driveOn ? CONFIG.transit.driveClockFactor : 1;
       const tick = tickRanchClock(
         this.state.date,
         this.state.clock,
-        delta + catchUp,
+        (delta + catchUp) * pace,
         blocked,
       );
       this.state.date = tick.date;
@@ -1186,7 +1289,7 @@ export class FarmScene extends Phaser.Scene {
       pushCritical: (title, body) => this.hud.showEventCard(title, body),
       syncAlerts: (labels) => this.hud.syncAlerts(labels),
     });
-    const moveActive = herdMoveActive(this.state.herd);
+    const moveActive = herdMoveActive(this.state.herd) || Boolean(this.state.story?.returnWalk);
     if (moveActive && transitMayAdvance(blocked, this.mode) && !this.captureFreezeClock && !this.captureHoldTransit) {
       const was = this.state.herd.transit?.progress ?? 0;
       tickHerdingRealtime(this.state, delta, this.mode);

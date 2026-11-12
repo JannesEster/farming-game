@@ -4,9 +4,8 @@ import { columnMetrics } from "./convoy";
 import { baseLivePrice, channelPriceFactor, conditionPriceFactor, sellingCosts } from "./economy";
 import { chooseAvailableHerder, herderIsBusy } from "./herding";
 import { findAnimal, livingAnimals } from "./animals";
-import { pathLengthKm, planHerdPath, pointOnPath } from "./path";
-import { STEP3C } from "./step3cConfig";
-import { herdInTransit, moveDurationMs, walkGameHours, type TransitSpeed } from "./transit";
+import { pathLengthKm, planHerdPath, planPersonPath, pointOnPath } from "./path";
+import { gameHoursElapsed, herdInTransit, walkGameHours, type TransitSpeed } from "./transit";
 import { handlingPenTile, kraalDestinationCampId } from "./yard";
 import type { GameState, HerderId, TilePoint } from "./types";
 import type { AnimalRecord, CutOutOrder, PersonPresence, SaleChannel, SaleLine } from "./storyTypes";
@@ -129,20 +128,12 @@ export function beginCutOutWalk(state: GameState, config: GameConfig = CONFIG): 
   order.approachProgress = 0;
   order.hoursApplied = 0;
   order.phase = "approach";
+  const presence = presenceFor(state, herder);
+  const from = presence ? { x: presence.tileX, y: presence.tileY } : homeTile(state, herder);
+  const meet = order.path[0] ?? from;
+  order.approachPath = planPersonPath(state, from, meet);
+  order.approachKm = Math.max(pathLengthKm(order.approachPath, config), 0.01);
   return true;
-}
-
-function approachMs(state: GameState, config: GameConfig): number {
-  const order = state.story?.cutOut;
-  if (!order?.herder) return STEP3C.cutOutApproachBaseMs;
-  const from = homeTile(state, order.herder);
-  const animals = order.animalIds
-    .map((id) => findAnimal(state, id))
-    .filter((animal): animal is AnimalRecord => Boolean(animal));
-  const meet = animals.length > 0 ? centroid(animals) : from;
-  const dist = Math.hypot(meet.x - from.x, meet.y - from.y);
-  const km = dist * config.transit.kmPerTile;
-  return Math.max(STEP3C.cutOutApproachBaseMs, km * STEP3C.cutOutApproachBaseMs * 3.2);
 }
 
 function syncApproach(state: GameState): void {
@@ -150,16 +141,14 @@ function syncApproach(state: GameState): void {
   if (!order || order.phase !== "approach" || !order.herder) return;
   const presence = presenceFor(state, order.herder);
   if (!presence) return;
-  const from = homeTile(state, order.herder);
-  const animals = order.animalIds
-    .map((id) => findAnimal(state, id))
-    .filter((animal): animal is AnimalRecord => Boolean(animal));
-  const meet = animals.length > 0 ? centroid(animals) : from;
+  const path = order.approachPath ?? [];
   const t = order.approachProgress;
-  presence.tileX = from.x + (meet.x - from.x) * t;
-  presence.tileY = from.y + (meet.y - from.y) * t;
-  presence.targetTileX = meet.x;
-  presence.targetTileY = meet.y;
+  const tile = path.length > 0 ? pointOnPath(path, t) : { x: presence.tileX, y: presence.tileY };
+  presence.tileX = tile.x;
+  presence.tileY = tile.y;
+  const end = path[path.length - 1] ?? tile;
+  presence.targetTileX = end.x;
+  presence.targetTileY = end.y;
   presence.walkProgress = t < 1 ? 0.35 : 1;
   presence.activityLabel = t < 1 ? "Walking out to the cattle" : "Separating the group";
   presence.onHerdingDuty = true;
@@ -317,17 +306,25 @@ export function tickCutOutRealtime(
 ): void {
   const order = state.story?.cutOut;
   if (!order || order.phase === "done") return;
-  if (!isDaylightHour(state.date.hour)) return;
   if (order.phase === "queued") {
+    if (!isDaylightHour(state.date.hour)) return;
     if (herderIsBusy(state) || herdInTransit(state.herd)) return;
     if (!beginCutOutWalk(state, config)) return;
   }
   if (mode === "pause") return;
-  const mult = mode === "x3" ? 3 : mode === "x2" ? 2 : 1;
+  const hours = gameHoursElapsed(
+    state.date.hour,
+    deltaMs,
+    mode,
+    config.transit.driveClockFactor,
+    config,
+  );
   if (order.phase === "approach") {
-    order.approachProgress = Math.min(1, order.approachProgress + (deltaMs * mult) / approachMs(state, config));
+    const km = hours * config.transit.herderWalkKmH;
+    const distance = order.approachKm ?? Math.max(order.distanceKm, 0.05);
+    order.approachProgress = Math.min(1, order.approachProgress + km / distance);
     syncApproach(state);
-  if (order.approachProgress >= 1) {
+    if (order.approachProgress >= 1) {
       order.phase = "drive";
       order.progress = 0;
       for (const id of order.animalIds) {
@@ -337,8 +334,8 @@ export function tickCutOutRealtime(
     }
     return;
   }
-  const duration = moveDurationMs(order.distanceKm, "x1", config);
-  order.progress = Math.min(1, order.progress + (deltaMs * mult) / Math.max(1, duration));
+  const km = hours * config.transit.cattleWalkKmH;
+  order.progress = Math.min(1, order.progress + km / Math.max(order.distanceKm, config.transit.minDistanceKm));
   syncDrive(state);
   if (order.progress >= 1) finishDrive(state);
 }
