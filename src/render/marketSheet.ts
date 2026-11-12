@@ -5,7 +5,8 @@ import {
   STOCK_CLASS_TOOLTIPS,
   compositionSummaryLine,
 } from "../sim/cattleClasses";
-import { applySale, quoteSale } from "../sim/economy";
+import { quoteSale } from "../sim/economy";
+import { beginSaleConvoy, saleConvoyActive } from "../sim/sales";
 import { resolveDroughtChoice } from "../sim/drought";
 import { formatHudMoney, formatMoney } from "../sim/format";
 import { hireFarmhand, setFarmhandJob } from "../sim/workers";
@@ -174,8 +175,13 @@ export function mountMarketSheet(options: {
       options.onToast(q.reason);
       return;
     }
-    applySale(state, q);
-    options.onToast(`Sold ${count} ${STOCK_CLASS_LABELS[stockClass]} for ${formatMoney(q.totalNad)}.`);
+    if (saleConvoyActive(state)) {
+      options.onToast("A sale is already running at the kraal.");
+      return;
+    }
+    const begin = beginSaleConvoy(state, stockClass, count, channel, q);
+    options.onToast(begin.message);
+    if (!begin.ok) return;
     options.onChange();
     refresh(state);
   });

@@ -1,6 +1,6 @@
 import type { RanchClockState } from "./clock";
 import type { NotificationState } from "./notifications";
-import type { StoryState } from "./storyTypes";
+import type { FarmWaterPoint, StoryState } from "./storyTypes";
 
 export const TILE_HOMESTEAD = -1;
 export const TILE_OUTSIDE = -2;
@@ -15,10 +15,15 @@ export type FeatureKind =
   | "house"
   | "worker_house"
   | "windmill"
+  | "solar_pump"
   | "reservoir"
   | "kraal"
+  | "crush"
+  | "loading_ramp"
+  | "cattle_truck"
   | "shed"
   | "trough"
+  | "lick_feeder"
   | "track";
 
 export type Feature = {
@@ -99,6 +104,8 @@ export type GameState = {
   camps: CampState[];
   herd: HerdState;
   features: Feature[];
+  /** Shared water installations from farm definition (wagon wheel layout). */
+  farmWaterPoints?: FarmWaterPoint[];
   story?: StoryState;
 };
 

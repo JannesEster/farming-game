@@ -18,6 +18,7 @@ import { compositionSummaryLine } from "../sim/cattleClasses";
 import { seasonLabelForHud } from "../sim/story";
 import { moveAdvice } from "../sim/grazing";
 import { findCamp } from "../sim/simulation";
+import { campHasTroughInPolygon, campHasWaterAccess } from "../sim/water";
 import { formatClockTime, type DayLengthSeconds } from "../sim/clock";
 import { CONFIG } from "../sim/config";
 import type { NotificationItem } from "../sim/notifications";
@@ -414,6 +415,8 @@ export function mountHud(options: {
       if (!lastState) return "";
       const camp = findCamp(lastState, campId);
       if (!camp) return "";
+      if (!campHasWaterAccess(lastState, camp)) return "No water";
+      if (!campHasTroughInPolygon(lastState, camp) && campId !== lastState.herd.campId) return "Shared water";
       const advice = moveAdvice(lastState.herd, camp, lastState.date);
       return formatCampBadge(advice, campId === lastState.herd.campId);
     },

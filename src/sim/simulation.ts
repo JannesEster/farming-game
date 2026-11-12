@@ -22,6 +22,7 @@ import { rngFromState } from "./rng";
 import { afterFeedDay } from "./story";
 import { requestHerdMove, tryDispatchHerdQueue } from "./herding";
 import { herdInTransit } from "./transit";
+import { waterGrazeMultiplier } from "./water";
 import type { CampState, GameState, MoveResult } from "./types";
 
 function isDefaultRuntimeConfig(config: GameConfig): boolean {
@@ -113,9 +114,14 @@ export function stepDayWithRain(state: GameState, rainMm: number, config: GameCo
         demand,
         config,
       );
-      camp.standingDmKgPerHa = grazed.standingDmKgPerHa;
-      eaten = grazed.eatenKg;
+      const waterMul = waterGrazeMultiplier(state, camp, config);
+      const eatenKg = grazed.eatenKg * waterMul;
       const floor = residualDmKgPerHa(camp.peakDmKgPerHa, config);
+      camp.standingDmKgPerHa = Math.max(
+        floor,
+        camp.standingDmKgPerHa - eatenKg / Math.max(1, camp.hectares),
+      );
+      eaten = eatenKg;
       const trample = tramplingLossKgPerHa(camp.hectares, state.herd, config);
       camp.standingDmKgPerHa = Math.max(floor, camp.standingDmKgPerHa - trample);
       camp.restDays = 0;

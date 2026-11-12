@@ -3,6 +3,8 @@ import { CONFIG, type GameConfig } from "./config";
 import { STEP2 } from "./step2Config";
 import { tickPeopleSchedule } from "./people";
 import { farmhandWaterBonus } from "./workers";
+import { maybeStartBakkieRun } from "./bakkie";
+import { findCamp } from "./simulation";
 import type {
   DailyPlayState,
   FarmhandPresence,
@@ -11,7 +13,6 @@ import type {
   WorkPriority,
 } from "./storyTypes";
 import type { GameState, TilePoint } from "./types";
-import { findCamp } from "./simulation";
 
 export const WORK_JOB_LABELS: Record<WorkJobId, string> = {
   check_water: "Check water",
@@ -66,7 +67,14 @@ export function jobTargetTile(state: GameState, job: WorkJobId): TilePoint {
   const herdCamp = findCamp(state, state.herd.campId);
   const anchor = herdCamp?.anchor ?? { x: state.width / 2, y: state.height / 2 };
   if (job === "check_water" || job === "fill_lick") {
-    const water = state.features.find((f) => f.kind === "trough" || f.kind === "windmill");
+    const herdCamp = findCamp(state, state.herd.campId);
+    if (herdCamp) {
+      const wp = state.farmWaterPoints?.find((w) => w.servedCampIds.includes(herdCamp.id));
+      if (wp) return { ...wp.trough };
+    }
+    const water = state.features.find(
+      (f) => f.kind === "trough" || f.kind === "windmill" || f.kind === "solar_pump",
+    );
     if (water) return { x: water.x, y: water.y };
   }
   if (job === "fix_fences") {
@@ -98,6 +106,9 @@ export function tickFarmhandWorld(state: GameState, config: GameConfig = CONFIG)
   }
   const presence = story.farmhandPresence;
   const job = pickActiveJob(state);
+  if (job && job !== presence.activeJob) {
+    maybeStartBakkieRun(state, job);
+  }
   presence.activeJob = job;
   if (!job) {
     presence.activityLabel = "Idle at the yard";

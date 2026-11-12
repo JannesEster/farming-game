@@ -4,8 +4,9 @@ import { emitNotification, defaultNotificationState } from "./notifications";
 import { grazeableFraction } from "./pasture";
 import { findCamp } from "./simulation";
 import { syncHeadFromComposition } from "./economy";
+import { campHasTroughInPolygon, campHasWaterAccess } from "./water";
 import type { StoryState } from "./storyTypes";
-import type { CampState, GameState } from "./types";
+import type { GameState } from "./types";
 
 export type FeedContext = {
   eatenKg: number;
@@ -123,11 +124,6 @@ function applyDeaths(state: GameState, count: number, _cause: string): void {
   syncHeadFromComposition(state);
 }
 
-function campHasTrough(state: GameState, camp: CampState): boolean {
-  const tiles = new Set(camp.tiles.map((tile) => `${tile.x},${tile.y}`));
-  return state.features.some((feature) => feature.kind === "trough" && tiles.has(`${feature.x},${feature.y}`));
-}
-
 /**
  * Overgrazing and a dry camp warn before any death.
  * Thirst has no sourced death rate, so a missing trough warns and does not invent mortality.
@@ -141,20 +137,36 @@ export function queueHusbandryWarnings(state: GameState, config: GameConfig = CO
   if (story.thirstWarnCampId !== null && story.thirstWarnCampId !== camp.id) story.thirstWarnCampId = null;
   const notes = state.notifications ?? defaultNotificationState();
   state.notifications = notes;
-  if (!campHasTrough(state, camp) && story.thirstWarnCampId !== camp.id) {
+  if (!campHasWaterAccess(state, camp) && story.thirstWarnCampId !== camp.id) {
     story.thirstWarnCampId = camp.id;
     emitNotification(notes, {
       id: `thirst-${camp.id}`,
       tier: "alert",
       kind: "water_warning",
-      title: "Water warning",
-      body: "This camp has no trough. Move the herd to water before you trust this grass.",
+      title: "No water",
+      body: `${camp.name} has no water. Walk the herd to a trough or condition will slip.`,
       priority: 4,
       at: { ...state.date },
       cooldownDays: 5,
       dedupeKey: `water-${camp.id}`,
       alertKey: `water-${camp.id}`,
-      alertLabel: `${camp.name} no trough`,
+      alertLabel: `${camp.name} no water`,
+    });
+  } else if (
+    campHasWaterAccess(state, camp) &&
+    !campHasTroughInPolygon(state, camp) &&
+    story.thirstWarnCampId !== camp.id
+  ) {
+    emitNotification(notes, {
+      id: `shared-water-${camp.id}`,
+      tier: "message",
+      kind: "water_warning",
+      title: "Shared trough",
+      body: `${camp.name} drinks at a shared fence line trough. Cattle walk out daily.`,
+      priority: 2,
+      at: { ...state.date },
+      cooldownDays: 14,
+      dedupeKey: `shared-water-${camp.id}`,
     });
   }
 

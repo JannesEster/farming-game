@@ -58,10 +58,11 @@ describe("starvation timeline", () => {
     state.features = state.features.filter(
       (feature) => !(feature.kind === "trough" && tiles.has(`${feature.x},${feature.y}`)),
     );
+    state.farmWaterPoints = (state.farmWaterPoints ?? []).filter((w) => !w.servedCampIds.includes(camp.id));
     const head = state.herd.headCount;
     stepDayWithRain(state, 0);
     expect(state.herd.headCount).toBe(head);
-    expect(state.notifications?.alerts.some((a) => a.label.includes("trough"))).toBe(true);
+    expect(state.notifications?.alerts.some((a) => a.label.toLowerCase().includes("water"))).toBe(true);
   });
 
   it("condition drops when camp has no grazeable grass", () => {

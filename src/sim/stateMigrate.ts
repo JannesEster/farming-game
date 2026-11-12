@@ -8,12 +8,63 @@ import { DEFAULT_PLAYER_DISPLAY_NAME } from "./playerName";
 import { defaultWorkGrid, freshDailyPlay } from "./workGrid";
 import { createStoryState, defaultComposition } from "./story";
 import type { GameState } from "./types";
-import type { HerdComposition } from "./storyTypes";
+import type { FarmWaterPoint, HerdComposition } from "./storyTypes";
+import { STEP3B } from "./step3bConfig";
 
-export const GAME_STATE_VERSION = 6;
+import { defaultDrinkingTrip } from "./water";
+import { defaultBakkieRun } from "./bakkie";
+
+export const GAME_STATE_VERSION = 7;
+
+function deriveWaterPointsFromFeatures(state: GameState): FarmWaterPoint[] {
+  const points: FarmWaterPoint[] = [];
+  const windmills = state.features.filter((f) => f.kind === "windmill" || f.kind === "solar_pump");
+  for (const pump of windmills) {
+    const trough =
+      state.features.find(
+        (f) => f.kind === "trough" && Math.hypot(f.x - pump.x, f.y - pump.y) <= 2,
+      ) ?? pump;
+    const servedCampIds = state.camps
+      .filter((camp) => {
+        const inCamp = camp.tiles.some((t) => t.x === trough.x && t.y === trough.y);
+        if (inCamp) return true;
+        return Math.hypot(camp.anchor.x - trough.x, camp.anchor.y - trough.y) < 8;
+      })
+      .map((c) => c.id);
+    points.push({
+      id: `wp-${pump.x}-${pump.y}`,
+      tile: { x: pump.x, y: pump.y },
+      trough: { x: trough.x, y: trough.y },
+      pump: pump.kind === "solar_pump" ? "solar" : "windmill",
+      reservoir: state.features.some(
+        (f) => f.kind === "reservoir" && Math.hypot(f.x - pump.x, f.y - pump.y) <= 2,
+      ),
+      servedCampIds,
+      lick: state.features.some(
+        (f) => f.kind === "lick_feeder" && Math.hypot(f.x - trough.x, f.y - trough.y) <= 2,
+      ),
+    });
+  }
+  return points;
+}
+
+function ensureHandlingYardFeatures(state: GameState): void {
+  const has = (kind: string) => state.features.some((f) => f.kind === kind);
+  if (!has("crush")) {
+    state.features.push({ kind: "crush", x: STEP3B.crushTile.x, y: STEP3B.crushTile.y, scale: 1 });
+  }
+  if (!has("loading_ramp")) {
+    state.features.push({
+      kind: "loading_ramp",
+      x: STEP3B.loadingRampTile.x,
+      y: STEP3B.loadingRampTile.y,
+      scale: 1,
+    });
+  }
+}
 
 export type LegacySavedGame = {
-  version?: 1 | 2 | 3 | 4 | 5;
+  version?: 1 | 2 | 3 | 4 | 5 | 6 | 7;
   savedAt?: string;
   state?: GameState;
 };
@@ -78,10 +129,22 @@ export function migrateState(state: GameState): GameState {
     if (!state.story.farmerPresence) state.story.farmerPresence = defaultFarmerPresence(state);
     if (!state.story.playerDisplayName?.trim()) state.story.playerDisplayName = DEFAULT_PLAYER_DISPLAY_NAME;
     if (state.story.herdMoveQueue === undefined) state.story.herdMoveQueue = null;
-    if (!state.features.some((f) => f.kind === "worker_house")) {
-      state.features.push({ kind: "worker_house", x: 11, y: 13, scale: 1 });
+    const cottage = state.features.find((f) => f.kind === "worker_house");
+    if (!cottage) {
+      state.features.push({ kind: "worker_house", x: 10, y: 14, scale: 1 });
+    } else if (cottage.x === 11 && cottage.y === 13) {
+      cottage.x = 10;
+      cottage.y = 14;
     }
+    if (!state.story.drinkingTrip) state.story.drinkingTrip = defaultDrinkingTrip();
+    if (state.story.saleConvoy === undefined) state.story.saleConvoy = null;
+    if (!state.story.bakkieRun) state.story.bakkieRun = defaultBakkieRun();
+    if (state.story.bakkieDieselLitresMonth === undefined) state.story.bakkieDieselLitresMonth = 0;
   }
+  if (!state.farmWaterPoints?.length) {
+    state.farmWaterPoints = deriveWaterPointsFromFeatures(state);
+  }
+  ensureHandlingYardFeatures(state);
   if (state.herd.transit) {
     if (!state.herd.transit.phase) state.herd.transit.phase = "drive";
     if (!state.herd.transit.herder) state.herd.transit.herder = "farmer";
@@ -100,7 +163,8 @@ export function parseLegacySaved(raw: string): GameState | null {
       data.version !== 2 &&
       data.version !== 3 &&
       data.version !== 4 &&
-      data.version !== 5
+      data.version !== 5 &&
+      data.version !== 6
     ) {
       return null;
     }

@@ -2,6 +2,7 @@ import { CONFIG, type GameConfig } from "./config";
 import { generateFarm } from "./generate";
 import { initStoryPeople } from "./story";
 import type { CampState, Feature, GameState, TilePoint } from "./types";
+import type { FarmWaterPoint } from "./storyTypes";
 
 export type FarmCampInfrastructure = {
   water: boolean;
@@ -22,7 +23,7 @@ export type FarmDefinitionGate = {
 
 /** Compact on disk; camp membership lives in campIds grid. */
 export type FarmDefinition = {
-  schemaVersion: 2;
+  schemaVersion: 2 | 3;
   id: string;
   label: string;
   seed: number;
@@ -41,6 +42,7 @@ export type FarmDefinition = {
   gates: FarmDefinitionGate[];
   laneKeys: string[];
   features: Feature[];
+  waterPoints?: FarmWaterPoint[];
   regionKey?: string;
 };
 
@@ -150,7 +152,11 @@ function infrastructureForCamp(state: GameState, camp: CampState): FarmCampInfra
 export function isFarmDefinition(value: unknown): value is FarmDefinition {
   if (!value || typeof value !== "object") return false;
   const def = value as FarmDefinition;
-  return def.schemaVersion === 2 && Array.isArray(def.campIds) && Array.isArray(def.camps);
+  return (
+    (def.schemaVersion === 2 || def.schemaVersion === 3) &&
+    Array.isArray(def.campIds) &&
+    Array.isArray(def.camps)
+  );
 }
 
 /** Build runtime state from compact farm JSON. Pasture stats come from the same seed via generateFarm. */
@@ -187,6 +193,7 @@ export function gameStateFromFarmDefinition(def: FarmDefinition, config: GameCon
     campIds: [...def.campIds],
     camps,
     features: [...def.features, ...laneFeatures],
+    farmWaterPoints: def.waterPoints ? [...def.waterPoints] : undefined,
     herd: { ...generated.herd, campId: herdCamp },
     farmMeta: generated.farmMeta
       ? { ...generated.farmMeta, offerId: def.id, regionKey: def.regionKey ?? generated.farmMeta.regionKey }

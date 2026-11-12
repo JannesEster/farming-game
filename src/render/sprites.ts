@@ -32,6 +32,13 @@ export const SPRITE_KEYS = {
   farmhand: "spr-farmhand",
   farmer: "spr-farmer",
   workerHouse: "spr-worker-house",
+  solarPump: "spr-solar-pump",
+  crush: "spr-crush",
+  loadingRamp: "spr-loading-ramp",
+  cattleTruck: "spr-cattle-truck",
+  lickFeeder: "spr-lick-feeder",
+  reservoir: "spr-reservoir",
+  cowDrink: "spr-cow-drink",
 } as const;
 
 export type PersonDir = "n" | "e" | "s" | "w";
@@ -106,6 +113,104 @@ export function ensurePersonWalkTextures(scene: Phaser.Scene, role: "farmer" | "
     g.generateTexture(base, 64, 96);
     g.destroy();
   }
+}
+
+export function ensureStep3bPropTextures(scene: Phaser.Scene): void {
+  if (!scene.textures.exists(SPRITE_KEYS.reservoir)) {
+    const g = scene.make.graphics({ x: 0, y: 0 });
+    g.fillStyle(0x6f7f9a, 1);
+    g.fillRoundedRect(12, 34, 88, 46, 6);
+    g.fillStyle(0x4a90c8, 0.7);
+    g.fillRect(18, 40, 76, 22);
+    g.lineStyle(2, 0x3d4e62, 1);
+    g.strokeRoundedRect(12, 34, 88, 46, 6);
+    g.generateTexture(SPRITE_KEYS.reservoir, 112, 96);
+    g.destroy();
+  }
+  if (!scene.textures.exists(SPRITE_KEYS.solarPump)) {
+    const g = scene.make.graphics({ x: 0, y: 0 });
+    g.fillStyle(0x2b3550, 1);
+    g.fillRect(36, 58, 40, 28);
+    g.fillStyle(0x1a4a8f, 1);
+    g.beginPath();
+    g.moveTo(24, 58);
+    g.lineTo(56, 26);
+    g.lineTo(88, 58);
+    g.closePath();
+    g.fillPath();
+    g.lineStyle(2, 0xd4dce8, 0.9);
+    for (let i = 0; i < 4; i += 1) {
+      g.lineBetween(30 + i * 14, 52, 48 + i * 8, 34);
+    }
+    g.generateTexture(SPRITE_KEYS.solarPump, 112, 96);
+    g.destroy();
+  }
+  if (!scene.textures.exists(SPRITE_KEYS.lickFeeder)) {
+    const g = scene.make.graphics({ x: 0, y: 0 });
+    g.fillStyle(0x5c5348, 1);
+    g.fillRoundedRect(20, 52, 72, 26, 4);
+    g.fillStyle(0xc9a45c, 0.85);
+    g.fillEllipse(56, 48, 54, 14);
+    g.generateTexture(SPRITE_KEYS.lickFeeder, 112, 80);
+    g.destroy();
+  }
+  if (!scene.textures.exists(SPRITE_KEYS.crush)) {
+    const g = scene.make.graphics({ x: 0, y: 0 });
+    g.lineStyle(5, 0x6a4a2a, 1);
+    g.strokeRect(18, 22, 76, 58);
+    g.lineBetween(18, 50, 94, 50);
+    g.fillStyle(0x8b6b3a, 0.35);
+    g.fillRect(22, 54, 68, 22);
+    g.generateTexture(SPRITE_KEYS.crush, 112, 96);
+    g.destroy();
+  }
+  if (!scene.textures.exists(SPRITE_KEYS.loadingRamp)) {
+    const g = scene.make.graphics({ x: 0, y: 0 });
+    g.fillStyle(0x8b7355, 1);
+    g.fillTriangle(16, 72, 96, 72, 56, 28);
+    g.lineStyle(3, 0x5c4330, 1);
+    g.lineBetween(24, 72, 56, 32);
+    g.lineBetween(56, 32, 88, 72);
+    g.generateTexture(SPRITE_KEYS.loadingRamp, 112, 96);
+    g.destroy();
+  }
+  if (!scene.textures.exists(SPRITE_KEYS.cattleTruck)) {
+    const g = scene.make.graphics({ x: 0, y: 0 });
+    g.fillStyle(0x6b1d1d, 1);
+    g.fillRoundedRect(8, 44, 52, 28, 4);
+    g.fillStyle(0x8b2e2e, 1);
+    g.fillRoundedRect(58, 52, 46, 34, 4);
+    g.fillStyle(0x1a2530, 1);
+    g.fillCircle(26, 78, 9);
+    g.fillCircle(78, 80, 10);
+    g.fillCircle(94, 80, 10);
+    g.fillStyle(0x9ec8e8, 0.85);
+    g.fillRect(14, 50, 16, 12);
+    g.generateTexture(SPRITE_KEYS.cattleTruck, 128, 96);
+    g.destroy();
+  }
+}
+
+export function ensureDrinkCowTexture(scene: Phaser.Scene, baseKey: string): string {
+  const drinkKey = `${baseKey}-drink`;
+  if (scene.textures.exists(drinkKey)) return drinkKey;
+  if (!scene.textures.exists(baseKey)) return baseKey;
+  const source = scene.textures.get(baseKey).getSourceImage() as HTMLCanvasElement | HTMLImageElement;
+  const canvas = document.createElement("canvas");
+  canvas.width = source.width;
+  canvas.height = source.height;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    ctx.drawImage(source, 0, 0);
+    ctx.save();
+    ctx.translate(canvas.width * 0.52, canvas.height * 0.72);
+    ctx.rotate(0.42);
+    ctx.fillStyle = "#2a1a12";
+    ctx.fillRect(-10, -6, 28, 10);
+    ctx.restore();
+  }
+  scene.textures.addCanvas(drinkKey, canvas);
+  return drinkKey;
 }
 
 export function ensureWorkerHouseTexture(scene: Phaser.Scene): void {
@@ -255,7 +360,17 @@ export function propSpriteForKind(kind: string, x: number, y: number, featureSca
     case "trough":
       return { key: SPRITE_KEYS.trough, originX: 0.5, originY: 0.85, scale: (tileW * 1.35) / tw };
     case "reservoir":
-      return { key: SPRITE_KEYS.windmill, originX: 0.5, originY: 0.94, scale: (tileW * 2.2) / tw };
+      return { key: SPRITE_KEYS.reservoir, originX: 0.5, originY: 0.9, scale: (tileW * 1.6) / 112 };
+    case "solar_pump":
+      return { key: SPRITE_KEYS.solarPump, originX: 0.5, originY: 0.94, scale: (tileW * 2.1) / 112 };
+    case "crush":
+      return { key: SPRITE_KEYS.crush, originX: 0.5, originY: 0.88, scale: (tileW * 1.7) / 112 };
+    case "loading_ramp":
+      return { key: SPRITE_KEYS.loadingRamp, originX: 0.5, originY: 0.92, scale: (tileW * 2) / 112 };
+    case "cattle_truck":
+      return { key: SPRITE_KEYS.cattleTruck, originX: 0.5, originY: 0.9, scale: (tileW * 2.4) / 128 };
+    case "lick_feeder":
+      return { key: SPRITE_KEYS.lickFeeder, originX: 0.5, originY: 0.9, scale: (tileW * 1.1) / 112 };
     case "tree":
       return {
         key: treeSpriteKey(x, y),
