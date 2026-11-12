@@ -126,6 +126,26 @@ import {
   propSpriteForKind,
 } from "./sprites";
 import {
+  BAKKIE_LENGTH_METRES,
+  BUSH_DENSE_METRES,
+  CAMELTHORN_LARGE_METRES,
+  COW_LENGTH_METRES,
+  COW_SHOULDER_METRES,
+  COTTAGE_WIDTH_METRES,
+  FARMHOUSE_WIDTH_METRES,
+  GARDEN_WIDTH_METRES,
+  KRAAL_WIDTH_METRES,
+  PERSON_HEIGHT_METRES,
+  RESERVOIR_DIAMETER_METRES,
+  ROCK_CLUSTER_METRES,
+  SHED_WIDTH_METRES,
+  TERMITE_HEIGHT_METRES,
+  TROUGH_LENGTH_METRES,
+  WHEEL_DIAMETER_METRES,
+  WINDMILL_HEIGHT_METRES,
+  uniformScale,
+} from "./worldScale";
+import {
   homesteadSpritePlacementsFromFeatures,
   workerCottagePlacements,
 } from "./homesteadLayout";
@@ -137,6 +157,7 @@ import {
   placeV2Fences,
   placeV2Props,
   preloadV2,
+  referencePose,
   roadtrainEndOffsets,
   roadtrainFile,
   v2Ready,
@@ -233,6 +254,8 @@ export class FarmScene extends Phaser.Scene {
   private capturePin: { x: number; y: number; zoom: number } | null = null;
   private captureWhy = "";
   private captureHideStaff = false;
+  private captureScaleLineup = false;
+  private scaleReferenceSprites: Phaser.GameObjects.Image[] = [];
   private yardBakkie?: Phaser.GameObjects.Image;
   private cattleTruck?: Phaser.GameObjects.Image;
   private bakkieDust?: Phaser.GameObjects.Graphics;
@@ -1057,6 +1080,8 @@ export class FarmScene extends Phaser.Scene {
       prepareHandlingCapture: () => this.prepareHandlingCapture(),
       prepareOverviewCapture: () => this.prepareOverviewCapture(),
       prepareHomesteadCapture: () => this.prepareHomesteadCapture(),
+      prepareHomesteadCloseCapture: () => this.prepareHomesteadCloseCapture(),
+      prepareScaleReferenceCapture: () => this.prepareScaleReferenceCapture(),
       v2ArtAudit: () => this.v2ArtAudit(),
       gameFps: () => this.game.loop.actualFps,
       yardCaptureAudit: () => this.yardCaptureAudit(),
@@ -1473,14 +1498,14 @@ export class FarmScene extends Phaser.Scene {
             const termite = this.add
               .image(center.x, center.y, SPRITE_KEYS.termiteMound)
               .setOrigin(0.5, 0.92)
-              .setScale((tileW * 0.28) / 171)
+              .setScale(uniformScale(171, TERMITE_HEIGHT_METRES))
               .setDepth(7 + center.y * 0.04);
             this.propSprites.push(termite);
           } else if (maybeRockAt(x, y)) {
             const rock = this.add
               .image(center.x, center.y, SPRITE_KEYS.rockCluster)
               .setOrigin(0.5, 0.88)
-              .setScale((tileW * 0.45) / 160)
+              .setScale(uniformScale(160, ROCK_CLUSTER_METRES))
               .setDepth(7 + center.y * 0.04);
             this.propSprites.push(rock);
           }
@@ -1494,36 +1519,41 @@ export class FarmScene extends Phaser.Scene {
       const center = tileCenter(feature.x, feature.y, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
       const depth = 10 + feature.x + feature.y;
       if (feature.kind === "windmill") {
-        const tower = this.footImage("tower", center.x, center.y, depth, 1.15);
+        const towerScale = uniformScale(128, WINDMILL_HEIGHT_METRES);
+        const tower = this.footImage("tower", center.x, center.y, depth, towerScale);
         this.propSprites.push(tower);
         this.blades = this.add
-          .image(center.x, center.y - WINDMILL_AXLE_LIFT * 1.15, "blades")
+          .image(center.x, center.y - WINDMILL_AXLE_LIFT * towerScale, "blades")
           .setOrigin(ART_ORIGIN.blades.x, ART_ORIGIN.blades.y)
+          .setScale(uniformScale(96, WHEEL_DIAMETER_METRES))
           .setDepth(depth + 0.2);
         this.propSprites.push(this.blades);
         continue;
       }
       let textureKey: string = feature.kind;
       let scale = 1;
-      if (feature.kind === "house") scale = 1.55;
+      if (feature.kind === "house") scale = uniformScale(152, FARMHOUSE_WIDTH_METRES);
       if (feature.kind === "worker_house") {
         const image = this.add
           .image(center.x, center.y, SPRITE_KEYS.workerHouse)
           .setOrigin(0.5, 0.92)
           .setDepth(depth + 0.3)
-          .setScale(cattleDisplayScale(1) * 2.05);
+          .setScale(uniformScale(128, COTTAGE_WIDTH_METRES));
         this.propSprites.push(image);
         this.workerCottageSprites.push(image);
         continue;
       }
-      if (feature.kind === "shed") scale = 1.05;
-      if (feature.kind === "kraal") scale = 1.12;
-      if (feature.kind === "reservoir") scale = 1.1;
+      if (feature.kind === "shed") scale = uniformScale(78, SHED_WIDTH_METRES);
+      if (feature.kind === "kraal") scale = uniformScale(136, KRAAL_WIDTH_METRES);
+      if (feature.kind === "reservoir") scale = uniformScale(104, RESERVOIR_DIAMETER_METRES);
+      if (feature.kind === "trough") scale = uniformScale(48, TROUGH_LENGTH_METRES);
       if (feature.kind === "tree") {
         textureKey = treeDeadAt(feature.x, feature.y) ? "tree-dead" : "tree";
-        scale = feature.scale;
+        const jitter = feature.scale > 0 && feature.scale < 3 ? feature.scale : 1;
+        scale = uniformScale(108, CAMELTHORN_LARGE_METRES) * jitter;
       } else if (feature.kind === "bush") {
-        scale = feature.scale;
+        const jitter = feature.scale > 0 && feature.scale < 3 ? feature.scale : 1;
+        scale = uniformScale(44, BUSH_DENSE_METRES) * jitter;
       }
       const image = this.footImage(
         textureKey,
@@ -1541,7 +1571,7 @@ export class FarmScene extends Phaser.Scene {
         if (id === TILE_HOMESTEAD || id === TILE_OUTSIDE || this.track.has(`${x},${y}`)) continue;
         if (!maybeTermiteAt(x, y)) continue;
         const center = tileCenter(x, y, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
-        const image = this.footImage("termite", center.x, center.y, 8 + x + y, 0.9 + (x % 3) * 0.08);
+        const image = this.footImage("termite", center.x, center.y, 8 + x + y, uniformScale(32, TERMITE_HEIGHT_METRES));
         this.propSprites.push(image);
       }
     }
@@ -1550,10 +1580,10 @@ export class FarmScene extends Phaser.Scene {
     if (house) {
       const bakkieCenter = tileCenter(house.x + 2, house.y + 1, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
       const gardenCenter = tileCenter(house.x, house.y + 2, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
-      this.yardBakkie = this.footImage("bakkie", bakkieCenter.x, bakkieCenter.y, 12 + house.x + house.y, 1.22);
+      this.yardBakkie = this.footImage("bakkie", bakkieCenter.x, bakkieCenter.y, 12 + house.x + house.y, uniformScale(72, BAKKIE_LENGTH_METRES));
       this.propSprites.push(this.yardBakkie);
       this.bakkieDust = this.add.graphics().setDepth(11);
-      this.propSprites.push(this.footImage("garden", gardenCenter.x, gardenCenter.y, 11 + house.x + house.y, 1.28));
+      this.propSprites.push(this.footImage("garden", gardenCenter.x, gardenCenter.y, 11 + house.x + house.y, uniformScale(56, GARDEN_WIDTH_METRES)));
     }
   }
 
@@ -1637,7 +1667,7 @@ export class FarmScene extends Phaser.Scene {
       const cow = this.add
         .image(0, 0, tex)
         .setOrigin(ART_ORIGIN.cow.x, ART_ORIGIN.cow.y)
-        .setScale(this.paintedSprites ? cattleDisplayScale() : 0.36);
+        .setScale(this.paintedSprites ? cattleDisplayScale() : uniformScale(52, COW_LENGTH_METRES, true));
       this.cows.push(cow);
     }
     this.refreshHerdOffsets(0);
@@ -1779,8 +1809,7 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private farmhandTargetScale(): number {
-    const cowScale = cattleDisplayScale(1);
-    return cowScale * 4.4;
+    return uniformScale(FARMHAND_TEXTURE_HEIGHT, PERSON_HEIGHT_METRES, true);
   }
 
   private farmhandScreenHeightPx(): number {
@@ -1827,7 +1856,7 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private farmerTargetScale(): number {
-    return cattleDisplayScale(1) * 4.4;
+    return uniformScale(FARMHAND_TEXTURE_HEIGHT, PERSON_HEIGHT_METRES, true);
   }
 
   private placeFarmer(): void {
@@ -2423,7 +2452,7 @@ export class FarmScene extends Phaser.Scene {
     };
   }
 
-  private frameWorldPoints(points: { x: number; y: number }[], fill = 0.5): void {
+  private frameWorldPoints(points: { x: number; y: number }[], fill = 0.5, uncapped = false): void {
     if (points.length === 0) return;
     let minX = Number.POSITIVE_INFINITY;
     let maxX = Number.NEGATIVE_INFINITY;
@@ -2436,8 +2465,9 @@ export class FarmScene extends Phaser.Scene {
       maxY = Math.max(maxY, point.y);
     }
     const camera = this.cameras.main;
-    const span = Math.max(maxX - minX, maxY - minY, 96);
-    const zoom = clampZoom((Math.min(camera.width, camera.height) * fill) / span, this.minZoom, this.maxZoom);
+    const span = Math.max(maxX - minX, (maxY - minY) * 1.4, 96);
+    const raw = (Math.min(camera.width, camera.height) * fill) / span;
+    const zoom = uncapped ? clamp(raw, this.minZoom, 4) : clampZoom(raw, this.minZoom, this.maxZoom);
     camera.setZoom(zoom);
     this.pinCapture((minX + maxX) / 2, (minY + maxY) / 2, zoom);
     camera.preRender();
@@ -2576,7 +2606,7 @@ export class FarmScene extends Phaser.Scene {
     const herder = story.cutOut.herder === "piet" ? this.farmhandSprite : this.farmerSprite;
     const points = cows.map((sprite) => ({ x: sprite.x, y: sprite.y }));
     if (herder) points.push({ x: herder.x, y: herder.y });
-    this.frameWorldPoints(points, 0.7);
+    this.frameWorldPoints(points, 0.72, true);
     this.placeIndividualAnimals(performance.now());
     this.placeFarmhand();
     this.placeFarmer();
@@ -2862,6 +2892,105 @@ export class FarmScene extends Phaser.Scene {
       });
     }
     return { pens: pens.length, cattle: cattle.length, truckOverlapsPens, truckPx };
+  }
+
+  private prepareHomesteadCloseCapture(): boolean {
+    this.captureHideStaff = false;
+    const house = this.state.features.find((feature) => feature.kind === "house");
+    if (!house) return false;
+    ensurePeopleState(this.state);
+    const farmer = this.state.story?.farmerPresence;
+    if (farmer) {
+      farmer.tileX = house.x;
+      farmer.tileY = Math.min(this.state.height - 1, house.y + 1);
+      farmer.targetTileX = farmer.tileX;
+      farmer.targetTileY = farmer.tileY;
+      farmer.walkProgress = 1;
+      farmer.atHome = true;
+      farmer.onHerdingDuty = false;
+      farmer.activityLabel = "At the main house";
+    }
+    this.placeFarmer();
+    const houseSprite = this.propSprites.find((sprite) => sprite.getData("featureKind") === "house");
+    const windmill = this.propSprites
+      .filter((sprite) => sprite.getData("featureKind") === "windmill")
+      .sort((a, b) => {
+        const ax = houseSprite ? a.x - houseSprite.x : 0;
+        const ay = houseSprite ? a.y - houseSprite.y : 0;
+        const bx = houseSprite ? b.x - houseSprite.x : 0;
+        const by = houseSprite ? b.y - houseSprite.y : 0;
+        return ax * ax + ay * ay - (bx * bx + by * by);
+      })[0];
+    const sprites = [houseSprite, windmill, this.farmerSprite, this.yardBakkie].filter(
+      (sprite): sprite is Phaser.GameObjects.Image => Boolean(sprite),
+    );
+    for (const sprite of sprites) sprite.setVisible(true);
+    const points = sprites.flatMap((sprite) => [
+      { x: sprite.x - sprite.displayWidth * 0.55, y: sprite.y - sprite.displayHeight },
+      { x: sprite.x + sprite.displayWidth * 0.55, y: sprite.y + 12 },
+    ]);
+    this.captureWhy = sprites
+      .map((sprite) => `${sprite.getData("featureKind") ?? sprite.name}:${Math.round(sprite.displayWidth)}x${Math.round(sprite.displayHeight)}`)
+      .join(" ");
+    this.frameWorldPoints(points, 0.82, true);
+    this.cullProps();
+    return this.auditKind("house").inView >= 1 && Boolean(this.farmerSprite?.visible);
+  }
+
+  private prepareScaleReferenceCapture(): boolean {
+    for (const sprite of this.scaleReferenceSprites) sprite.destroy();
+    this.scaleReferenceSprites = [];
+    this.captureScaleLineup = true;
+    this.captureHideHerdLabel = true;
+    this.captureHideStaff = true;
+    this.setCampLabelsShown(false);
+    for (const fence of this.fenceArt) fence.setVisible(false);
+    this.placeFarmer();
+    this.farmhandSprite?.setVisible(false);
+    for (const cow of this.cows) cow.setVisible(false);
+    for (const prop of this.propSprites) prop.setVisible(false);
+    this.cattleTruck?.setVisible(false);
+    this.yardBakkie?.setVisible(false);
+    const files = [
+      "person-farmer-stand-s.png",
+      "cattle-bonsmara-e.png",
+      "cattle-calf-e.png",
+      "vehicle-bakkie-se.png",
+      "prop-windmill-reservoir.png",
+      "bldg-worker-cottage.png",
+      "bldg-farmhouse.png",
+      "vehicle-roadtrain-e.png",
+    ];
+    const house = this.state.features.find((feature) => feature.kind === "house");
+    const origin = house
+      ? tileCenter(house.x, Math.min(this.state.height - 1, house.y + 2), this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight)
+      : { x: 400, y: 300 };
+    let cursor = origin.x;
+    const groundY = origin.y;
+    for (const file of files) {
+      const pose = referencePose(file);
+      if (!pose || !this.textures.exists(pose.key)) continue;
+      const image = this.add
+        .image(cursor, groundY, pose.key)
+        .setOrigin(pose.originX, pose.originY)
+        .setScale(pose.scale)
+        .setDepth(40 + groundY);
+      this.scaleReferenceSprites.push(image);
+      cursor += image.displayWidth + 18;
+    }
+    if (this.scaleReferenceSprites.length < 6) return false;
+    this.frameWorldPoints(
+      this.scaleReferenceSprites.flatMap((sprite) => {
+        const bounds = sprite.getBounds();
+        return [
+          { x: bounds.left, y: bounds.top },
+          { x: bounds.right, y: bounds.bottom },
+        ];
+      }),
+      0.82,
+      true,
+    );
+    return true;
   }
 
   private prepareHomesteadCapture(): boolean {
@@ -3294,7 +3423,7 @@ export class FarmScene extends Phaser.Scene {
       const v2Cow = v2Ready(this.textures) ? cattlePose(spot.octant, spot.calf, coat, graze) : null;
       if (cowLod) {
         cow.setTexture(SPRITE_KEYS.cowDot);
-        cow.setScale(1.15);
+        cow.setScale(uniformScale(8, COW_SHOULDER_METRES));
         shadow?.setVisible(false);
       } else if (v2Cow && this.textures.exists(v2Cow.key)) {
         cow.setTexture(v2Cow.key);
@@ -3464,7 +3593,7 @@ export class FarmScene extends Phaser.Scene {
           : Math.sin(time / 280 + index) * bobAmp;
       if (cowLod) {
         cow.setTexture(SPRITE_KEYS.cowDot);
-        cow.setScale(1.15);
+        cow.setScale(uniformScale(8, COW_SHOULDER_METRES));
         cow.setRotation(0);
         cow.setFlipX(false);
       } else if (this.paintedSprites) {
@@ -3482,7 +3611,7 @@ export class FarmScene extends Phaser.Scene {
           ? Math.floor(time / 160 + index * 0.15) % 3
           : Math.floor(time / 420 + index * 0.2) % 2;
         cow.setTexture(cowTextureKey(offset.coat, walking, animFrame));
-        cow.setScale(offset.scale);
+        cow.setScale(uniformScale(52, COW_LENGTH_METRES, true));
         cow.setFlipX(offset.flip);
         cow.setRotation(0);
       }
@@ -3502,13 +3631,12 @@ export class FarmScene extends Phaser.Scene {
           cow.setScale(drinking.scale);
         } else {
           cow.setTexture(SPRITE_KEYS.cowDrink);
+          cow.setScale(cattleDisplayScale());
         }
         cow.setData("pose", "drink");
         cow.setData("suppress", false);
         cow.setRotation(0);
         cow.setFlipX(false);
-        const herdPx = 128 * cattleDisplayScale();
-        cow.setScale(herdPx / 110);
         const along = (index - 1) * 16;
         cow.setPosition(spot.x + along, spot.y + 8);
         cow.setDepth(9.6 + (spot.y + 8) * 0.04 + index * 0.01);
@@ -3525,7 +3653,7 @@ export class FarmScene extends Phaser.Scene {
         const row = Math.floor(index / 3);
         cow.setData("suppress", false);
         cow.setData("pose", "");
-        cow.setScale(cattleDisplayScale(1.35));
+        cow.setScale(cattleDisplayScale());
         cow.setPosition(this.herdVisual.x + (col - 1) * 18, this.herdVisual.y + 12 + row * 14);
         cow.setDepth(9.55 + cow.y * 0.04 + index * 0.01);
         cow.setVisible(true);
@@ -3547,6 +3675,10 @@ export class FarmScene extends Phaser.Scene {
     const pad = CONFIG.view.propCullPadPx;
     const view = this.cameras.main.worldView;
     for (const sprite of this.propSprites) {
+      if (this.captureScaleLineup) {
+        sprite.setVisible(false);
+        continue;
+      }
       sprite.setVisible(
         sprite.x >= view.x - pad &&
           sprite.x <= view.right + pad &&
@@ -3554,7 +3686,13 @@ export class FarmScene extends Phaser.Scene {
           sprite.y <= view.bottom + pad,
       );
     }
-    if (!this.captureSkipCowCull) {
+    if (this.captureScaleLineup) {
+      this.cattleTruck?.setVisible(false);
+      this.yardBakkie?.setVisible(false);
+    }
+    if (this.captureScaleLineup) {
+      for (const cow of this.cows) cow.setVisible(false);
+    } else if (!this.captureSkipCowCull) {
       for (let i = 0; i < this.cows.length; i += 1) {
         const cow = this.cows[i];
         const offset = this.herdOffsets[i];

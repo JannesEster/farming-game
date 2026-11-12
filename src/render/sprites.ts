@@ -1,4 +1,24 @@
-import { CONFIG } from "../sim/config";
+import {
+  BAKKIE_LENGTH_METRES,
+  BUSH_DENSE_METRES,
+  CALF_LENGTH_METRES,
+  CAMELTHORN_LARGE_METRES,
+  COW_LENGTH_METRES,
+  CRUSH_HEIGHT_METRES,
+  FARMHOUSE_WIDTH_METRES,
+  KRAAL_WIDTH_METRES,
+  LICK_FEEDER_LENGTH_METRES,
+  PIXELS_PER_METRE,
+  RACE_LENGTH_METRES,
+  RAMP_LENGTH_METRES,
+  RESERVOIR_DIAMETER_METRES,
+  ROAD_TRAIN_METRES,
+  SHED_WIDTH_METRES,
+  SOLAR_WIDTH_METRES,
+  TROUGH_LENGTH_METRES,
+  WINDMILL_HEIGHT_METRES,
+  uniformScale,
+} from "./worldScale";
 
 /** PNG sprite keys loaded from `public/sprites/`. */
 export const SPRITE_KEYS = {
@@ -650,96 +670,78 @@ export type PropSpriteDef = {
   scale: number;
 };
 
-/**
- * TODO(A): the herd cow texture stands for a 1.4 m animal. Prop metres below use that
- * so a windmill and a reservoir read next to the cattle, not as towers over dots.
- */
-export const COW_SHOULDER_METRES = 1.4;
+export { COW_SHOULDER_METRES } from "./worldScale";
 
 export function worldPxPerMetre(): number {
-  return (128 * cattleDisplayScale()) / COW_SHOULDER_METRES;
+  return PIXELS_PER_METRE;
 }
 
-export function scaleToSpanMetres(nativePx: number, metres: number): number {
-  return (metres * worldPxPerMetre()) / nativePx;
+export function scaleToSpanMetres(nativePx: number, metres: number, livestock = false): number {
+  return uniformScale(nativePx, metres, livestock);
 }
 
-/** Homestead prop scale tuned for 64×32 iso tiles on phone zoom. */
+/** Painted-sprite fallback. Pixel counts are that sheet's size on the measured axis. */
 export function propSpriteForKind(kind: string, x: number, y: number, featureScale: number): PropSpriteDef {
-  const tileW = CONFIG.view.tileWidth;
   const tw = PAINTED_TILE_NATIVE_W;
+  const treeJitter = featureScale > 0 && featureScale < 3 ? featureScale : 1;
   switch (kind) {
     case "house":
-      return { key: SPRITE_KEYS.farmhouse, originX: 0.5, originY: 0.9, scale: (tileW * 2.45) / tw };
+      return { key: SPRITE_KEYS.farmhouse, originX: 0.5, originY: 0.9, scale: uniformScale(tw, FARMHOUSE_WIDTH_METRES) };
     case "windmill":
-      // Painted art is 512×739. TODO(A): full sprite height stands for an 8 m mill (about 6 to 10 m).
-      return { key: SPRITE_KEYS.windmill, originX: 0.48, originY: 0.94, scale: scaleToSpanMetres(739, 8) };
+      return { key: SPRITE_KEYS.windmill, originX: 0.48, originY: 0.94, scale: uniformScale(739, WINDMILL_HEIGHT_METRES) };
     case "shed":
-      return { key: SPRITE_KEYS.shed, originX: 0.5, originY: 0.88, scale: (tileW * 1.28) / 512 };
+      return { key: SPRITE_KEYS.shed, originX: 0.5, originY: 0.88, scale: uniformScale(512, SHED_WIDTH_METRES) };
     case "kraal":
-      // Art is 512 px wide. Keep the pen smaller than the house footprint (2.05 tiles).
-      return { key: SPRITE_KEYS.kraal, originX: 0.5, originY: 0.82, scale: (tileW * 1.3) / 512 };
+      return { key: SPRITE_KEYS.kraal, originX: 0.5, originY: 0.82, scale: uniformScale(512, KRAAL_WIDTH_METRES) };
     case "trough":
-      return { key: SPRITE_KEYS.trough, originX: 0.5, originY: 0.85, scale: (tileW * 1.35) / tw };
+      return { key: SPRITE_KEYS.trough, originX: 0.5, originY: 0.85, scale: uniformScale(tw, TROUGH_LENGTH_METRES) };
     case "reservoir":
-      // TODO(A): dam about 10 m across (about 8 to 12 m).
-      return { key: SPRITE_KEYS.reservoir, originX: 0.5, originY: 0.9, scale: scaleToSpanMetres(112, 10) };
+      return { key: SPRITE_KEYS.reservoir, originX: 0.5, originY: 0.9, scale: uniformScale(112, RESERVOIR_DIAMETER_METRES) };
     case "solar_pump":
-      // TODO(A): a small array about 6 m across.
-      return { key: SPRITE_KEYS.solarPump, originX: 0.5, originY: 0.94, scale: scaleToSpanMetres(112, 6) };
+      return { key: SPRITE_KEYS.solarPump, originX: 0.5, originY: 0.94, scale: uniformScale(112, SOLAR_WIDTH_METRES) };
     case "crush":
-      return { key: SPRITE_KEYS.crush, originX: 0.5, originY: 0.72, scale: (tileW * 1.7) / 220 };
+      return { key: SPRITE_KEYS.crush, originX: 0.5, originY: 0.72, scale: uniformScale(220, CRUSH_HEIGHT_METRES) };
     case "holding_pen":
-      // A scale of 1 spans about 3.6 tiles, so the three pens read as a real yard.
       return {
         key: SPRITE_KEYS.holdingPen,
         originX: 0.5,
         originY: 0.58,
-        scale: ((tileW * 3.6) / 480) * featureScale,
+        scale: uniformScale(480, featureScale >= 3 ? featureScale : 11),
       };
     case "race":
-      return { key: SPRITE_KEYS.race, originX: 0.5, originY: 0.62, scale: (tileW * 2.8) / 360 };
+      return { key: SPRITE_KEYS.race, originX: 0.5, originY: 0.62, scale: uniformScale(360, RACE_LENGTH_METRES) };
     case "handling_roof":
-      return { key: SPRITE_KEYS.handlingRoof, originX: 0.5, originY: 0.96, scale: (tileW * 2.5) / 340 };
+      return { key: SPRITE_KEYS.handlingRoof, originX: 0.5, originY: 0.96, scale: uniformScale(340, CRUSH_HEIGHT_METRES) };
     case "loading_ramp":
-      return { key: SPRITE_KEYS.loadingRamp, originX: 0.42, originY: 0.78, scale: (tileW * 2.2) / 240 };
+      return { key: SPRITE_KEYS.loadingRamp, originX: 0.42, originY: 0.78, scale: uniformScale(240, RAMP_LENGTH_METRES) };
     case "cattle_truck":
-      // Cab plus two slatted trailers. Length is a visual stand-in for the road train in the photos.
-      return { key: SPRITE_KEYS.cattleTruck, originX: 0.12, originY: 0.9, scale: scaleToSpanMetres(640, 22) };
+      return { key: SPRITE_KEYS.cattleTruck, originX: 0.12, originY: 0.9, scale: uniformScale(640, ROAD_TRAIN_METRES) };
     case "lick_feeder":
-      return { key: SPRITE_KEYS.lickFeeder, originX: 0.5, originY: 0.9, scale: (tileW * 1.1) / 112 };
+      return { key: SPRITE_KEYS.lickFeeder, originX: 0.5, originY: 0.9, scale: uniformScale(112, LICK_FEEDER_LENGTH_METRES) };
     case "tree":
       return {
         key: treeSpriteKey(x, y),
         originX: 0.5,
         originY: 0.92,
-        scale: ((tileW * 1.35) / tw) * featureScale,
+        scale: uniformScale(tw, CAMELTHORN_LARGE_METRES) * treeJitter,
       };
     case "bush":
       return {
         key: bushSpriteKey(x, y),
         originX: 0.5,
         originY: 0.88,
-        scale: ((tileW * 0.85) / 160) * featureScale,
+        scale: uniformScale(160, BUSH_DENSE_METRES) * treeJitter,
       };
     case "bakkie":
-      return { key: SPRITE_KEYS.bakkie, originX: 0.5, originY: 0.88, scale: (tileW * 1.1) / 320 };
+      return { key: SPRITE_KEYS.bakkie, originX: 0.5, originY: 0.88, scale: uniformScale(320, BAKKIE_LENGTH_METRES) };
     default:
-      return { key: SPRITE_KEYS.thornBush1, originX: 0.5, originY: 0.88, scale: 0.25 };
+      return { key: SPRITE_KEYS.thornBush1, originX: 0.5, originY: 0.88, scale: uniformScale(160, BUSH_DENSE_METRES) };
   }
 }
 
-/**
- * Visible cow width over the painted farmhouse width.
- * House footprint is 2.05 tiles (homesteadLayout). Cattle body fills ~131 of the 138px texture.
- * Target is the middle of 1/5 and 1/6.
- */
+/** Painted herd sheet. The body fills about 131 px of the texture; that span is the cow's length. */
 export function cattleDisplayScale(multiplier = 1): number {
-  const tileW = CONFIG.view.tileWidth;
-  const houseWidthPx = tileW * 2.05;
-  const cowBodyPx = 131;
-  const targetBody = houseWidthPx / 9.5;
-  return (targetBody / cowBodyPx) * multiplier;
+  return uniformScale(131, COW_LENGTH_METRES, true) * multiplier;
 }
 
 export type CowView = "left" | "right" | "toward" | "away";
@@ -812,19 +814,13 @@ export function cattleOctantKey(octant: number, calf = false, coat = 0): string 
   return `${calf ? "calf" : "cow"}-oct-${oct}-c${c}`;
 }
 
-/**
- * Nose-to-tail length painted in the octant canvas.
- * A cow is drawn at about 0.62 tiles: shorter than the bakkie (1.05 tiles)
- * and clearly smaller than the worker cottage (1.55 tiles).
- * TODO(A): visual size chosen against those sprites, not a measured shoulder.
- */
+/** Nose-to-tail length painted in the octant canvas. */
 export const COW_ART_BODY_PX = 80;
-export const COW_BODY_TILES = 0.62;
 
 export function cattleOctantScale(calf = false): number {
-  const bodyPx = calf ? COW_ART_BODY_PX * 0.68 : COW_ART_BODY_PX;
-  const tiles = calf ? COW_BODY_TILES * 0.62 : COW_BODY_TILES;
-  return (CONFIG.view.tileWidth * tiles) / bodyPx;
+  const metres = calf ? CALF_LENGTH_METRES : COW_LENGTH_METRES;
+  const bodyPx = calf ? COW_ART_BODY_PX * (CALF_LENGTH_METRES / COW_LENGTH_METRES) : COW_ART_BODY_PX;
+  return uniformScale(bodyPx, metres, true);
 }
 
 function paintOctantCow(octant: number, calf: boolean, coatIndex: number): HTMLCanvasElement {

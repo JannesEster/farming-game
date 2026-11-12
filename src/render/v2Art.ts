@@ -3,19 +3,13 @@ import { CONFIG } from "../sim/config";
 import type { Feature, GameState } from "../sim/types";
 import type { IsoLayout } from "./iso";
 import { tileCenter } from "./iso";
-import { COW_BODY_TILES, cowOctantFromScreen, scaleToSpanMetres, spritesBaseUrl } from "./sprites";
+import { cowOctantFromScreen, spritesBaseUrl } from "./sprites";
 import { V2_SPRITES, type V2SpriteMeta } from "./v2Manifest";
 import { renderPenFloor } from "./v2Ground";
+import { displayScaleForFile } from "./worldScale";
 import { yardGeometry } from "./yardDraw";
 
 const byFile = new Map(V2_SPRITES.map((sprite) => [sprite.file, sprite]));
-
-/** Authoring pixels of an adult side view. Keeps a cow at COW_BODY_TILES after the web resize. */
-const COW_SIDE_SOURCE_PX = byFile.get("cattle-bonsmara-e.png")?.sourceWidth ?? 245;
-/** Calf nose-to-tail, as a fraction of the adult side view. */
-const CALF_OF_COW = 0.68;
-/** Standing worker height in tiles, so Piet reads behind a herd instead of as a speck. */
-const PERSON_HEIGHT_TILES = 0.58;
 
 const BREEDS = ["brahman", "bonsmara", "angus", "nguni", "brown", "simmentaler"] as const;
 const OCTANT_FACING = ["e", "se", "s", "sw", "w", "nw", "n", "ne"] as const;
@@ -54,21 +48,8 @@ function meta(file: string): V2SpriteMeta | undefined {
   return byFile.get(file);
 }
 
-/** World scale that maps authoring pixels onto the cow's 0.62-tile body. */
-export function authoringScale(): number {
-  return (CONFIG.view.tileWidth * COW_BODY_TILES) / COW_SIDE_SOURCE_PX;
-}
-
-function drawScale(file: string): number {
-  const sprite = meta(file);
-  if (!sprite) return authoringScale();
-  return authoringScale() * (sprite.sourceWidth / sprite.width);
-}
-
-function footprintScale(file: string, tiles: number): number {
-  const sprite = meta(file);
-  const width = sprite?.width ?? 1;
-  return (CONFIG.view.tileWidth * tiles) / width;
+function worldScaleOf(file: string): number {
+  return displayScaleForFile(file) ?? 1;
 }
 
 export type V2Pose = {
@@ -78,7 +59,11 @@ export type V2Pose = {
   scale: number;
 };
 
-function pose(file: string, scale = drawScale(file)): V2Pose | null {
+export function referencePose(file: string): V2Pose | null {
+  return pose(file);
+}
+
+function pose(file: string, scale = worldScaleOf(file)): V2Pose | null {
   const sprite = meta(file);
   if (!sprite) return null;
   return { key: sprite.key, originX: sprite.anchorX, originY: sprite.anchorY, scale };
@@ -102,24 +87,15 @@ export function cattleFile(octant: number, calf: boolean, coat: number, graze: b
 
 export function cattlePose(octant: number, calf: boolean, coat: number, graze: boolean): V2Pose | null {
   const file = cattleFile(octant, calf, coat, graze);
-  return pose(file, drawScale(file) * (calf ? calfScaleBoost() : 1));
+  return pose(file, worldScaleOf(file));
 }
 
-/** How much to enlarge the calf sheet so its side view is CALF_OF_COW of an adult. */
-function calfScaleBoost(): number {
-  const calf = meta("cattle-calf-e.png");
-  const adult = meta("cattle-bonsmara-e.png");
-  if (!calf || !adult || calf.sourceWidth <= 0) return 1;
-  return (CALF_OF_COW * adult.sourceWidth) / calf.sourceWidth;
-}
-
-/** Side-view body length in tiles. Adults stay at COW_BODY_TILES. */
+/** Side-view body length in tiles, from the world scale. */
 export function cattleBodyTiles(calf: boolean): number {
   const file = calf ? "cattle-calf-e.png" : "cattle-bonsmara-e.png";
   const sprite = meta(file);
   if (!sprite) return 0;
-  const scale = drawScale(file) * (calf ? calfScaleBoost() : 1);
-  return (sprite.width * scale) / CONFIG.view.tileWidth;
+  return (sprite.width * worldScaleOf(file)) / CONFIG.view.tileWidth;
 }
 
 const WALK_FACING: Record<string, string> = {
@@ -141,15 +117,9 @@ export function personFile(role: "farmer" | "farmhand", dx: number, dy: number, 
   return `person-${who}-walk-${WALK_FACING[face]}.png`;
 }
 
-function personScale(file: string): number {
-  const sprite = meta(file);
-  const height = sprite?.height ?? 140;
-  return (CONFIG.view.tileWidth * PERSON_HEIGHT_TILES) / height;
-}
-
 export function personPose(role: "farmer" | "farmhand", dx: number, dy: number, moving: boolean): V2Pose | null {
   const file = personFile(role, dx, dy, moving);
-  return pose(file, personScale(file));
+  return pose(file, worldScaleOf(file));
 }
 
 /** Same-sign screen steps are the NW–SE diagonal. Opposite signs are NE–SW. */
@@ -178,7 +148,7 @@ function addSprite(
   x: number,
   y: number,
   depth: number,
-  scale = drawScale(file),
+  scale = worldScaleOf(file),
 ): Phaser.GameObjects.Image | null {
   const placed = pose(file, scale);
   if (!placed || !scene.textures.exists(placed.key)) return null;
@@ -246,13 +216,8 @@ function propFile(kind: string, x: number, y: number): string | null {
   }
 }
 
-function propScale(file: string, kind: string): number {
-  if (kind === "house") return footprintScale(file, 2.05);
-  if (kind === "worker_house") return footprintScale(file, 1.55);
-  if (kind === "shed") return footprintScale(file, 1.35);
-  if (kind === "windmill" || kind === "reservoir") return drawScale(file) * 1.35;
-  if (kind === "tree") return drawScale(file) * 1.2;
-  return drawScale(file);
+function propScale(file: string): number {
+  return worldScaleOf(file);
 }
 
 function placeRun(
@@ -268,7 +233,7 @@ function placeRun(
 ): void {
   const sprite = meta(file);
   if (!sprite) return;
-  const scale = drawScale(file) * scaleMul;
+  const scale = worldScaleOf(file) * scaleMul;
   const anchorPxX = sprite.anchorX * sprite.width;
   const anchorPxY = sprite.anchorY * sprite.height;
   const farPxX = sprite.anchorX < 0.5 ? sprite.width - 3 : 3;
@@ -306,33 +271,42 @@ function placeRun(
   }
 }
 
-/** A short rail whose length matches the segment, anchored on the near end so pieces follow a bend. */
-function placeFitted(
+/** Drop world-scale rails along a path. Height stays the real panel height. */
+function placeAlongPath(
   scene: Phaser.Scene,
-  file: string,
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
+  points: { x: number; y: number }[],
+  fileFor: (dx: number, dy: number) => string,
   depth: number,
-): Phaser.GameObjects.Image | null {
-  const sprite = meta(file);
-  if (!sprite) return null;
-  const anchorPxX = sprite.anchorX * sprite.width;
-  const anchorPxY = sprite.anchorY * sprite.height;
-  const farPxX = sprite.anchorX < 0.5 ? sprite.width - 3 : 3;
-  const farPxY = 3;
-  const ox0 = farPxX - anchorPxX;
-  const oy0 = farPxY - anchorPxY;
-  const artLen = Math.hypot(ox0, oy0) || 1;
-  const segLen = Math.hypot(x2 - x1, y2 - y1);
-  const scale = Math.max(0.035, (segLen / artLen) * 1.05);
-  const ox = ox0 * scale;
-  const oy = oy0 * scale;
-  const forward = ox * (x2 - x1) + oy * (y2 - y1) >= 0;
-  const dirX = forward ? ox : -ox;
-  const dirY = forward ? oy : -oy;
-  return addSprite(scene, file, (x1 + x2) / 2 - dirX / 2, (y1 + y2) / 2 - dirY / 2, depth, scale);
+  images: Phaser.GameObjects.Image[],
+  out: PlacedV2[],
+  kind: string,
+): void {
+  if (points.length < 2) return;
+  const sample = meta(fileFor(1, 1));
+  const scale = sample ? worldScaleOf(sample.file) : 1;
+  const step = Math.max(10, (sample?.width ?? 40) * scale * 0.8);
+  let carry = step;
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const a = points[i];
+    const b = points[i + 1];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len < 1) continue;
+    let dist = carry;
+    while (dist <= len) {
+      const t = dist / len;
+      const x = a.x + (b.x - a.x) * t;
+      const y = a.y + (b.y - a.y) * t;
+      const file = fileFor(b.x - a.x, b.y - a.y);
+      const piece = addSprite(scene, file, x, y, depth, worldScaleOf(file));
+      if (piece) {
+        piece.setData("featureKind", kind);
+        images.push(piece);
+        out.push({ image: piece, kind });
+      }
+      dist += step;
+    }
+    carry = dist - len;
+  }
 }
 
 function densify(points: { x: number; y: number }[], step: number): { x: number; y: number }[] {
@@ -390,16 +364,15 @@ function placeYard(
     const image = addSprite(scene, file, corner.x, corner.y, 8 + corner.y * 0.04 + 0.2);
     if (image) images.push(image);
   });
-  const race = densify(geometry.race, 14);
-  for (let i = 0; i < race.length - 1; i += 1) {
-    const a = race[i];
-    const b = race[i + 1];
-    const piece = placeFitted(scene, nwSeDiagonal(b.x - a.x, b.y - a.y) ? "yard-race-nw-se.png" : "yard-race.png", a.x, a.y, b.x, b.y, 8 + ((a.y + b.y) / 2) * 0.04 + 0.12);
-    if (!piece) continue;
-    piece.setData("featureKind", "race");
-    images.push(piece);
-    out.push({ image: piece, kind: "race" });
-  }
+  placeAlongPath(
+    scene,
+    densify(geometry.race, 14),
+    (dx, dy) => (nwSeDiagonal(dx, dy) ? "yard-race-nw-se.png" : "yard-race.png"),
+    8.2,
+    images,
+    out,
+    "race",
+  );
   if (geometry.crush) {
     const file = nwSeDiagonal(geometry.ramp?.intoX ?? 1, geometry.ramp?.intoY ?? 1)
       ? "yard-crush-roofed-nw-se.png"
@@ -460,7 +433,7 @@ export function placeV2Props(scene: Phaser.Scene, state: GameState, layout: IsoL
     if (!file) continue;
     const center = tileCenter(feature.x, feature.y, layout, tileW, tileH);
     const depth = 8 + center.y * 0.04;
-    const image = addSprite(scene, file, center.x, center.y, depth, propScale(file, feature.kind));
+    const image = addSprite(scene, file, center.x, center.y, depth, propScale(file));
     if (!image) continue;
     image.setData("featureKind", feature.kind);
     image.setData("tileX", feature.x);
@@ -471,7 +444,7 @@ export function placeV2Props(scene: Phaser.Scene, state: GameState, layout: IsoL
     }
     if (feature.kind === "worker_house") cottages.push(image);
     if (feature.kind === "windmill") {
-      placeShadow(scene, center.x, center.y, 42, 14, 0.3, depth - 0.2);
+      placeShadow(scene, center.x, center.y, image.displayWidth * 0.42, image.displayHeight * 0.08, 0.3, depth - 0.2);
     }
   }
 
@@ -479,7 +452,7 @@ export function placeV2Props(scene: Phaser.Scene, state: GameState, layout: IsoL
   if (house) {
     const park = tileCenter(house.x + 2, house.y, layout, tileW, tileH);
     const file = "vehicle-bakkie-se.png";
-    const image = addSprite(scene, file, park.x, park.y + 4, 8 + park.y * 0.04, footprintScale(file, 1.05));
+    const image = addSprite(scene, file, park.x, park.y + 4, 8 + park.y * 0.04, worldScaleOf(file));
     if (image) {
       image.setData("featureKind", "bakkie");
       image.setData("tileX", house.x + 2);
@@ -563,13 +536,7 @@ export function vehiclePose(kind: "bakkie" | "roadtrain", dx: number, dy: number
   } else {
     file = roadtrainFile(dx, dy);
   }
-  if (kind === "roadtrain") {
-    const target = 640 * scaleToSpanMetres(640, 22);
-    const sprite = meta(file);
-    const scale = sprite ? target / sprite.width : 0.4;
-    return pose(file, scale);
-  }
-  return pose(file, footprintScale(file, 1.05));
+  return pose(file, worldScaleOf(file));
 }
 
 export type FenceArt = { wires: Phaser.GameObjects.Image[]; posts: Phaser.GameObjects.Image[] };
@@ -594,16 +561,17 @@ export function placeV2Fences(scene: Phaser.Scene, segments: FenceSeg[]): Phaser
     const sprite = meta(file);
     if (!sprite || !scene.textures.exists(sprite.key)) continue;
     const jitter = (Math.abs(Math.sin(segment.x1 * 12.9898 + segment.y1 * 78.233) * 43758.5453) % 1) * 2 - 1;
-    const scale = (tileEdge / sprite.width) * (0.9 + (jitter * 0.5 + 0.5) * 0.2);
+    const scaleY = worldScaleOf(file);
+    const scaleX = tileEdge / sprite.width;
     const along = Math.hypot(dx, dy) || 1;
-    const shift = jitter * tileEdge * 0.14;
+    const shift = jitter * tileEdge * 0.08;
     const midX = (segment.x1 + segment.x2) / 2 + (dx / along) * shift;
     const midY = (segment.y1 + segment.y2) / 2 + (dy / along) * shift;
     const depth = 5 + midY * 0.01;
     const image = scene.add
-      .image(midX + (sprite.anchorX - 0.5) * sprite.width * scale, midY, sprite.key)
+      .image(midX + (sprite.anchorX - 0.5) * sprite.width * scaleX, midY, sprite.key)
       .setOrigin(sprite.anchorX, sprite.anchorY)
-      .setScale(scale)
+      .setScale(scaleX, scaleY)
       .setDepth(depth);
     if (segment.kind === "selected") image.setTint(0xffe3a3);
     else if (segment.kind === "inner") image.setAlpha(0.92);
@@ -619,7 +587,7 @@ export function placeV2Fences(scene: Phaser.Scene, segments: FenceSeg[]): Phaser
     const postRoll = Math.abs(Math.sin(segment.x1 * 0.17 + segment.y1 * 0.31) * 91.7) % 1;
     if (postRoll > 0.34) continue;
     const post = segment.x1 < segment.x2 ? "fence-strainer-post.png" : "fence-strainer-post-flip.png";
-    const image = addSprite(scene, post, segment.x1, segment.y1, 5.2 + segment.y1 * 0.01, drawScale(post) * 0.85);
+    const image = addSprite(scene, post, segment.x1, segment.y1, 5.2 + segment.y1 * 0.01, worldScaleOf(post));
     if (image) images.push(image);
   }
   return images;

@@ -1,32 +1,13 @@
-import { TILE_HOMESTEAD, TILE_OUTSIDE, type Feature, type FeatureKind, type TilePoint } from "./types";
-
-type Stamp = { kind: FeatureKind; into: number; along: number; scale: number };
+import { HANDLING_YARD, HANDLING_YARD_COMPACT, truckBayTiles, type YardStamp } from "../render/worldScale";
+import { TILE_HOMESTEAD, TILE_OUTSIDE, type Feature, type TilePoint } from "./types";
 
 /**
  * Steel yards beside the farm road, from docs/reference/cattle-yards/yards-aerial.png.
  * `into` steps off the road into the camp. `along` steps along the road.
- * The pens sit well back from the road so the truck can park on the gravel bay
- * without covering them. The footprint is several times a single-tile kraal.
+ * Pen scales are metres. The gravel bay is long enough for the road train.
  */
-const YARD: Stamp[] = [
-  { kind: "loading_ramp", into: 1, along: 2, scale: 1 },
-  { kind: "race", into: 3, along: 4, scale: 1 },
-  { kind: "crush", into: 3, along: 5, scale: 1 },
-  { kind: "handling_roof", into: 3, along: 5, scale: 1 },
-  { kind: "holding_pen", into: 6, along: 2, scale: 1.15 },
-  { kind: "holding_pen", into: 6, along: 6, scale: 0.82 },
-  { kind: "holding_pen", into: 6, along: 9, scale: 0.58 },
-];
-
-const COMPACT: Stamp[] = [
-  { kind: "loading_ramp", into: 1, along: 1, scale: 1 },
-  { kind: "race", into: 2, along: 3, scale: 1 },
-  { kind: "crush", into: 2, along: 4, scale: 1 },
-  { kind: "handling_roof", into: 2, along: 4, scale: 1 },
-  { kind: "holding_pen", into: 5, along: 1, scale: 1.1 },
-  { kind: "holding_pen", into: 5, along: 4, scale: 0.8 },
-  { kind: "holding_pen", into: 5, along: 7, scale: 0.58 },
-];
+const YARD: readonly YardStamp[] = HANDLING_YARD;
+const COMPACT: readonly YardStamp[] = HANDLING_YARD_COMPACT;
 
 const INTO = [
   [1, 0],
@@ -102,11 +83,14 @@ export function placeCattleHandlingYard(args: {
             return { kind: piece.kind, x: cell.x, y: cell.y, scale: piece.scale };
           });
           const gravel: TilePoint[] = [];
-          for (let along = 0; along <= Math.min(6, alongMax); along += 1) {
-            const cell = at(-1, along);
-            if (cell.x < 0 || cell.y < 0 || cell.x >= width || cell.y >= height) continue;
-            if (idAt(cell.x, cell.y) === TILE_HOMESTEAD) continue;
-            gravel.push(cell);
+          const bay = truckBayTiles();
+          for (let along = -bay; along <= alongMax + 2; along += 1) {
+            for (const into of [0, -1]) {
+              const cell = at(into, along);
+              if (cell.x < 0 || cell.y < 0 || cell.x >= width || cell.y >= height) continue;
+              if (idAt(cell.x, cell.y) === TILE_HOMESTEAD) continue;
+              gravel.push(cell);
+            }
           }
           let score = fromHouse;
           if (beside === avoidCampId) score -= 40;
