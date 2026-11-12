@@ -118,12 +118,14 @@ export function ensurePersonWalkTextures(scene: Phaser.Scene, role: "farmer" | "
 export function ensureStep3bPropTextures(scene: Phaser.Scene): void {
   if (!scene.textures.exists(SPRITE_KEYS.reservoir)) {
     const g = scene.make.graphics({ x: 0, y: 0 });
-    g.fillStyle(0x6f7f9a, 1);
-    g.fillRoundedRect(12, 34, 88, 46, 6);
-    g.fillStyle(0x4a90c8, 0.7);
-    g.fillRect(18, 40, 76, 22);
-    g.lineStyle(2, 0x3d4e62, 1);
-    g.strokeRoundedRect(12, 34, 88, 46, 6);
+    g.fillStyle(0x8d8680, 1);
+    g.fillEllipse(56, 62, 96, 46);
+    g.fillStyle(0x6a6560, 1);
+    g.fillEllipse(56, 54, 84, 36);
+    g.fillStyle(0x3d7eae, 1);
+    g.fillEllipse(56, 50, 64, 24);
+    g.lineStyle(3, 0x4e4944, 1);
+    g.strokeEllipse(56, 62, 96, 46);
     g.generateTexture(SPRITE_KEYS.reservoir, 112, 96);
     g.destroy();
   }
@@ -176,17 +178,54 @@ export function ensureStep3bPropTextures(scene: Phaser.Scene): void {
   }
   if (!scene.textures.exists(SPRITE_KEYS.cattleTruck)) {
     const g = scene.make.graphics({ x: 0, y: 0 });
-    g.fillStyle(0x6b1d1d, 1);
-    g.fillRoundedRect(8, 44, 52, 28, 4);
-    g.fillStyle(0x8b2e2e, 1);
-    g.fillRoundedRect(58, 52, 46, 34, 4);
-    g.fillStyle(0x1a2530, 1);
-    g.fillCircle(26, 78, 9);
-    g.fillCircle(78, 80, 10);
-    g.fillCircle(94, 80, 10);
-    g.fillStyle(0x9ec8e8, 0.85);
-    g.fillRect(14, 50, 16, 12);
-    g.generateTexture(SPRITE_KEYS.cattleTruck, 128, 96);
+    const w = 280;
+    const h = 120;
+    g.fillStyle(0xf4f1ea, 1);
+    g.fillRoundedRect(8, 36, 78, 52, 6);
+    g.fillStyle(0x9ec8e8, 1);
+    g.fillRoundedRect(16, 44, 28, 18, 3);
+    g.fillStyle(0xc45a3a, 1);
+    g.fillRect(70, 58, 16, 8);
+    g.fillStyle(0x2c2118, 1);
+    g.fillRoundedRect(92, 30, 170, 58, 3);
+    for (let i = 0; i < 8; i += 1) {
+      g.fillStyle(i % 2 === 0 ? 0x8d6240 : 0x6e4b30, 1);
+      g.fillRect(98 + i * 20, 34, 12, 50);
+    }
+    g.lineStyle(2, 0x2a1c12, 1);
+    g.strokeRoundedRect(92, 30, 170, 58, 3);
+    g.fillStyle(0x1c2430, 1);
+    g.fillCircle(36, 96, 14);
+    g.fillCircle(70, 96, 14);
+    g.fillCircle(130, 98, 15);
+    g.fillCircle(190, 98, 15);
+    g.fillCircle(240, 98, 15);
+    g.fillStyle(0x8d98a6, 1);
+    g.fillCircle(36, 96, 6);
+    g.fillCircle(70, 96, 6);
+    g.fillCircle(130, 98, 6);
+    g.fillCircle(190, 98, 6);
+    g.fillCircle(240, 98, 6);
+    g.generateTexture(SPRITE_KEYS.cattleTruck, w, h);
+    g.destroy();
+  }
+  if (!scene.textures.exists(SPRITE_KEYS.cowDrink)) {
+    const g = scene.make.graphics({ x: 0, y: 0 });
+    g.fillStyle(0x7a4e2d, 1);
+    g.fillEllipse(108, 46, 86, 36);
+    g.fillRect(78, 58, 8, 28);
+    g.fillRect(96, 58, 8, 28);
+    g.fillRect(122, 58, 8, 28);
+    g.fillRect(140, 58, 8, 28);
+    g.fillStyle(0x6b4226, 1);
+    g.fillTriangle(78, 40, 36, 78, 88, 46);
+    g.fillStyle(0x8a5a34, 1);
+    g.fillEllipse(30, 84, 34, 18);
+    g.fillStyle(0x2a1a12, 1);
+    g.fillCircle(20, 82, 2.4);
+    g.fillStyle(0xf2efe6, 1);
+    g.fillEllipse(118, 38, 12, 9);
+    g.generateTexture(SPRITE_KEYS.cowDrink, 180, 110);
     g.destroy();
   }
 }
@@ -217,39 +256,35 @@ export function ensureWorkerHouseTexture(scene: Phaser.Scene): void {
   const key = SPRITE_KEYS.workerHouse;
   if (scene.textures.exists(key)) return;
   const g = scene.make.graphics({ x: 0, y: 0 });
-  g.fillStyle(0xb8a48c, 1);
-  g.fillRoundedRect(10, 44, 76, 42, 3);
-  g.fillStyle(0xc7a06a, 1);
-  g.fillRect(6, 78, 84, 8);
-  g.fillStyle(0xa04030, 1);
+  g.fillStyle(0xd7c3a4, 1);
+  g.fillRect(18, 58, 92, 40);
+  g.fillStyle(0xb08968, 1);
+  g.fillRect(14, 94, 100, 8);
+  g.fillStyle(0x8d97a0, 1);
   g.beginPath();
-  g.moveTo(8, 46);
-  g.lineTo(48, 12);
-  g.lineTo(88, 46);
+  g.moveTo(8, 62);
+  g.lineTo(64, 22);
+  g.lineTo(120, 62);
   g.closePath();
   g.fillPath();
-  g.lineStyle(1, 0x7a2a1e, 0.85);
-  for (let i = 0; i < 7; i += 1) {
-    const y = 18 + i * 4;
-    g.lineBetween(20 + i * 3, y, 76 - i * 2, y + 8);
+  g.lineStyle(2, 0x5e676e, 1);
+  for (let i = 0; i < 9; i += 1) {
+    const y = 26 + i * 3.8;
+    const t = i / 9;
+    const left = 16 + t * 40;
+    const right = 112 - t * 40;
+    g.lineBetween(left, y, right, y + 4);
   }
   g.fillStyle(0x4a3528, 1);
-  g.fillRect(40, 58, 18, 28);
-  g.fillStyle(0x3d2918, 1);
-  g.fillRect(46, 66, 6, 6);
-  g.fillStyle(0x6e8199, 0.9);
-  g.fillRect(22, 54, 12, 11);
-  g.fillRect(60, 54, 12, 11);
-  g.lineStyle(1, 0x5a6578, 1);
-  g.lineBetween(28, 54, 28, 65);
-  g.lineBetween(22, 59, 34, 59);
-  g.lineBetween(66, 54, 66, 65);
-  g.lineBetween(60, 59, 72, 59);
-  g.generateTexture(key, 96, 96);
+  g.fillRect(54, 70, 20, 28);
+  g.fillStyle(0x6e8199, 0.95);
+  g.fillRect(28, 68, 16, 12);
+  g.fillRect(84, 68, 16, 12);
+  g.generateTexture(key, 128, 112);
   g.destroy();
 }
 
-export const WORKER_COTTAGE_NATIVE_WIDTH = 96;
+export const WORKER_COTTAGE_NATIVE_WIDTH = 128;
 
 export function inferPersonDir(dx: number, dy: number): PersonDir {
   if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? "e" : "w";
@@ -368,7 +403,7 @@ export function propSpriteForKind(kind: string, x: number, y: number, featureSca
     case "loading_ramp":
       return { key: SPRITE_KEYS.loadingRamp, originX: 0.5, originY: 0.92, scale: (tileW * 2) / 112 };
     case "cattle_truck":
-      return { key: SPRITE_KEYS.cattleTruck, originX: 0.5, originY: 0.9, scale: (tileW * 2.4) / 128 };
+      return { key: SPRITE_KEYS.cattleTruck, originX: 0.35, originY: 0.92, scale: (tileW * 3.2) / 280 };
     case "lick_feeder":
       return { key: SPRITE_KEYS.lickFeeder, originX: 0.5, originY: 0.9, scale: (tileW * 1.1) / 112 };
     case "tree":

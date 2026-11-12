@@ -230,10 +230,12 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
   }
   features.push({
     kind: "worker_house",
-    x: hx + 11,
-    y: hy + 13,
+    x: hx + blockW - 2,
+    y: hy + blockH - 1,
     scale: 1,
   });
+  features.push({ kind: "crush", x: hx + 2, y: hy + 3, scale: 1 });
+  features.push({ kind: "loading_ramp", x: hx + 3, y: hy + blockH - 2, scale: 1 });
 
   const spaceDown = height - (hy + blockH);
   const spaceUp = hy;

@@ -45,7 +45,7 @@ async function spriteHeightOk(page, needle) {
 }
 
 async function prepPage(page) {
-  await page.goto("http://127.0.0.1:4173/?capture=1&offer=otjozondjupa-ranch", { waitUntil: "networkidle" });
+  await page.goto("http://127.0.0.1:4173/?capture=1&farm=default", { waitUntil: "networkidle" });
   await page.waitForFunction(() => window.__farmCapture?.sampleFps);
   await page.evaluate(() => {
     window.__farmCapture?.prepareForScreenshot?.();
@@ -75,44 +75,86 @@ async function main() {
       await prepPage(page);
       const hashes = {};
 
-      await page.evaluate(() => window.__farmCapture?.prepareDrinkingCapture?.());
-      await page.waitForTimeout(500);
-      const drinkSprites = await spriteHeightOk(page, "windmill");
-      if (!drinkSprites.ok) throw new Error(`${viewport.name}: windmill/trough too small (${drinkSprites.maxH}px)`);
+      const drinkOk = await page.evaluate(() => window.__farmCapture?.prepareDrinkingCapture?.());
+      await page.waitForTimeout(400);
+      const drinkAudit = await page.evaluate(() => ({
+        windmill: window.__farmCapture.auditKind("windmill"),
+        reservoir: window.__farmCapture.auditKind("reservoir"),
+        trough: window.__farmCapture.auditKind("trough"),
+        lick: window.__farmCapture.auditKind("lick_feeder"),
+        drinks: window.__farmCapture.drinkCowsNearTrough(),
+      }));
+      for (const kind of ["windmill", "reservoir", "trough", "lick"]) {
+        const row = drinkAudit[kind];
+        if (!drinkOk || row.inView < 1 || row.maxScreenPx < 20) {
+          throw new Error(`${viewport.name}: ${kind} not in drinking shot ${JSON.stringify(row)}`);
+        }
+      }
+      if (drinkAudit.drinks < 3) {
+        const why = await page.evaluate(() => window.__farmCapture.drinkDebug?.() ?? null);
+        throw new Error(`${viewport.name}: expected 3 drinking cows, got ${drinkAudit.drinks} ${JSON.stringify(why)}`);
+      }
       const drinkPath = path.join(outDir, `${viewport.name}-cows-drinking-windmill.png`);
       await page.screenshot({ path: drinkPath });
       hashes.drink = await fileHash(drinkPath);
 
-      await page.evaluate(() => window.__farmCapture?.prepareNoWaterCampCapture?.());
-      await page.waitForTimeout(400);
+      const noWaterOk = await page.evaluate(() => window.__farmCapture?.prepareNoWaterCampCapture?.());
+      if (!noWaterOk) throw new Error(`${viewport.name}: no-water label missing`);
+      await page.waitForTimeout(300);
       const noWaterPath = path.join(outDir, `${viewport.name}-camp-no-water.png`);
       await page.screenshot({ path: noWaterPath });
       hashes.noWater = await fileHash(noWaterPath);
 
-      await page.evaluate(() => window.__farmCapture?.prepareSaleKraalCapture?.());
-      await page.waitForTimeout(500);
-      const kraalSprites = await spriteHeightOk(page, "kraal");
-      if (!kraalSprites.ok) throw new Error(`${viewport.name}: kraal/truck too small (${kraalSprites.maxH}px)`);
+      const kraalOk = await page.evaluate(() => window.__farmCapture?.prepareSaleKraalCapture?.());
+      await page.waitForTimeout(400);
+      const kraalAudit = await page.evaluate(() => ({
+        kraal: window.__farmCapture.auditKind("kraal"),
+        crush: window.__farmCapture.auditKind("crush"),
+        ramp: window.__farmCapture.auditKind("loading_ramp"),
+        truck: window.__farmCapture.auditKind("cattle_truck"),
+        cattle: window.__farmCapture.countCattleInView(),
+      }));
+      for (const kind of ["kraal", "crush", "ramp", "truck"]) {
+        const row = kraalAudit[kind];
+        if (!kraalOk || row.inView < 1 || row.maxScreenPx < 20) {
+          throw new Error(`${viewport.name}: ${kind} missing at kraal ${JSON.stringify(kraalAudit)}`);
+        }
+      }
+      if (kraalAudit.cattle < 3) throw new Error(`${viewport.name}: herd not in kraal view`);
       const kraalPath = path.join(outDir, `${viewport.name}-herd-kraal-truck.png`);
       await page.screenshot({ path: kraalPath });
       hashes.kraal = await fileHash(kraalPath);
 
-      await page.evaluate(() => window.__farmCapture?.prepareTruckLeavingCapture?.());
-      await page.waitForTimeout(400);
+      const leaveOk = await page.evaluate(() => window.__farmCapture?.prepareTruckLeavingCapture?.());
+      await page.waitForTimeout(300);
+      const truckMeta = await page.evaluate(() => window.__farmCapture.truckOnRoad());
+      if (!leaveOk || truckMeta.awayTiles < 4 || truckMeta.screenPx < 20) {
+        throw new Error(`${viewport.name}: truck not on the road ${JSON.stringify(truckMeta)}`);
+      }
       const truckPath = path.join(outDir, `${viewport.name}-truck-departing.png`);
       await page.screenshot({ path: truckPath });
       hashes.truck = await fileHash(truckPath);
 
-      await page.evaluate(() => window.__farmCapture?.prepareBakkieDustCapture?.());
-      await page.waitForTimeout(450);
-      const bakkieSprites = await spriteHeightOk(page, "bakkie");
-      if (!bakkieSprites.ok) throw new Error(`${viewport.name}: bakkie too small (${bakkieSprites.maxH}px)`);
+      const bakkieOk = await page.evaluate(() => window.__farmCapture?.prepareBakkieDustCapture?.());
+      await page.waitForTimeout(300);
+      const bakkieMeta = await page.evaluate(() => window.__farmCapture.bakkieOnTrack());
+      if (!bakkieOk || bakkieMeta.tilesFromHouse < 4 || bakkieMeta.screenPx < 20 || !bakkieMeta.dust) {
+        throw new Error(`${viewport.name}: bakkie not driving ${JSON.stringify(bakkieMeta)}`);
+      }
       const bakkiePath = path.join(outDir, `${viewport.name}-bakkie-dust.png`);
       await page.screenshot({ path: bakkiePath });
       hashes.bakkie = await fileHash(bakkiePath);
 
-      await page.evaluate(() => window.__farmCapture?.frameFarmerAtHouse?.());
-      await page.waitForTimeout(400);
+      const cottageOk = await page.evaluate(() => window.__farmCapture?.frameFarmerAtHouse?.());
+      await page.waitForTimeout(200);
+      const cottageAudit = await page.evaluate(() => ({
+        onYard: window.__farmCapture.cottageOnYard(),
+        house: window.__farmCapture.auditKind("worker_house"),
+      }));
+      if (!cottageOk || !cottageAudit.onYard || cottageAudit.house.inView < 1 || cottageAudit.house.maxScreenPx < 20) {
+        throw new Error(`${viewport.name}: cottage not on the yard ${JSON.stringify(cottageAudit)}`);
+      }
+      await page.waitForTimeout(300);
       const pietPath = path.join(outDir, `${viewport.name}-piet-cottage-yard.png`);
       await page.screenshot({ path: pietPath });
       hashes.piet = await fileHash(pietPath);

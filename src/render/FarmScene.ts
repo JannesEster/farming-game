@@ -19,7 +19,8 @@ import { freeWorkerHouseSlots } from "../sim/housing";
 import { ensurePeopleState, tickPeopleSchedule, workerAtHomeAtNight } from "../sim/people";
 import { farmerDisplayName, DEFAULT_PLAYER_DISPLAY_NAME } from "../sim/playerName";
 import { herdRearPathProgress, herderPathProgressBehindTail } from "../sim/convoy";
-import { tickDrinkingRealtime, herdDrinkingAtTrough, troughInCamp, campHasWaterAccess } from "../sim/water";
+import { tickDrinkingRealtime, herdDrinkingAtTrough, campHasWaterAccess } from "../sim/water";
+import { tileAlongRoad } from "../sim/yard";
 import {
   beginSaleConvoy,
   tickSaleConvoyRealtime,
@@ -28,7 +29,7 @@ import {
   saleTruckDeparting,
 } from "../sim/sales";
 import { quoteSale } from "../sim/economy";
-import { maybeStartBakkieRun, tickBakkieRealtime, bakkieDustTrail, bakkieOnRoad } from "../sim/bakkie";
+import { maybeStartBakkieRun, tickBakkieRealtime, bakkieOnRoad } from "../sim/bakkie";
 import { STEP3B } from "../sim/step3bConfig";
 import { planHerdPath, pointOnPath } from "../sim/path";
 import { initStoryPeople } from "../sim/story";
@@ -103,7 +104,6 @@ import {
   ensureFarmerTexture,
   ensureWorkerHouseTexture,
   ensureStep3bPropTextures,
-  ensureDrinkCowTexture,
   inferPersonDir,
   personTextureKey,
   SPRITE_KEYS,
@@ -115,7 +115,6 @@ import {
   propSpriteForKind,
 } from "./sprites";
 import {
-  HOMESTEAD_FEATURE_KINDS,
   homesteadSpritePlacementsFromFeatures,
   workerCottagePlacements,
 } from "./homesteadLayout";
@@ -173,6 +172,11 @@ export class FarmScene extends Phaser.Scene {
   private herdOffsets: HerdOffset[] = [];
   private lastHerdCampId = -1;
   private propSprites: Phaser.GameObjects.Image[] = [];
+  private parkedBakkie = { x: 0, y: 0 };
+  private captureHerdTile: { x: number; y: number } | null = null;
+  private captureDrinkHeads = 0;
+  private captureKraalLineup = false;
+  private capturePin: { x: number; y: number; zoom: number } | null = null;
   private yardBakkie?: Phaser.GameObjects.Image;
   private cattleTruck?: Phaser.GameObjects.Image;
   private bakkieDust?: Phaser.GameObjects.Graphics;
@@ -961,7 +965,16 @@ export class FarmScene extends Phaser.Scene {
       prepareSaleKraalCapture: () => this.prepareSaleKraalCapture(),
       prepareTruckLeavingCapture: () => this.prepareTruckLeavingCapture(),
       prepareBakkieDustCapture: () => this.prepareBakkieDustCapture(),
-      maxPropTextureHeightInView: (needle: string) => this.maxPropTextureHeightInView(needle),
+      auditKind: (kind: string) => this.auditKind(kind),
+      drinkCowsNearTrough: () => this.drinkCowsNearTrough(),
+      drinkDebug: () => this.drinkDebug(),
+      truckOnRoad: () => this.truckOnRoad(),
+      bakkieOnTrack: () => this.bakkieOnTrack(),
+      cottageOnYard: () => {
+        const cottage = this.state.features.find((f) => f.kind === "worker_house");
+        if (!cottage) return false;
+        return this.state.campIds[cottage.y * this.state.width + cottage.x] === -1;
+      },
     };
     const flowBridge = getGameFlow().exposeCaptureApi();
     (window as Window & { __farmCapture?: typeof bridge & Record<string, unknown> }).__farmCapture = {
@@ -971,6 +984,16 @@ export class FarmScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
+    if (this.capturePin) {
+      const camera = this.cameras.main;
+      const insets = viewportCameraInsets();
+      const contentW = Math.max(80, camera.width - insets.left - insets.right);
+      const contentH = Math.max(80, camera.height - insets.top - insets.bottom);
+      camera.setZoom(this.capturePin.zoom);
+      camera.scrollX = this.capturePin.x - (insets.left + contentW / 2) / this.capturePin.zoom;
+      camera.scrollY = this.capturePin.y - (insets.top + contentH / 2) / this.capturePin.zoom;
+      camera.preRender();
+    }
     this.presentQueuedCard();
     const blocked = this.clockBlocked();
     const walking = herdInTransit(this.state.herd);
@@ -1245,6 +1268,13 @@ export class FarmScene extends Phaser.Scene {
           .setOrigin(place.originX, place.originY)
           .setScale(place.scale)
           .setDepth(8 + footY * 0.04);
+        if (place.key === SPRITE_KEYS.bakkie) {
+          this.yardBakkie = image;
+          image.setData("featureKind", "bakkie");
+          image.setData("tileX", place.tileX);
+          image.setData("tileY", place.tileY);
+          this.parkedBakkie = { x: footX, y: footY };
+        }
         this.propSprites.push(image);
         if (place.key === SPRITE_KEYS.farmhouse) {
           this.homesteadLight = { x: footX, y: footY - tileH * 0.55 };
@@ -1262,11 +1292,39 @@ export class FarmScene extends Phaser.Scene {
           .setDepth(8.5 + footY * 0.04);
         this.propSprites.push(image);
         this.workerCottageSprites.push(image);
+        image.setData("featureKind", "worker_house");
+        image.setData("tileX", place.tileX);
+        image.setData("tileY", place.tileY);
         const glow = this.add.graphics().setDepth(image.depth - 0.1);
         this.workerCottageLights.push(glow);
       }
+      const infraKinds = new Set([
+        "windmill",
+        "solar_pump",
+        "reservoir",
+        "trough",
+        "lick_feeder",
+        "kraal",
+        "crush",
+        "loading_ramp",
+      ]);
       for (const feature of this.state.features) {
-        if (HOMESTEAD_FEATURE_KINDS.has(feature.kind)) continue;
+        if (infraKinds.has(feature.kind)) {
+          const def = propSpriteForKind(feature.kind, feature.x, feature.y, feature.scale);
+          if (!this.textures.exists(def.key)) continue;
+          const center = tileCenter(feature.x, feature.y, this.layout, tileW, tileH);
+          const nudge = this.stackedInfraNudge(feature);
+          const image = this.add
+            .image(center.x + nudge.x, center.y + nudge.y, def.key)
+            .setOrigin(def.originX, def.originY)
+            .setScale(def.scale)
+            .setDepth(9 + center.y * 0.04);
+          image.setData("featureKind", feature.kind);
+          image.setData("tileX", feature.x);
+          image.setData("tileY", feature.y);
+          this.propSprites.push(image);
+          continue;
+        }
         if (feature.kind === "tree" || feature.kind === "bush") {
           const def = propSpriteForKind(feature.kind, feature.x, feature.y, feature.scale);
           if (!this.textures.exists(def.key)) continue;
@@ -1515,7 +1573,7 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private syncHerdFromSim(): void {
-    const tile = herdWorldTile(this.state);
+    const tile = this.captureHerdTile ?? herdWorldTile(this.state);
     const point = tileCenter(tile.x, tile.y, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
     this.herdVisual.x = point.x;
     this.herdVisual.y = point.y;
@@ -1740,151 +1798,293 @@ export class FarmScene extends Phaser.Scene {
     };
   }
 
-  private maxPropTextureHeightInView(needle: string): number {
+  private screenHeightOf(sprite: Phaser.GameObjects.Image): number {
+    return sprite.displayHeight * this.cameras.main.zoom;
+  }
+
+  private spriteInView(sprite: Phaser.GameObjects.Image): boolean {
     const view = this.cameras.main.worldView;
-    let maxH = 0;
-    const n = needle.toLowerCase();
+    const b = sprite.getBounds();
+    return b.right >= view.x && b.left <= view.right && b.bottom >= view.y && b.top <= view.bottom;
+  }
+
+  /** Sprites tagged with featureKind, measured in screen pixels. */
+  private auditKind(kind: string): { count: number; inView: number; maxScreenPx: number } {
+    const sprites: Phaser.GameObjects.Image[] = [];
     for (const sprite of this.propSprites) {
-      if (!sprite.visible) continue;
-      const bounds = sprite.getBounds();
-      if (
-        bounds.right < view.x ||
-        bounds.left > view.right ||
-        bounds.bottom < view.y ||
-        bounds.top > view.bottom
-      ) {
-        continue;
-      }
-      const key = (sprite.texture?.key ?? "").toLowerCase();
-      if (key.includes(n)) maxH = Math.max(maxH, bounds.height);
+      if (sprite.getData("featureKind") === kind) sprites.push(sprite);
     }
-    if (this.cattleTruck?.visible) {
-      const key = (this.cattleTruck.texture?.key ?? "").toLowerCase();
-      if (key.includes(n)) {
-        maxH = Math.max(maxH, this.cattleTruck.displayHeight);
-      }
+    if (kind === "cattle_truck" && this.cattleTruck) sprites.push(this.cattleTruck);
+    if (kind === "bakkie" && this.yardBakkie && !sprites.includes(this.yardBakkie)) sprites.push(this.yardBakkie);
+    let inView = 0;
+    let maxScreenPx = 0;
+    for (const sprite of sprites) {
+      if (!sprite.visible || !this.spriteInView(sprite)) continue;
+      inView += 1;
+      maxScreenPx = Math.max(maxScreenPx, this.screenHeightOf(sprite));
     }
-    return maxH;
+    return { count: sprites.length, inView, maxScreenPx };
+  }
+
+  private frameTiles(tiles: { x: number; y: number }[], zoom: number): void {
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    let sx = 0;
+    let sy = 0;
+    for (const tile of tiles) {
+      const p = tileCenter(tile.x, tile.y, this.layout, tileW, tileH);
+      sx += p.x;
+      sy += p.y;
+    }
+    const n = Math.max(1, tiles.length);
+    this.cameras.main.setZoom(clampZoom(zoom, this.minZoom, this.maxZoom));
+    this.jumpCameraTo(sx / n, sy / n, false);
+    this.clampScroll();
+  }
+
+  private setCampLabelsShown(shown: boolean): void {
+    for (const label of this.campLabels.values()) label.setVisible(shown);
+  }
+
+  /** Shift a trough or lick that shares a tile with its pump so both sprites read. */
+  private stackedInfraNudge(feature: { kind: string; x: number; y: number }): { x: number; y: number } {
+    if (feature.kind !== "trough" && feature.kind !== "lick_feeder") return { x: 0, y: 0 };
+    const stacked = this.state.features.some(
+      (other) =>
+        other.x === feature.x &&
+        other.y === feature.y &&
+        (other.kind === "windmill" || other.kind === "solar_pump"),
+    );
+    if (!stacked) return { x: 0, y: 0 };
+    return feature.kind === "trough" ? { x: 30, y: 18 } : { x: -28, y: 14 };
+  }
+
+  private clearLogisticsForCapture(): void {
+    this.captureHerdTile = null;
+    this.captureDrinkHeads = 0;
+    this.captureKraalLineup = false;
+    this.capturePin = null;
+    this.captureHideHerdLabel = false;
+    this.setCampLabelsShown(true);
+    if (this.state.story?.saleConvoy) this.state.story.saleConvoy.phase = "done";
+    if (this.state.story?.bakkieRun) this.state.story.bakkieRun.active = false;
+    this.cattleTruck?.setVisible(false);
+    this.syncBakkieVisual();
   }
 
   private prepareDrinkingCapture(): boolean {
-    this.captureFreezeClock = false;
-    this.state.herd.campId = 1;
-    stepDay(this.state);
-    const trip = this.state.story?.drinkingTrip;
-    if (!trip) return false;
+    this.clearLogisticsForCapture();
+    const wp = (this.state.farmWaterPoints ?? []).find((w) => {
+      const id = this.state.campIds[w.trough.y * this.state.width + w.trough.x];
+      return w.pump === "windmill" && w.reservoir && id >= 0;
+    });
+    const trough = wp?.trough ?? this.state.features.find((f) => f.kind === "trough");
+    if (!trough || !this.state.story) return false;
+    if (!this.state.story.drinkingTrip) {
+      this.state.story.drinkingTrip = {
+        active: true,
+        troughTile: { x: trough.x, y: trough.y },
+        walkProgress: 1,
+        drinkingTicks: 3,
+        cowsAtTrough: 3,
+        lastSatisfiedDayKey: "",
+      };
+    }
+    const trip = this.state.story.drinkingTrip;
     trip.active = true;
     trip.walkProgress = 1;
     trip.drinkingTicks = 3;
     trip.cowsAtTrough = 3;
-    const camp = this.state.camps.find((c) => c.id === 1);
-    const trough = camp ? troughInCamp(this.state, camp) : null;
-    if (trough) trip.troughTile = { ...trough };
-    const tileW = CONFIG.view.tileWidth;
-    const tileH = CONFIG.view.tileHeight;
-    const point = trough
-      ? tileCenter(trough.x, trough.y, this.layout, tileW, tileH)
-      : this.herdVisual;
-    this.jumpCameraTo(point.x, point.y, false);
-    this.cameras.main.setZoom(clampZoom(1.05, this.minZoom, this.maxZoom));
+    trip.troughTile = { x: trough.x, y: trough.y };
+    this.captureDrinkHeads = 3;
+    this.captureHideHerdLabel = true;
+    const campId = this.state.campIds[trough.y * this.state.width + trough.x];
+    if (campId >= 0) this.state.herd.campId = campId;
+    this.captureHerdTile = { x: trough.x, y: trough.y };
+    const cluster = this.state.features.filter(
+      (feature) =>
+        (feature.kind === "windmill" ||
+          feature.kind === "reservoir" ||
+          feature.kind === "trough" ||
+          feature.kind === "lick_feeder" ||
+          feature.kind === "solar_pump") &&
+        Math.hypot(feature.x - trough.x, feature.y - trough.y) <= 2,
+    );
+    this.frameTiles(cluster.length > 0 ? cluster : [trough], 1.2);
+    this.syncHerdFromSim();
     this.placeHerd(performance.now());
+    this.cullProps();
     return herdDrinkingAtTrough(this.state);
   }
 
   private prepareNoWaterCampCapture(): boolean {
+    this.clearLogisticsForCapture();
+    const campId = 16;
     this.state.farmWaterPoints = (this.state.farmWaterPoints ?? []).map((w) => ({
       ...w,
-      servedCampIds: w.servedCampIds.filter((id) => id !== 16),
+      servedCampIds: w.servedCampIds.filter((id) => id !== campId),
     }));
-    this.state.herd.campId = 16;
-    const camp = this.state.camps.find((c) => c.id === 16);
-    if (!camp) return false;
-    const tileW = CONFIG.view.tileWidth;
-    const tileH = CONFIG.view.tileHeight;
-    const labelTile = campLabelTile(this.state, camp);
-    const c = tileCenter(labelTile.x, labelTile.y, this.layout, tileW, tileH);
-    this.jumpCameraTo(c.x, c.y, false);
-    this.cameras.main.setZoom(clampZoom(0.82, this.minZoom, this.maxZoom));
+    const camp = this.state.camps.find((c) => c.id === campId);
+    if (!camp || campHasWaterAccess(this.state, camp)) return false;
+    this.syncHud();
     this.refreshCampLabels();
-    return !campHasWaterAccess(this.state, camp) && this.hud.campBadge(16).includes("No water");
+    const labelTile = campLabelTile(this.state, camp);
+    this.frameTiles([labelTile, camp.anchor], 1.05);
+    const label = this.campLabels.get(campId);
+    return Boolean(label && label.text.includes("No water") && label.visible);
   }
 
   private prepareSaleKraalCapture(): boolean {
+    this.clearLogisticsForCapture();
+    const kraal = this.state.features.find((f) => f.kind === "kraal");
+    const ramp = this.state.features.find((f) => f.kind === "loading_ramp");
+    const crush = this.state.features.find((f) => f.kind === "crush");
+    if (!kraal || !this.state.story) return false;
     const q = quoteSale(this.state, "tolly", 3, "auction");
     if ("reason" in q) return false;
     beginSaleConvoy(this.state, "tolly", 3, "auction", q);
-    for (let i = 0; i < 12; i += 1) tickSaleConvoyRealtime(this.state, 800, 12);
-    const kraal = this.state.features.find((f) => f.kind === "kraal");
-    if (!kraal) return false;
-    const tileW = CONFIG.view.tileWidth;
-    const tileH = CONFIG.view.tileHeight;
-    const c = tileCenter(kraal.x, kraal.y, this.layout, tileW, tileH);
-    this.jumpCameraTo(c.x, c.y, false);
-    this.cameras.main.setZoom(clampZoom(0.95, this.minZoom, this.maxZoom));
+    if (this.state.story.saleConvoy) {
+      this.state.story.saleConvoy.phase = "loading";
+      this.state.story.saleConvoy.phaseProgress = 0.2;
+      this.state.story.saleConvoy.paid = false;
+    }
+    this.captureHerdTile = { x: kraal.x, y: kraal.y };
+    this.captureKraalLineup = true;
+    this.captureHideHerdLabel = true;
     this.syncCattleTruckVisual();
+    this.syncHerdFromSim();
     this.placeHerd(performance.now());
-    return saleConvoyActive(this.state);
+    const tiles = [kraal, ramp, crush].filter((f): f is NonNullable<typeof f> => Boolean(f));
+    this.frameTiles(tiles, 1.25);
+    this.cullProps();
+    return saleConvoyActive(this.state) && saleTruckVisible(this.state);
   }
 
   private prepareTruckLeavingCapture(): boolean {
-    const convoy = this.state.story?.saleConvoy;
-    if (!convoy) {
+    if (!this.state.story?.saleConvoy || this.state.story.saleConvoy.phase === "done") {
       this.prepareSaleKraalCapture();
     }
     if (this.state.story?.saleConvoy) {
       this.state.story.saleConvoy.phase = "truck_depart";
-      this.state.story.saleConvoy.phaseProgress = 0.55;
+      this.state.story.saleConvoy.phaseProgress = 0.72;
+      this.state.story.saleConvoy.paid = false;
     }
+    this.captureHerdTile = null;
+    this.captureKraalLineup = false;
+    this.setCampLabelsShown(false);
     this.syncCattleTruckVisual();
+    const tile = this.cattleTruck?.getData("tileX")
+      ? { x: this.cattleTruck.getData("tileX") as number, y: this.cattleTruck.getData("tileY") as number }
+      : tileAlongRoad(this.state, 10);
+    this.frameTiles([tile], 1.2);
+    this.cullProps();
     return saleTruckDeparting(this.state);
   }
 
   private prepareBakkieDustCapture(): boolean {
+    this.clearLogisticsForCapture();
     hireFarmhand(this.state);
     setWorkPriority(this.state, "fill_lick", 3);
     maybeStartBakkieRun(this.state, "fill_lick");
-    for (let i = 0; i < 4; i += 1) tickBakkieRealtime(this.state, 1800, 3);
+    const run = this.state.story?.bakkieRun;
+    if (run) run.progress = 0.55;
     this.syncBakkieVisual();
+    const tile = {
+      x: (this.yardBakkie?.getData("tileX") as number) ?? 14,
+      y: (this.yardBakkie?.getData("tileY") as number) ?? 24,
+    };
     const house = this.state.features.find((f) => f.kind === "house");
-    if (house) {
-      const tileW = CONFIG.view.tileWidth;
-      const tileH = CONFIG.view.tileHeight;
-      const c = tileCenter(house.x + 4, house.y + 6, this.layout, tileW, tileH);
-      this.jumpCameraTo(c.x, c.y, false);
-    }
+    if (house && Math.hypot(tile.x - house.x, tile.y - house.y) < 3) return false;
+    this.setCampLabelsShown(false);
+    this.frameTiles([tile], 1.65);
+    this.cullProps();
     return bakkieOnRoad(this.state);
   }
 
+  private truckOnRoad(): { awayTiles: number; screenPx: number } {
+    const kraal = this.state.features.find((f) => f.kind === "kraal");
+    const tx = (this.cattleTruck?.getData("tileX") as number) ?? 0;
+    const ty = (this.cattleTruck?.getData("tileY") as number) ?? 0;
+    const away = kraal ? Math.hypot(tx - kraal.x, ty - kraal.y) : 0;
+    const screenPx = this.cattleTruck?.visible ? this.screenHeightOf(this.cattleTruck) : 0;
+    return { awayTiles: away, screenPx };
+  }
+
+  private bakkieOnTrack(): { tilesFromHouse: number; screenPx: number; dust: boolean } {
+    const house = this.state.features.find((f) => f.kind === "house");
+    const tx = (this.yardBakkie?.getData("tileX") as number) ?? house?.x ?? 0;
+    const ty = (this.yardBakkie?.getData("tileY") as number) ?? house?.y ?? 0;
+    const tilesFromHouse = house ? Math.hypot(tx - house.x, ty - house.y) : 0;
+    const screenPx = this.yardBakkie?.visible ? this.screenHeightOf(this.yardBakkie) : 0;
+    const dust = Boolean(this.bakkieDust?.getData("active"));
+    return { tilesFromHouse, screenPx, dust };
+  }
+
+  private drinkDebug(): unknown {
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    const troughs = this.state.features.filter((f) => f.kind === "trough");
+    return {
+      heads: this.captureDrinkHeads,
+      trip: this.state.story?.drinkingTrip?.troughTile ?? null,
+      zoom: this.cameras.main.zoom,
+      cows: this.cows.slice(0, 4).map((cow) => {
+        const tile = worldToTile(cow.x, cow.y, this.layout, tileW, tileH);
+        const near = troughs.some((t) => Math.hypot(tile.x - t.x, tile.y - t.y) <= 2);
+        return {
+          visible: cow.visible,
+          pose: cow.getData("pose"),
+          tile,
+          near,
+          inView: this.spriteInView(cow),
+          px: Math.round(this.screenHeightOf(cow)),
+        };
+      }),
+    };
+  }
+
+  private drinkCowsNearTrough(): number {
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    const troughs = this.state.features.filter((f) => f.kind === "trough");
+    let count = 0;
+    for (const cow of this.cows) {
+      if (!cow.visible || cow.getData("pose") !== "drink") continue;
+      const tile = worldToTile(cow.x, cow.y, this.layout, tileW, tileH);
+      const near = troughs.some((t) => Math.hypot(tile.x - t.x, tile.y - t.y) <= 2);
+      if (near && this.spriteInView(cow) && this.screenHeightOf(cow) >= 20) count += 1;
+    }
+    return count;
+  }
+
   private frameHomesteadWithWorkerHouse(): boolean {
+    this.clearLogisticsForCapture();
     this.panVel = null;
     const house = this.state.features.find((f) => f.kind === "house");
-    const workerHouse = this.state.features.find((f) => f.kind === "worker_house");
-    if (!house) return false;
-  const tileW = CONFIG.view.tileWidth;
+    const cottage = this.propSprites.find((sprite) => sprite.getData("featureKind") === "worker_house");
+    if (!house || !cottage) return false;
+    const tileW = CONFIG.view.tileWidth;
     const tileH = CONFIG.view.tileHeight;
     const main = tileCenter(house.x, house.y, this.layout, tileW, tileH);
-    const pts = [main];
-    if (workerHouse) pts.push(tileCenter(workerHouse.x, workerHouse.y, this.layout, tileW, tileH));
-    let minX = pts[0].x;
-    let maxX = pts[0].x;
-    let minY = pts[0].y;
-    let maxY = pts[0].y;
-    for (const p of pts) {
-      minX = Math.min(minX, p.x);
-      maxX = Math.max(maxX, p.x);
-      minY = Math.min(minY, p.y);
-      maxY = Math.max(maxY, p.y);
-    }
-    const span = Math.max(maxX - minX, maxY - minY, 160);
+    const midX = (main.x + cottage.x) / 2;
+    const midY = (main.y + cottage.y) / 2 - 12;
     const camera = this.cameras.main;
-    const phone = camera.width < 500;
-    const zoom = clampZoom(phone ? Math.min(1.05, 520 / span) : Math.min(1.2, 640 / span), this.minZoom, this.maxZoom);
+    const insets = viewportCameraInsets();
+    const contentW = Math.max(80, camera.width - insets.left - insets.right);
+    const contentH = Math.max(80, camera.height - insets.top - insets.bottom);
+    const span = Math.max(Math.abs(main.x - cottage.x), Math.abs(main.y - cottage.y), 140);
+    const zoom = clampZoom((Math.min(contentW, contentH) * 0.62) / span, this.minZoom, this.maxZoom);
     camera.setZoom(zoom);
-    camera.centerOn((minX + maxX) / 2, (minY + maxY) / 2 - 14);
-    this.clampScroll();
+    this.capturePin = { x: midX, y: midY, zoom };
+    camera.scrollX = midX - (insets.left + contentW / 2) / zoom;
+    camera.scrollY = midY - (insets.top + contentH / 2) / zoom;
+    camera.preRender();
     this.placeFarmer();
-    const h = this.farmerSprite?.visible ? this.farmerSprite.displayHeight * camera.zoom : 0;
-    return this.countFarmerInView() >= 1 && h >= 30 && (workerHouse ? this.workerHouseInView() : true);
+    this.cullProps();
+    cottage.setVisible(true);
+    const seen = this.auditKind("worker_house");
+    const farmerH = this.farmerSprite?.visible ? this.screenHeightOf(this.farmerSprite) : 0;
+    return seen.inView >= 1 && seen.maxScreenPx >= 20 && this.countFarmerInView() >= 1 && farmerH >= 24;
   }
 
   private pickLongHerdMoveDestination(): number | null {
@@ -2098,29 +2298,39 @@ export class FarmScene extends Phaser.Scene {
     if (!this.yardBakkie) return;
     const tileW = CONFIG.view.tileWidth;
     const tileH = CONFIG.view.tileHeight;
-    const trail = bakkieDustTrail(this.state);
-    if (!trail || !bakkieOnRoad(this.state)) {
+    if (!bakkieOnRoad(this.state)) {
       this.bakkieDust?.clear();
-      const house = this.state.features.find((f) => f.kind === "house");
-      if (house && this.yardBakkie) {
-        const c = tileCenter(house.x + 2, house.y + 1, this.layout, tileW, tileH);
-        this.yardBakkie.setPosition(c.x, c.y).setVisible(true);
-      }
+      this.bakkieDust?.setData("active", false);
+      this.yardBakkie.setPosition(this.parkedBakkie.x, this.parkedBakkie.y).setVisible(true);
+      this.yardBakkie.setData("tileX", null);
       return;
     }
-    const pos = tileCenter(trail.x, trail.y, this.layout, tileW, tileH);
-    this.yardBakkie.setPosition(pos.x, pos.y).setVisible(true);
-    const dust = this.bakkieDust;
-    if (dust) {
-      dust.clear();
-      dust.fillStyle(0xc4a574, 0.18 * trail.strength);
-      for (let i = 0; i < 4; i += 1) {
-        const px = pos.x - 18 + i * 9;
-        const py = pos.y + 4 + (i % 2) * 3;
-        dust.fillEllipse(px, py, 12 + i * 2, 6);
-      }
-      dust.setDepth(this.yardBakkie.depth - 0.1);
+    const run = this.state.story?.bakkieRun;
+    const steps = Math.max(4, Math.round((run?.progress ?? 0.4) * 14));
+    const tile = tileAlongRoad(this.state, steps);
+    const pos = tileCenter(tile.x, tile.y, this.layout, tileW, tileH);
+    this.yardBakkie.setPosition(pos.x, pos.y).setVisible(true).setDepth(30 + pos.y);
+    this.yardBakkie.setData("featureKind", "bakkie");
+    this.yardBakkie.setData("tileX", tile.x);
+    this.yardBakkie.setData("tileY", tile.y);
+    const dust = this.bakkieDust ?? this.add.graphics();
+    this.bakkieDust = dust;
+    dust.clear();
+    const house = this.state.features.find((f) => f.kind === "house");
+    const home = house
+      ? tileCenter(house.x, house.y, this.layout, tileW, tileH)
+      : { x: pos.x - 80, y: pos.y - 30 };
+    const dx = home.x - pos.x;
+    const dy = home.y - pos.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len;
+    const uy = dy / len;
+    for (let i = 1; i <= 8; i += 1) {
+      dust.fillStyle(i % 2 === 0 ? 0xf4efe4 : 0xe4d2b4, 0.78 - i * 0.06);
+      dust.fillEllipse(pos.x + ux * i * 22, pos.y + uy * i * 14, 20 + i * 8, 12 + i * 3);
     }
+    dust.setDepth(this.yardBakkie.depth - 0.2);
+    dust.setData("active", true);
   }
 
   private syncCattleTruckVisual(): void {
@@ -2131,24 +2341,25 @@ export class FarmScene extends Phaser.Scene {
       this.cattleTruck?.setVisible(false);
       return;
     }
-    if (!this.cattleTruck) {
-      const ramp = this.state.features.find((f) => f.kind === "loading_ramp");
-      const tile = ramp ?? { x: STEP3B.loadingRampTile.x, y: STEP3B.loadingRampTile.y };
-      const c = tileCenter(tile.x, tile.y, this.layout, tileW, tileH);
-      this.cattleTruck = this.add
-        .image(c.x + 26, c.y, SPRITE_KEYS.cattleTruck)
-        .setOrigin(0.5, 0.92)
-        .setScale((tileW * 2.3) / 128)
-        .setDepth(14 + c.y * 0.04);
-    }
-    const ramp = this.state.features.find((f) => f.kind === "loading_ramp");
-    const base = ramp
-      ? tileCenter(ramp.x, ramp.y, this.layout, tileW, tileH)
-      : tileCenter(STEP3B.loadingRampTile.x, STEP3B.loadingRampTile.y, this.layout, tileW, tileH);
     const depart = saleTruckDeparting(this.state);
     const prog = this.state.story?.saleConvoy?.phaseProgress ?? 0;
-    const x = base.x + 26 + (depart ? prog * 120 : 0);
-    this.cattleTruck.setPosition(x, base.y).setVisible(true);
+    const ramp = this.state.features.find((f) => f.kind === "loading_ramp");
+    const tile = depart
+      ? tileAlongRoad(this.state, 3 + Math.round(prog * 12))
+      : ramp
+        ? { x: ramp.x, y: ramp.y }
+        : STEP3B.loadingRampTile;
+    const pos = tileCenter(tile.x, tile.y, this.layout, tileW, tileH);
+    if (!this.cattleTruck) {
+      this.cattleTruck = this.add
+        .image(pos.x, pos.y, SPRITE_KEYS.cattleTruck)
+        .setOrigin(0.35, 0.92)
+        .setScale((tileW * 3.4) / 280);
+    }
+    this.cattleTruck.setPosition(pos.x, pos.y).setVisible(true).setDepth(32 + pos.y);
+    this.cattleTruck.setData("featureKind", "cattle_truck");
+    this.cattleTruck.setData("tileX", tile.x);
+    this.cattleTruck.setData("tileY", tile.y);
   }
 
   private placeHerd(time: number): void {
@@ -2184,24 +2395,15 @@ export class FarmScene extends Phaser.Scene {
         cow.setRotation(0);
         cow.setFlipX(false);
       } else if (this.paintedSprites) {
-        const drinking =
-          herdDrinkingAtTrough(this.state) && index < (this.state.story?.drinkingTrip?.cowsAtTrough ?? 0);
-        const baseKey = cattleTextureForView(offset.coat, drinking ? "toward" : offset.view);
-        const tex = drinking
-          ? ensureDrinkCowTexture(this, baseKey.replace(/-t$/, "-r").replace(/-(l|a)$/, "-r"))
-          : baseKey;
-        cow.setTexture(tex);
+        const baseKey = cattleTextureForView(offset.coat, offset.view);
+        cow.setTexture(baseKey);
+        cow.setData("pose", "");
         const base = cattleDisplayScale(offset.scale / 0.82);
-        const squash =
-          drinking
-            ? 0.94
-            : walking && !this.reduceMotion
-              ? 1 + Math.sin(time / 170 + index * 0.9) * 0.03
-              : 1;
-        const face = cowPresentationScale(drinking ? "toward" : offset.view, base);
+        const squash = walking && !this.reduceMotion ? 1 + Math.sin(time / 170 + index * 0.9) * 0.03 : 1;
+        const face = cowPresentationScale(offset.view, base);
         cow.setScale(face.x, face.y * squash);
         cow.setFlipX(false);
-        cow.setRotation(drinking ? 0.36 : 0);
+        cow.setRotation(0);
       } else {
         const animFrame = walking
           ? Math.floor(time / 160 + index * 0.15) % 3
@@ -2211,6 +2413,49 @@ export class FarmScene extends Phaser.Scene {
         cow.setFlipX(offset.flip);
         cow.setRotation(0);
       }
+      const drinkN = this.captureDrinkHeads;
+      const trough = this.state.story?.drinkingTrip?.troughTile;
+      if (drinkN > 0 && trough) {
+        if (index >= drinkN) {
+          cow.setData("suppress", true);
+          cow.setVisible(false);
+          return;
+        }
+        const spot = tileCenter(trough.x, trough.y, this.layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight);
+        cow.setTexture(SPRITE_KEYS.cowDrink);
+        cow.setData("pose", "drink");
+        cow.setData("suppress", false);
+        cow.setRotation(0);
+        cow.setFlipX(false);
+        cow.setScale(70 / 180);
+        const along = (index - 1) * 68;
+        cow.setPosition(spot.x + along, spot.y + 18);
+        cow.setDepth(depth + 2 + index * 0.01);
+        cow.setVisible(true);
+        return;
+      }
+      if (this.captureKraalLineup) {
+        if (index >= 9) {
+          cow.setData("suppress", true);
+          cow.setVisible(false);
+          return;
+        }
+        const col = index % 3;
+        const row = Math.floor(index / 3);
+        cow.setData("suppress", false);
+        cow.setData("pose", "");
+        cow.setScale(cattleDisplayScale(2.8));
+        cow.setPosition(this.herdVisual.x + (col - 1) * 36, this.herdVisual.y + 22 + row * 22);
+        cow.setDepth(depth + 4 + index * 0.01);
+        cow.setVisible(true);
+        return;
+      }
+      if (this.captureHerdTile && index > 14) {
+        cow.setData("suppress", true);
+        cow.setVisible(false);
+        return;
+      }
+      cow.setData("suppress", false);
       cow.setPosition(this.herdVisual.x + offset.x, this.herdVisual.y + offset.y + walk);
       cow.setDepth(depth + offset.y * 0.01);
       cow.setVisible(true);
@@ -2234,8 +2479,15 @@ export class FarmScene extends Phaser.Scene {
         const offset = this.herdOffsets[i];
         const cx = this.herdVisual.x + (offset?.x ?? 0);
         const cy = this.herdVisual.y + (offset?.y ?? 0);
+        if (cow.getData("suppress")) {
+          cow.setVisible(false);
+          continue;
+        }
+        const posed = cow.getData("pose") === "drink" || this.captureKraalLineup;
+        const px = posed ? cow.x : cx;
+        const py = posed ? cow.y : cy;
         cow.setVisible(
-          cx >= view.x - pad - 24 && cx <= view.right + pad + 24 && cy >= view.y - pad - 24 && cy <= view.bottom + pad + 24,
+          px >= view.x - pad - 24 && px <= view.right + pad + 24 && py >= view.y - pad - 24 && py <= view.bottom + pad + 24,
         );
       }
     }

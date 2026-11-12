@@ -48,6 +48,43 @@ function deriveWaterPointsFromFeatures(state: GameState): FarmWaterPoint[] {
   return points;
 }
 
+function snapWorkerCottagesOntoYard(state: GameState): void {
+  const houses = state.features.filter((f) => f.kind === "worker_house");
+  if (houses.length === 0) {
+    state.features.push({ kind: "worker_house", x: 17, y: 15, scale: 1 });
+    return;
+  }
+  const yard: { x: number; y: number }[] = [];
+  for (let y = 0; y < state.height; y += 1) {
+    for (let x = 0; x < state.width; x += 1) {
+      if (state.campIds[y * state.width + x] === -1) yard.push({ x, y });
+    }
+  }
+  if (yard.length === 0) return;
+  const main = state.features.find((f) => f.kind === "house");
+  for (const cottage of houses) {
+    const id = state.campIds[cottage.y * state.width + cottage.x];
+    if (id === -1) continue;
+    let best = yard[0];
+    let bestD = Number.POSITIVE_INFINITY;
+    for (const tile of yard) {
+      const d = main
+        ? Math.hypot(tile.x - main.x, tile.y - main.y)
+        : Math.hypot(tile.x - cottage.x, tile.y - cottage.y);
+      const occupied = state.features.some(
+        (f) => f !== cottage && f.x === tile.x && f.y === tile.y && f.kind !== "track" && f.kind !== "bush",
+      );
+      if (occupied) continue;
+      if (d < bestD && d > 0.5) {
+        bestD = d;
+        best = tile;
+      }
+    }
+    cottage.x = best.x;
+    cottage.y = best.y;
+  }
+}
+
 function ensureHandlingYardFeatures(state: GameState): void {
   const has = (kind: string) => state.features.some((f) => f.kind === kind);
   if (!has("crush")) {
@@ -129,13 +166,7 @@ export function migrateState(state: GameState): GameState {
     if (!state.story.farmerPresence) state.story.farmerPresence = defaultFarmerPresence(state);
     if (!state.story.playerDisplayName?.trim()) state.story.playerDisplayName = DEFAULT_PLAYER_DISPLAY_NAME;
     if (state.story.herdMoveQueue === undefined) state.story.herdMoveQueue = null;
-    const cottage = state.features.find((f) => f.kind === "worker_house");
-    if (!cottage) {
-      state.features.push({ kind: "worker_house", x: 10, y: 14, scale: 1 });
-    } else if (cottage.x === 11 && cottage.y === 13) {
-      cottage.x = 10;
-      cottage.y = 14;
-    }
+    snapWorkerCottagesOntoYard(state);
     if (!state.story.drinkingTrip) state.story.drinkingTrip = defaultDrinkingTrip();
     if (state.story.saleConvoy === undefined) state.story.saleConvoy = null;
     if (!state.story.bakkieRun) state.story.bakkieRun = defaultBakkieRun();
