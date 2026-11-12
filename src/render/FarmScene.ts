@@ -11,8 +11,11 @@ import { herdInTransit, herdWorldTile, pathTangent, tickTransitRealtime } from "
 import {
   PAN_INERTIA,
   applyPanFriction,
+  boundsFromPoints,
   clampCameraScrollWithInsets,
   frameWorldRectInClearBand,
+  homesteadBoundsPad,
+  openingFrameBounds,
   scrollToLayoutTip,
   worldXAtScreenX,
   worldYAtScreenY,
@@ -200,7 +203,10 @@ export class FarmScene extends Phaser.Scene {
       onConfirmMove: () => this.confirmPendingMove(),
       onCancelMove: () => this.cancelPendingMove(),
       onOpenMarket: () => this.market.open(),
-      onSheetExpanded: () => getGameFlow().notifySim("grassChecked"),
+      onSheetExpanded: (expanded) => {
+        getGameFlow().setHudPanel("herdSheet", Boolean(expanded));
+        if (expanded) getGameFlow().notifySim("grassChecked");
+      },
       onHerdLocator: () => {
         const center = this.mobCenter();
         this.jumpCameraTo(center.x, center.y, true);
@@ -214,6 +220,8 @@ export class FarmScene extends Phaser.Scene {
         getGameFlow().notifySim("salePlanned");
       },
       onToast: (text) => this.hud.setHint(text),
+      onOpen: () => getGameFlow().setHudPanel("market", true),
+      onClose: () => getGameFlow().setHudPanel("market", false),
     });
     flow.attachFarmHud(this.hud);
     this.hud.setSpeed(this.mode);
@@ -1420,41 +1428,56 @@ export class FarmScene extends Phaser.Scene {
     this.persist();
   }
 
+  private openingViewBounds(): { minX: number; minY: number; maxX: number; maxY: number } {
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    const pad = homesteadBoundsPad(tileW, tileH);
+    const yardKinds = new Set(["house", "windmill", "shed", "kraal", "reservoir"]);
+    const points: { x: number; y: number }[] = [];
+    for (const feature of this.state.features) {
+      if (!yardKinds.has(feature.kind)) continue;
+      const pt = tileCenter(feature.x + 0.5, feature.y + 0.5, this.layout, tileW, tileH);
+      const spritePad =
+        feature.kind === "windmill" ? tileW * 2.2 : feature.kind === "shed" ? tileW * 1.9 : tileW * 1.15;
+      points.push(
+        { x: pt.x - spritePad, y: pt.y - tileH * 2.4 },
+        { x: pt.x + spritePad, y: pt.y + tileH * 1.6 },
+      );
+    }
+    const cowPad = tileW * 0.65;
+    for (const offset of this.herdOffsets) {
+      points.push({
+        x: this.herdVisual.x + offset.x - cowPad,
+        y: this.herdVisual.y + offset.y - cowPad,
+      });
+      points.push({
+        x: this.herdVisual.x + offset.x + cowPad,
+        y: this.herdVisual.y + offset.y + cowPad,
+      });
+    }
+    if (this.herdOffsets.length === 0) {
+      points.push(
+        { x: this.herdVisual.x - cowPad, y: this.herdVisual.y - cowPad },
+        { x: this.herdVisual.x + cowPad, y: this.herdVisual.y + cowPad },
+      );
+    }
+    const homestead =
+      boundsFromPoints(points, pad * 0.25) ??
+      boundsFromPoints(
+        [
+          { x: this.herdVisual.x - pad, y: this.herdVisual.y - pad },
+          { x: this.herdVisual.x + pad, y: this.herdVisual.y + pad },
+        ],
+        pad * 0.25,
+      )!;
+    return openingFrameBounds(homestead, this.herdVisual.x, this.herdVisual.y, pad * 0.35);
+  }
+
   private layoutCamera(resetView: boolean): void {
     const camera = this.cameras.main;
     this.refreshZoomLimits();
     if (resetView) {
-      const tileW = CONFIG.view.tileWidth;
-      const tileH = CONFIG.view.tileHeight;
-      const house = this.state.features.find((f) => f.kind === "house");
-      const housePt = house
-        ? tileCenter(house.x + 0.5, house.y + 0.5, this.layout, tileW, tileH)
-        : this.mobCenter();
-      const points = [
-        { x: housePt.x - tileW * 1.15, y: housePt.y - tileH * 3.1 },
-        { x: housePt.x + tileW * 1.15, y: housePt.y + tileH * 1.2 },
-      ];
-      const cowPad = 22;
-      if (this.herdOffsets.length === 0) {
-        points.push({ x: this.herdVisual.x - cowPad, y: this.herdVisual.y - cowPad });
-        points.push({ x: this.herdVisual.x + cowPad, y: this.herdVisual.y + cowPad });
-      }
-      for (const offset of this.herdOffsets) {
-        points.push({
-          x: this.herdVisual.x + offset.x - cowPad,
-          y: this.herdVisual.y + offset.y - cowPad,
-        });
-        points.push({
-          x: this.herdVisual.x + offset.x + cowPad,
-          y: this.herdVisual.y + offset.y + cowPad,
-        });
-      }
-      const bounds = {
-        minX: Math.min(...points.map((point) => point.x)),
-        minY: Math.min(...points.map((point) => point.y)),
-        maxX: Math.max(...points.map((point) => point.x)),
-        maxY: Math.max(...points.map((point) => point.y)),
-      };
+      const bounds = this.openingViewBounds();
       const framed = frameWorldRectInClearBand(
         bounds,
         camera.width,

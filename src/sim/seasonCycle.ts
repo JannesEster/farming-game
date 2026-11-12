@@ -1,6 +1,8 @@
 import { CONFIG, type GameConfig } from "./config";
-import { daysInMonth, isRainyMonth } from "./calendar";
+import { calvingFromPregnantHeifers } from "./cattleClasses";
+import { addDays, daysInMonth, isRainyMonth } from "./calendar";
 import { chargeMonthlyCosts, syncHeadFromComposition } from "./economy";
+import { formatNad } from "./format";
 import type { CalendarDate } from "./types";
 import type { GameState } from "./types";
 
@@ -40,6 +42,16 @@ export function isLastDayOfMonth(date: CalendarDate): boolean {
   return date.day >= daysInMonth(date.year, date.month);
 }
 
+/** Line for month review only when the ranch cycle phase changes across the month end. */
+export function monthPhaseTransitionLine(date: CalendarDate, config: GameConfig = CONFIG): string | null {
+  const endPhase = cyclePhase(date, config);
+  const next = addDays(date, 1);
+  if (next.month === date.month) return null;
+  const startPhase = cyclePhase(next, config);
+  if (endPhase === startPhase) return null;
+  return `${cyclePhaseLabel(endPhase)} turns to ${cyclePhaseLabel(startPhase)}.`;
+}
+
 export function monthKey(date: CalendarDate): string {
   return `${date.year}-${String(date.month).padStart(2, "0")}`;
 }
@@ -53,17 +65,20 @@ export function tryCalving(state: GameState, config: GameConfig = CONFIG): void 
   if (story.seasonEventsFired.includes(eventId)) return;
   story.seasonEventsFired.push(eventId);
   const cows = story.composition.cow;
-  if (cows < 10) return;
   const calvingRate = config.story.monthlyCalvingFraction;
-  const births = Math.max(0, Math.floor(cows * calvingRate));
-  if (births <= 0) return;
+  const births = cows >= 10 ? Math.max(0, Math.floor(cows * calvingRate)) : 0;
+  const heiferBirths = calvingFromPregnantHeifers(state, config);
+  const total = births + heiferBirths;
+  if (total <= 0) return;
   story.composition.calf += births;
   syncHeadFromComposition(state);
+  const heiferNote =
+    heiferBirths > 0 ? ` ${heiferBirths} heifers calved and joined the cow herd.` : "";
   story.pendingCards.push({
     id: eventId,
     kind: "season",
     title: "Calving",
-    body: `${births} calves on the ground. Tag and register within six months.`,
+    body: `${births} calves on the ground.${heiferNote} Tag and register within six months.`,
     priority: 2,
   });
 }
@@ -79,14 +94,19 @@ export function tryWeaning(state: GameState, config: GameConfig = CONFIG): void 
   if (calves <= 0) return;
   const wean = Math.floor(calves * config.story.weaningFraction);
   if (wean <= 0) return;
+  const heifers = Math.floor(wean / 2);
+  const tollies = wean - heifers;
   story.composition.calf -= wean;
-  story.composition.weaner += wean;
+  story.composition.heifer += heifers;
+  story.composition.tolly += tollies;
+  story.classLiveweights.heifer = config.economy.defaultWeanerLiveKg;
+  story.classLiveweights.tolly = config.economy.defaultWeanerLiveKg;
   syncHeadFromComposition(state);
   story.pendingCards.push({
     id: eventId,
     kind: "season",
     title: "Weaning",
-    body: `${wean} weaners ready. Consider auction Apr to Jun.`,
+    body: `${wean} weaned: ${heifers} heifers and ${tollies} tollies. Consider sales Apr to Jun.`,
     priority: 2,
   });
 }
@@ -98,24 +118,24 @@ export function closeMonth(state: GameState, config: GameConfig = CONFIG): void 
   if (story.lastMonthKey === key) return;
   story.lastMonthKey = key;
   const costs = chargeMonthlyCosts(state, config);
-  const phase = cyclePhase(state.date, config);
   const net = story.ledger.incomeNad - story.ledger.expenseNad;
-  const money = (amount: number) => {
-    const rounded = Math.round(amount);
-    const sign = rounded < 0 ? "-" : "";
-    const body = Math.abs(rounded).toLocaleString("en-NA");
-    return `N$${sign}${body}`;
-  };
-  const body = [
-    `${cyclePhaseLabel(phase)} ended.`,
-    `Income ${money(story.ledger.incomeNad)}. Expenses ${money(story.ledger.expenseNad)}.`,
-    `Costs: labour ${money(costs.labour)}, lick ${money(costs.lick)}, diesel ${money(costs.diesel)}, repairs ${money(costs.repairs)}, other ${money(costs.other)}.`,
-    `Net ${money(net)}. Rain season-to-date ${Math.round(state.seasonRainMm)} mm.`,
-    story.ledger.deathCount > 0 ? `${story.ledger.deathCount} deaths logged.` : "No deaths logged.",
-    story.composition.weaner > 0 ? `${story.composition.weaner} weaners in herd.` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const lines: string[] = [];
+  const transition = monthPhaseTransitionLine(state.date, config);
+  if (transition) lines.push(transition);
+  lines.push(`Income ${formatNad(story.ledger.incomeNad)}. Expenses ${formatNad(story.ledger.expenseNad)}.`);
+  lines.push("Costs");
+  lines.push(`Labour ${formatNad(costs.labour)}`);
+  lines.push(`Lick ${formatNad(costs.lick)}`);
+  lines.push(`Diesel ${formatNad(costs.diesel)}`);
+  lines.push(`Repairs ${formatNad(costs.repairs)}`);
+  lines.push(`Other ${formatNad(costs.other)}`);
+  lines.push(`Net ${formatNad(net)}. Rain season-to-date ${Math.round(state.seasonRainMm)} mm.`);
+  if (story.ledger.deathCount > 0) lines.push(`${story.ledger.deathCount} deaths logged.`);
+  else lines.push("No deaths logged.");
+  if (story.composition.tolly + story.composition.heifer > 0) {
+    lines.push(`${story.composition.tolly} tollies, ${story.composition.heifer} heifers in herd.`);
+  }
+  const body = lines.join("\n");
 
   story.pendingCards.push({
     id: `month-${key}`,

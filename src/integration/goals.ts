@@ -1,4 +1,5 @@
 import { CONFIG } from "../sim/config";
+import { formatNad } from "../sim/format";
 import { grazeableFraction } from "../sim/pasture";
 import type { GameState } from "../sim/types";
 import type {
@@ -48,7 +49,7 @@ export function evaluateFirstYearGoals(state: GameState, baseline: YearBaseline)
       met: cashMet || headMet,
       label: FIRST_YEAR_GOALS[1].label,
       detail: cashMet
-        ? `Cash up N$ ${(state.cashNad - baseline.cashNad).toLocaleString("en-NA")}.`
+        ? `Cash up ${formatNad(state.cashNad - baseline.cashNad)}.`
         : headMet
           ? `Herd grew by ${state.herd.headCount - baseline.headCount} head.`
           : `Cash and head count both slipped.`,

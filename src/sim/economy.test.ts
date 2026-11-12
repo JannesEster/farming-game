@@ -10,17 +10,21 @@ import {
 import { createGame } from "./simulation";
 
 describe("livestock prices", () => {
-  it("uses NAU weaner auction band average", () => {
-    const q = baseLivePrice("weaner");
-    expect(q.source).toBe("sourced");
-    expect(q.baseNadPerKgLive).toBe(33.32);
+  it("uses Jannes tolly wet and dry band ends", () => {
+    const state = createGame(3300);
+    state.date = { ...state.date, month: 2 };
+    const wet = baseLivePrice("tolly", CONFIG, state);
+    state.date = { ...state.date, month: 8 };
+    const dry = baseLivePrice("tolly", CONFIG, state);
+    expect(wet.baseNadPerKgLive).toBe(38);
+    expect(dry.baseNadPerKgLive).toBe(32);
   });
 
   it("discounts thin herds at auction", () => {
     const state = createGame(3300);
-    const fat = quoteSale(state, "weaner", 1, "auction");
+    const fat = quoteSale(state, "tolly", 1, "auction");
     state.herd.condition = 20;
-    const thin = quoteSale(state, "weaner", 1, "auction");
+    const thin = quoteSale(state, "tolly", 1, "auction");
     if ("reason" in fat || "reason" in thin) throw new Error("expected sale");
     expect(thin.totalNad).toBeLessThan(fat.totalNad);
     expect(conditionPriceFactor(20)).toBe(0.7);

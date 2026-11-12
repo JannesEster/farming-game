@@ -16,14 +16,15 @@ function otjozondu(): GameState {
 function marketSales(state: GameState): void {
   if (!state.story) return;
   if (!CONFIG.calendar.weanerSaleMonths.includes(state.date.month)) return;
-  const sellClass = (stockClass: "weaner" | "ox", keep: number) => {
+  const sellClass = (stockClass: "tolly" | "heifer" | "ox", keep: number) => {
     const excess = state.story!.composition[stockClass] - keep;
     if (excess <= 0) return;
     const line = quoteSale(state, stockClass, excess, "auction");
     if ("reason" in line) return;
     applySale(state, line);
   };
-  sellClass("weaner", 8);
+  sellClass("tolly", 2);
+  sellClass("heifer", 2);
   sellClass("ox", 4);
 }
 
@@ -105,7 +106,7 @@ describe("year of play", () => {
     expect(state.herd.headCount).toBeLessThan(10);
   });
 
-  it("stays roughly break-even to modestly profitable with rotation and weaner sales", () => {
+  it("stays roughly break-even to modestly profitable with rotation and young steer sales", () => {
     const state = otjozondu();
     const startCash = state.cashNad;
     const startHead = state.herd.headCount;

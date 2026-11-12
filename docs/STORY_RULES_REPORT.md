@@ -17,8 +17,13 @@ Numbers are defined in `src/sim/config.ts` unless computed in `economy.ts`. **S*
 | LLPBN schedule (ref) | 0.6% | Prior lesson; retained in docs only |
 | Auction commission | 6% | NAU marketing commission |
 | NCA grading | N$16.85/head | NAU grading & inspection |
-| Weaner auction | N$33.32/kg live | NAU 2025 band N$32.81 to 34.83/kg live (mid) |
-| Ox 401–600 kg | N$40.17/kg live | NAU live marketing |
+| Open heifer slaughter | N$28/kg live | Jannes and Reuben, farm data, 12 Nov 2026 |
+| Pregnant heifer slaughter | N$34/kg live | Jannes and Reuben, farm data, 12 Nov 2026 |
+| Tolly wet season (Dec to Apr) | N$38/kg live | Jannes band N$32 to 38; **TODO** confirm mapping with Reuben |
+| Tolly dry season | N$32/kg live | Jannes band; **TODO** confirm mapping with Reuben |
+| Stoor (300 to 399 kg) | N$37/kg live | **TODO** confirm with Reuben; between tolly and ox |
+| Ox from 400 kg | N$40/kg live | Jannes and Reuben, farm data, 12 Nov 2026 |
+| Ox 401 to 600 kg (NAU ref) | N$40.17/kg live | NAU live marketing |
 | Lean cow 301–500 kg | N$27.90/kg live | NAU live marketing |
 | Calf 1–350 kg | N$33.50/kg live | NAU live marketing |
 | Bull 501–600 kg | N$33.93/kg live | NAU live marketing |
@@ -59,12 +64,29 @@ Numbers are defined in `src/sim/config.ts` unless computed in `economy.ts`. **S*
 
 Month-end card lists labour, lick, diesel, repairs, other (from `economy.monthlyOperatingCosts`).
 
+## Cattle classes (`cattleClasses.ts`, `config.cattle`)
+
+| Rule | Value | Source |
+|---|---|---|
+| Tolly liveweight | 180 to 299 kg | Jannes and Reuben, farm data, 12 Nov 2026 |
+| Stoor liveweight | 300 to 399 kg | Jannes and Reuben, farm data, 12 Nov 2026 |
+| Ox liveweight | 400 kg and up | Jannes and Reuben, farm data, 12 Nov 2026 |
+| Weaning split | 50% heifers, 50% tollies | Jannes and Reuben, farm data, 12 Nov 2026 |
+| Youngstock gain when fed | 0.45 kg/day | A |
+| Heifer joins as cow | After first calving | Jannes and Reuben, farm data, 12 Nov 2026 |
+
+Weight gates move tollies to stoors at 300 kg and stoors to oxen at 400 kg once per fed day.
+
 ## Prices and sales (`economy.ts`, `config.economy`)
 
 | Rule | Value | Source |
 |---|---|---|
-| Weaner auction | N$33.32/kg live | S, NAU mid-band |
-| Slaughter ox (live auction class) | N$40.17/kg live | S, NAU |
+| Open heifer | N$28/kg live | Jannes and Reuben, farm data, 12 Nov 2026 |
+| Pregnant heifer | N$34/kg live | Jannes and Reuben, farm data, 12 Nov 2026 |
+| Tolly (wet Dec to Apr) | N$38/kg live | Jannes band; **TODO** wet/dry mapping with Reuben |
+| Tolly (dry) | N$32/kg live | Jannes band; **TODO** wet/dry mapping with Reuben |
+| Stoor | N$37/kg live | **TODO** confirm with Reuben |
+| Ox | N$40/kg live | Jannes and Reuben, farm data, 12 Nov 2026 |
 | Lean cow | N$27.90/kg live | S, NAU |
 | Calf out of hand | N$33.50/kg live | S, NAU calves |
 | Bull | N$33.93/kg live | S, NAU bulls |
@@ -99,7 +121,7 @@ Housing for farmhand is provided (S), not modeled as cash.
 | Watch window | Nov to Apr | A |
 | Deficit warn | 25 mm below expected cumulative | A |
 | Choice month | February | A |
-| Quick sell weaners | 8 head @ N$27.90/kg | S-ish, NAU lean cow live |
+| Quick sell tollies | 8 head @ N$27.90/kg | S-ish, NAU lean cow live |
 | Boskos intake | 0.2 kg/head/day | Reuben cattle 150 to 250 g/day |
 | Camelthorn pods | 0.03 kg/head/day | Reuben drought practice; **TODO** price |
 | Boskos cost | head × days × kg × N$5.5/kg | **TODO** boskos price; Reuben lick/t proxy |
@@ -115,7 +137,7 @@ Housing for farmhand is provided (S), not modeled as cash.
 
 ## Tests
 
-`economy.test.ts` (scale + prices), `yearPlay.test.ts` (year 1 break-even band), `consequences.test.ts`, `seasonCycle.test.ts`, `drought.test.ts`, `persist.test.ts`.
+`cattleClasses.test.ts` (weight gates, heifer calving, tolly season, migration), `economy.test.ts` (scale + prices), `yearPlay.test.ts` (year 1 break-even band), `consequences.test.ts`, `seasonCycle.test.ts`, `drought.test.ts`, `persist.test.ts`.
 
 ## Phone screenshots
 

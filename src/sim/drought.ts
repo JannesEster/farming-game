@@ -1,5 +1,5 @@
 import { CONFIG, type GameConfig } from "./config";
-import { droughtSupplementCostNad } from "./economy";
+import { droughtSupplementCostNad, syncHeadFromComposition } from "./economy";
 import type { DroughtChoiceId, StoryState } from "./storyTypes";
 import type { GameState } from "./types";
 
@@ -60,7 +60,7 @@ export function tickDrought(state: GameState, config: GameConfig = CONFIG): void
       id: `drought-choice-${state.date.year}-${month}`,
       kind: "drought",
       title: "Drought building",
-      body: "Choose: sell some weaners, buy boskos with camelthorn pods, or move to greener camps.",
+      body: "Choose: sell some tollies, buy boskos with camelthorn pods, or move to greener camps.",
       priority: 6,
     });
   }
@@ -77,14 +77,16 @@ export function resolveDroughtChoice(
 
   switch (choice) {
     case "sell_down": {
-      const n = Math.min(story.composition.weaner, config.story.droughtSellWeaners);
-      if (n <= 0) return { ok: false, message: "No weaners to sell." };
-      story.composition.weaner -= n;
-      const price = n * config.economy.defaultWeanerLiveKg * config.economy.droughtQuickSaleNadPerKg;
+      const n = Math.min(story.composition.tolly, config.story.droughtSellTollies);
+      if (n <= 0) return { ok: false, message: "No tollies to sell." };
+      story.composition.tolly -= n;
+      const lw = story.classLiveweights?.tolly ?? config.economy.defaultWeanerLiveKg;
+      const price = n * lw * config.economy.droughtQuickSaleNadPerKg;
+      syncHeadFromComposition(state);
       state.cashNad += price;
       story.ledger.incomeNad += price;
       story.drought.choicePending = null;
-      return { ok: true, message: `Sold ${n} weaners out of hand for N$${Math.round(price)}.` };
+      return { ok: true, message: `Sold ${n} tollies out of hand for N$${Math.round(price)}.` };
     }
     case "buy_feed": {
       const cost = droughtSupplementCostNad(state, config);

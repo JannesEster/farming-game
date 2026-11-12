@@ -84,7 +84,16 @@ export function applyStarvationDay(state: GameState, ctx: FeedContext, config: G
 
 function applyDeaths(state: GameState, count: number, _cause: string): void {
   const story = state.story!;
-  const order: (keyof typeof story.composition)[] = ["calf", "weaner", "ox", "cow", "bull"];
+  const order: (keyof typeof story.composition)[] = [
+    "calf",
+    "heifer",
+    "tolly",
+    "stoor",
+    "ox",
+    "pregnant_heifer",
+    "cow",
+    "bull",
+  ];
   let left = count;
   for (const cls of order) {
     if (left <= 0) break;

@@ -91,11 +91,25 @@ body {
 .event-card p {
   margin: 0 0 8px;
   font-size: 13px;
-  line-height: 1.35;
+  line-height: 1.5;
   color: var(--muted);
-  max-height: 9.5em;
+  max-height: 11em;
   overflow: auto;
   white-space: pre-line;
+}
+
+@media (max-width: 420px) {
+  .event-card p {
+    line-height: 1.55;
+    font-size: 12.5px;
+  }
+}
+
+.market-class-tip {
+  font-size: 0.82rem;
+  line-height: 1.35;
+  margin: 0 0 0.5rem;
+  opacity: 0.92;
 }
 
 .market-sheet .market-field {
@@ -347,7 +361,8 @@ body {
 }
 
 .market-sheet {
-  max-height: min(68vh, calc(100vh - 56px));
+  z-index: 10;
+  max-height: min(72vh, calc(100vh - var(--hud-top-chrome, 56px) - 8px));
   overflow: hidden;
 }
 
@@ -361,8 +376,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 0 10px 10px;
+  padding: 8px 10px max(14px, env(safe-area-inset-bottom));
   background: var(--panel);
+  border-top: 1px solid rgba(247, 240, 226, 0.1);
+  box-shadow: 0 -6px 16px rgba(0, 0, 0, 0.18);
 }
 
 .sheet-summary {
@@ -1041,6 +1058,11 @@ body {
   bottom: calc(108px + env(safe-area-inset-bottom));
   max-width: 420px;
   margin: 0 auto;
+}
+
+.flow-tutorial--dock-top {
+  bottom: auto;
+  top: max(58px, calc(var(--hud-top-chrome, 52px) + 8px));
 }
 
 .flow-tutorial-inner {

@@ -11,6 +11,7 @@ export { herdInTransit, herdWorldTile, tickTransitRealtime, moveDurationMs } fro
 export { planHerdPath } from "./path";
 export * from "./grazing";
 export * from "./persist";
+export * from "./cattleClasses";
 export * from "./storyTypes";
 export * from "./story";
 export * from "./economy";

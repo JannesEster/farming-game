@@ -1,6 +1,21 @@
 import type { CalendarDate } from "./types";
 
-export type StockClass = "cow" | "bull" | "calf" | "weaner" | "ox";
+export type StockClass =
+  | "cow"
+  | "bull"
+  | "calf"
+  | "heifer"
+  | "pregnant_heifer"
+  | "tolly"
+  | "stoor"
+  | "ox";
+
+export type ClassLiveweights = {
+  heifer: number;
+  tolly: number;
+  stoor: number;
+  ox: number;
+};
 
 export type HerdComposition = Record<StockClass, number>;
 
@@ -56,6 +71,8 @@ export type UiCard = {
 
 export type StoryState = {
   composition: HerdComposition;
+  /** Average liveweight per youngstock class for growth and weight gates. */
+  classLiveweights: ClassLiveweights;
   starvation: StarvationTrack;
   drought: DroughtState;
   farmhand: FarmhandState;

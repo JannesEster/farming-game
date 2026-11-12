@@ -1,4 +1,11 @@
 import { CONFIG, type GameConfig } from "./config";
+import {
+  applyYoungstockGrowth,
+  defaultClassLiveweights,
+  emptyComposition,
+  totalCompositionHead,
+  tryMarkPregnantHeifers,
+} from "./cattleClasses";
 import { applyStarvationDay, feedContextForHerd, queueHusbandryWarnings } from "./consequences";
 import { tickDrought, droughtWatchScore } from "./drought";
 import { farmhandWaterBonus, tickFarmhand } from "./workers";
@@ -13,18 +20,28 @@ import {
 } from "./seasonCycle";
 import type { GameState } from "./types";
 import type { HerdComposition, StoryState } from "./storyTypes";
+
 export function defaultComposition(headCount: number, config: GameConfig = CONFIG): HerdComposition {
+  const composition = emptyComposition();
   const bulls = Math.max(2, Math.floor(headCount * config.story.bullFraction));
-  const oxen = Math.max(4, Math.floor(headCount * config.story.oxFraction));
-  const weaners = Math.max(8, Math.floor(headCount * config.story.weanerFraction));
   const calves = Math.max(10, Math.floor(headCount * config.story.calfFraction));
-  const cows = Math.max(0, headCount - bulls - oxen - weaners - calves);
-  return { cow: cows, bull: bulls, calf: calves, weaner: weaners, ox: oxen };
+  const young = Math.max(8, Math.floor(headCount * config.story.weanerFraction));
+  const heifers = Math.floor(young / 2);
+  const tollies = young - heifers;
+  const growers = Math.max(4, Math.floor(headCount * config.story.oxFraction));
+  composition.bull = bulls;
+  composition.calf = calves;
+  composition.heifer = heifers;
+  composition.tolly = tollies;
+  composition.ox = growers;
+  composition.cow = Math.max(0, headCount - totalCompositionHead(composition));
+  return composition;
 }
 
 export function createStoryState(headCount: number, config: GameConfig = CONFIG): StoryState {
   return {
     composition: defaultComposition(headCount, config),
+    classLiveweights: defaultClassLiveweights(config),
     starvation: { consecutivePoorFeedDays: 0, warningLevel: 0, totalDeathsSeason: 0 },
     drought: { watchActive: false, choicePending: null, warnedAt: null, forageMultiplier: 1 },
     farmhand: {
@@ -65,6 +82,9 @@ export function afterFeedDay(
   state.story.demandYesterdayKg = demandKg;
   queueHusbandryWarnings(state, config);
 
+  const intakeRatio = demandKg <= 0 ? 1 : eatenKg / demandKg;
+  applyYoungstockGrowth(state, intakeRatio, config);
+
   if (state.story.supplementDaysLeft > 0) {
     state.story.supplementDaysLeft -= 1;
     state.herd.condition = Math.min(
@@ -81,6 +101,7 @@ export function afterFeedDay(
   const notes = applyStarvationDay(state, feedContextForHerd(state, config), config);
   if (notes.length) state.story.lastDailyNote = notes[notes.length - 1];
 
+  tryMarkPregnantHeifers(state, config);
   tryCalving(state, config);
   tryWeaning(state, config);
   tickDrought(state, config);
