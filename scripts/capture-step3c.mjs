@@ -107,6 +107,21 @@ async function assertHerdPicture(page, viewport, label) {
   }
 }
 
+async function assertV2(page, viewport, label) {
+  const art = await page.evaluate(() => window.__farmCapture.v2ArtAudit());
+  const keys = await page.evaluate(() => {
+    const herd = window.__farmCapture.namedSpritesInView("herd-animal").textureKeys ?? [];
+    const cut = window.__farmCapture.namedSpritesInView("cut-out-animal").textureKeys ?? [];
+    const escaped = window.__farmCapture.namedSpritesInView("escaped-animal").textureKeys ?? [];
+    return [...herd, ...cut, ...escaped];
+  });
+  const cattleKeys = keys.filter((key) => key && key !== "spr-cow-dot");
+  const cattleArt = cattleKeys.length === 0 || cattleKeys.every((key) => String(key).startsWith("v2-cattle"));
+  if (!art.yard || !art.fence || !art.ground || !art.building || !cattleArt || (label !== "overview" && label !== "homestead" && !art.cattle)) {
+    await fail(page, viewport, `${label} is not using v2 art`, { art, cattleKeys });
+  }
+}
+
 async function main() {
   await mkdir(outDir, { recursive: true });
   const build = spawn("npm", ["run", "build"], { cwd: repoRoot, stdio: "inherit" });
@@ -142,6 +157,7 @@ async function main() {
         await fail(page, viewport.name, "escaped animal not outside the fence", escaped);
       }
       await assertHerdPicture(page, viewport.name, "escaped");
+      await assertV2(page, viewport.name, "escaped");
       const escapedPath = path.join(outDir, `${viewport.name}-escaped-animal.png`);
       await page.screenshot({ path: escapedPath });
       hashes.escaped = await fileHash(escapedPath);
@@ -159,6 +175,7 @@ async function main() {
         await fail(page, viewport.name, "animal detail missing", detail);
       }
       await assertHerdPicture(page, viewport.name, "detail");
+      await assertV2(page, viewport.name, "detail");
       const detailPath = path.join(outDir, `${viewport.name}-animal-detail.png`);
       await page.screenshot({ path: detailPath });
       hashes.detail = await fileHash(detailPath);
@@ -176,6 +193,7 @@ async function main() {
         await fail(page, viewport.name, "multi-select missing", selected);
       }
       await assertHerdPicture(page, viewport.name, "multi-select");
+      await assertV2(page, viewport.name, "multi-select");
       const selectPath = path.join(outDir, `${viewport.name}-multi-select.png`);
       await page.screenshot({ path: selectPath });
       hashes.select = await fileHash(selectPath);
@@ -187,6 +205,7 @@ async function main() {
         await fail(page, viewport.name, "cut-out group not in view", cut);
       }
       await assertHerdPicture(page, viewport.name, "cut-out");
+      await assertV2(page, viewport.name, "cut-out");
       const cutPath = path.join(outDir, `${viewport.name}-cut-out-drive.png`);
       await page.screenshot({ path: cutPath });
       hashes.cut = await fileHash(cutPath);
@@ -198,6 +217,7 @@ async function main() {
         await fail(page, viewport.name, "cows not facing several directions", facing);
       }
       await assertHerdPicture(page, viewport.name, "facing");
+      await assertV2(page, viewport.name, "facing");
       const facingPath = path.join(outDir, `${viewport.name}-cows-facing.png`);
       await page.screenshot({ path: facingPath });
       hashes.facing = await fileHash(facingPath);
@@ -211,6 +231,7 @@ async function main() {
         await fail(page, viewport.name, "cattle truck not beside the pens", truck);
       }
       await assertHerdPicture(page, viewport.name, "truck");
+      await assertV2(page, viewport.name, "truck");
       const truckPath = path.join(outDir, `${viewport.name}-cattle-truck-ramp.png`);
       await page.screenshot({ path: truckPath });
       hashes.truck = await fileHash(truckPath);
@@ -224,6 +245,7 @@ async function main() {
         await fail(page, viewport.name, "handling yard not in view", handling);
       }
       await assertHerdPicture(page, viewport.name, "handling");
+      await assertV2(page, viewport.name, "handling");
       const handlingPath = path.join(outDir, `${viewport.name}-cattle-handling.png`);
       await page.screenshot({ path: handlingPath });
       hashes.handling = await fileHash(handlingPath);
@@ -234,9 +256,30 @@ async function main() {
       await page.waitForTimeout(200);
       if (!overviewOk) await fail(page, viewport.name, "homestead and handling yard not both in view", {});
       await assertHerdPicture(page, viewport.name, "overview");
+      await assertV2(page, viewport.name, "overview");
       const overviewPath = path.join(outDir, `${viewport.name}-farm-overview.png`);
       await page.screenshot({ path: overviewPath });
       hashes.overview = await fileHash(overviewPath);
+      const beforeOverview = path.join(outDir, "art-before", `${viewport.name}-farm-overview.png`);
+      if (await fileExists(beforeOverview)) {
+        const overviewCompare = path.join(outDir, `${viewport.name}-overview-before-after.png`);
+        await writeFile(overviewCompare, stitchSideBySide(await readFile(beforeOverview), await readFile(overviewPath)));
+        hashes.overviewCompare = await fileHash(overviewCompare);
+      }
+
+      const homesteadOk = await page.evaluate(() => window.__farmCapture.prepareHomesteadCapture());
+      await page.waitForTimeout(200);
+      if (!homesteadOk) await fail(page, viewport.name, "homestead not in view", {});
+      await assertV2(page, viewport.name, "homestead");
+      const homesteadPath = path.join(outDir, `${viewport.name}-homestead.png`);
+      await page.screenshot({ path: homesteadPath });
+      hashes.homestead = await fileHash(homesteadPath);
+
+      if (viewport.name === "phone") {
+        await page.waitForTimeout(1000);
+        const fps = await page.evaluate(() => window.__farmCapture.gameFps());
+        console.log(`phone viewport fps ${Number(fps).toFixed(1)}`);
+      }
       }
 
       assertDistinct(hashes, viewport.name);

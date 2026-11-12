@@ -5,6 +5,7 @@ import { tileTop, type IsoLayout } from "./iso";
 import { groundTexture, paintedGroundStamps, terrainVariant } from "./colour";
 import { groundTextureKey } from "./art";
 import { PAINTED_TILE_NATIVE_W } from "./sprites";
+import { projectV2GroundChunk, v2GroundReady } from "./v2Ground";
 
 import type { PaintedGroundStamp } from "./colour";
 
@@ -39,7 +40,7 @@ export function bakeTerrainChunk(
   cy: number,
   track: Set<string>,
   painted: boolean,
-): { rt: Phaser.GameObjects.RenderTexture; x: number; y: number; w: number; h: number } {
+): { rt: Phaser.GameObjects.RenderTexture | Phaser.GameObjects.Image; x: number; y: number; w: number; h: number } {
   const chunk = CONFIG.view.terrainChunkTiles;
   const tileW = CONFIG.view.tileWidth;
   const tileH = CONFIG.view.tileHeight;
@@ -70,6 +71,10 @@ export function bakeTerrainChunk(
   const pad = 12;
   const w = Math.ceil(maxX - minX + pad * 2);
   const h = Math.ceil(maxY - minY + pad * 2);
+  if (painted && v2GroundReady(scene.textures)) {
+    const image = projectV2GroundChunk(scene, state, layout, cx, cy, track, minX - pad, minY - pad, w, h);
+    if (image) return { rt: image, x: minX - pad, y: minY - pad, w, h };
+  }
   const rt = scene.add.renderTexture(minX - pad, minY - pad, w, h).setOrigin(0, 0).setDepth(0);
   if (typeof rt.fill === "function") rt.fill(0x000000, 0);
 
