@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = path.join(repoRoot, "docs/screenshots/step3c1");
 const query = "capture=1&offer=otjozondjupa-ranch";
-const driveZoom = 0.9;
+const driveZoom = 1.3;
 
 function waitForServer(url, timeoutMs = 90000) {
   const start = Date.now();
@@ -44,7 +44,9 @@ async function status(page) {
 
 async function frameDrive(page) {
   const framed = await page.evaluate((zoom) => window.__farmCapture.frameReviewDrive(zoom), driveZoom);
-  if (!framed.herderVisible) throw new Error(`herder not in frame ${JSON.stringify(framed)}`);
+  if (!framed.herderVisible || !framed.labelVisible) {
+    throw new Error(`herder not in frame ${JSON.stringify(framed)}`);
+  }
   return framed;
 }
 
@@ -92,12 +94,37 @@ async function main() {
     });
     await boot(page);
 
+    if (process.env.STILL === "1") {
+      const home = await page.evaluate(() => window.__farmCapture.prepareHomesteadAtDefaultZoom());
+      if (!home) throw new Error("homestead frame failed");
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: path.join(outDir, "desktop-homestead-v3.png") });
+      const yard = await page.evaluate(() => window.__farmCapture.prepareTruckRampCapture());
+      if (!yard) throw new Error("yard frame failed");
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: path.join(outDir, "desktop-yard-truck-v3.png") });
+      const road = await page.evaluate(() => window.__farmCapture.prepareRoadWideCapture());
+      if (!road) throw new Error("road frame failed");
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: path.join(outDir, "desktop-road-gate-to-yard-v3.png") });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(`http://127.0.0.1:4173/?${query}`, { waitUntil: "networkidle" });
+      await boot(page);
+      const phone = await page.evaluate(() => window.__farmCapture.prepareHomesteadAtDefaultZoom());
+      if (!phone) throw new Error("phone homestead frame failed");
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: path.join(outDir, "phone-homestead-v3.png") });
+      console.log(JSON.stringify({ home, yard, road, phone }));
+      await browser.close();
+      return;
+    }
+
     if (process.env.YARD_ONLY === "1") {
       const yard = await page.evaluate(() => window.__farmCapture.prepareTruckRampCapture());
       if (!yard) throw new Error("yard frame failed");
       await page.waitForTimeout(500);
-      await page.screenshot({ path: path.join(outDir, "desktop-yard-truck-v2.png") });
-      console.log(JSON.stringify({ step: "desktop-yard-truck-v2", yard }));
+      await page.screenshot({ path: path.join(outDir, "desktop-yard-truck-v3.png") });
+      console.log(JSON.stringify({ step: "desktop-yard-truck-v3", yard }));
       await browser.close();
       return;
     }
@@ -107,9 +134,9 @@ async function main() {
     if (!started.ok || !started.shared) throw new Error(`neighbour move did not start ${JSON.stringify(started)}`);
 
     const shots = [
-      ["neighbour-leave-v2.png", "drive started", (s) => s.phase === "drive" && (s.progress ?? 0) > 0.06 && (s.progress ?? 0) < 0.28, 300000],
-      ["neighbour-mid-v2.png", "mid drive", (s) => s.phase === "drive" && (s.progress ?? 0) > 0.45 && (s.progress ?? 0) < 0.75, 300000],
-      ["neighbour-arrive-v2.png", "arriving", (s) => s.phase === "drive" && (s.progress ?? 0) > 0.86, 300000],
+      ["neighbour-leave-v3.png", "drive started", (s) => s.phase === "drive" && (s.progress ?? 0) > 0.06 && (s.progress ?? 0) < 0.28, 300000],
+      ["neighbour-mid-v3.png", "mid drive", (s) => s.phase === "drive" && (s.progress ?? 0) > 0.45 && (s.progress ?? 0) < 0.75, 300000],
+      ["neighbour-arrive-v3.png", "arriving", (s) => s.phase === "drive" && (s.progress ?? 0) > 0.86, 300000],
     ];
     let arrived = null;
     let zoom = null;
@@ -123,28 +150,39 @@ async function main() {
       arrived = now;
     }
 
-    const spreadHour = (arrived.hour + 1) % 24;
-    await waitUntil(page, "spread", (s) => s.hour === spreadHour, 120000);
-    await page.waitForTimeout(800);
+    await waitUntil(page, "spread", (s) => s.phase === null, 120000);
+    await page.waitForTimeout(1800);
     const spreadNow = await status(page);
     const spreadFrame = await frameDrive(page);
-    if (Math.abs(spreadFrame.zoom - zoom) > 0.01) throw new Error(`spread zoom changed ${zoom} -> ${spreadFrame.zoom}`);
-    await page.screenshot({ path: path.join(outDir, "neighbour-spread-v2.png") });
-    log.push({ step: "neighbour-spread-v2.png", zoom: spreadFrame.zoom, ...spreadNow });
+    if (spreadFrame.zoom > zoom + 0.02) throw new Error(`spread zoomed in ${zoom} -> ${spreadFrame.zoom}`);
+    await page.screenshot({ path: path.join(outDir, "neighbour-spread-v3.png") });
+    log.push({ step: "neighbour-spread-v3.png", zoom: spreadFrame.zoom, ...spreadNow });
+
+    if (process.env.DRIVE_ONLY === "1") {
+      console.log(JSON.stringify(log, null, 2));
+      await browser.close();
+      return;
+    }
 
     await page.goto(`http://127.0.0.1:4173/?${query}`, { waitUntil: "networkidle" });
     await boot(page);
     const home = await page.evaluate(() => window.__farmCapture.prepareHomesteadAtDefaultZoom());
     if (!home) throw new Error("homestead frame failed");
     await page.waitForTimeout(400);
-    await page.screenshot({ path: path.join(outDir, "desktop-homestead-v2.png") });
-    log.push({ step: "desktop-homestead-v2" });
+    await page.screenshot({ path: path.join(outDir, "desktop-homestead-v3.png") });
+    log.push({ step: "desktop-homestead-v3" });
 
     const yard = await page.evaluate(() => window.__farmCapture.prepareTruckRampCapture());
     if (!yard) throw new Error("yard frame failed");
     await page.waitForTimeout(400);
-    await page.screenshot({ path: path.join(outDir, "desktop-yard-truck-v2.png") });
-    log.push({ step: "desktop-yard-truck-v2", yard });
+    await page.screenshot({ path: path.join(outDir, "desktop-yard-truck-v3.png") });
+    log.push({ step: "desktop-yard-truck-v3", yard });
+
+    const road = await page.evaluate(() => window.__farmCapture.prepareRoadWideCapture());
+    if (!road) throw new Error("road frame failed");
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: path.join(outDir, "desktop-road-gate-to-yard-v3.png") });
+    log.push({ step: "desktop-road-gate-to-yard-v3", road });
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`http://127.0.0.1:4173/?${query}`, { waitUntil: "networkidle" });
@@ -152,8 +190,8 @@ async function main() {
     const phone = await page.evaluate(() => window.__farmCapture.prepareHomesteadAtDefaultZoom());
     if (!phone) throw new Error("phone homestead frame failed");
     await page.waitForTimeout(400);
-    await page.screenshot({ path: path.join(outDir, "phone-homestead-v2.png") });
-    log.push({ step: "phone-homestead-v2" });
+    await page.screenshot({ path: path.join(outDir, "phone-homestead-v3.png") });
+    log.push({ step: "phone-homestead-v3" });
 
     await browser.close();
     console.log(JSON.stringify(log, null, 2));

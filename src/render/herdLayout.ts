@@ -55,6 +55,11 @@ function cowPhase(seed: number, index: number): number {
   return ((seed + index * 7919) % 1000) / 1000;
 }
 
+function unitHash(seed: number, index: number, salt: number): number {
+  const n = Math.imul((seed + 1) ^ Math.imul(index + salt * 17, 2246822519), 3266489917) >>> 0;
+  return n / 4294967296;
+}
+
 const GATE_PROGRESS = 0.5;
 const GATE_ALONG_PX = 32;
 const GATE_APPROACH_PX = 110;
@@ -366,7 +371,7 @@ export function fileAlongPath(
   const lanes = nearGate ? Math.min(2, count) : Math.min(metrics.abreast, Math.max(1, count));
   const lateral = tilePx * (nearGate ? 0.4 : MOB_LATERAL_TILES);
   const spanPx = Math.max(tilePx * 0.6, leadDist - rearDist);
-  const ranks = Math.max(1, Math.round(spanPx / (tilePx * 1.05)));
+  const ranks = Math.max(1, Math.round(spanPx / (tilePx * 0.92)));
   const movingCount = Math.min(count, Math.max(lanes, ranks * lanes));
   const spacing = ranks <= 1 ? 0 : spanPx / (ranks - 1);
 
@@ -426,10 +431,16 @@ export function fileAlongPath(
     const waiting = i >= movingCount;
     const laneIndex = i % lanes;
     const rank = Math.floor(i / lanes);
-    const wobble = Math.sin(timeMs / 700 + phase * 9) * 2;
-    const dist = Math.max(tilePx * 0.2, leadDist - rank * spacing + wobble);
-    const at = pointAt(waiting ? 0 : dist);
-    const lane = (laneIndex - (lanes - 1) / 2) * lateral;
+    const alongJitter = (unitHash(seed, i, 1) - 0.5) * 0.6 * tilePx;
+    const latJitter = (unitHash(seed, i, 3) - 0.5) * 0.6 * tilePx;
+    const straggle = !waiting && unitHash(seed, i, 5) > 0.88 ? tilePx * (0.16 + unitHash(seed, i, 7) * 0.2) : 0;
+    const stagger = rank % 2 === 1 ? lateral * 0.38 : 0;
+    const wobble = Math.sin(timeMs / 520 + phase * 9) * tilePx * 0.06;
+    const dist = waiting
+      ? 0
+      : Math.max(tilePx * 0.15, Math.min(leadDist + tilePx * 0.12, leadDist - rank * spacing + wobble + alongJitter - straggle));
+    const at = pointAt(dist);
+    const lane = (laneIndex - (lanes - 1) / 2) * lateral + stagger + (waiting ? 0 : latJitter);
     const px = -at.uy;
     const py = at.ux;
     let foot = { x: at.x + px * lane, y: at.y + py * lane };
@@ -446,14 +457,16 @@ export function fileAlongPath(
       foot = nudgeInsideCamp(state, foot.x, foot.y, layout, tileW, tileH);
     }
     if (!legal(foot.x, foot.y)) foot = { x: at.x, y: at.y };
+    const heading = Math.atan2(at.uy, at.ux) + (unitHash(seed, i, 9) - 0.5) * 0.8;
+    const octant = cowOctantFromScreen(Math.cos(heading), Math.sin(heading));
     offsets.push({
       x: foot.x - herdX,
       y: foot.y - herdY,
       flip: false,
       coat: Math.floor(phase * 6) % 6,
       scale: 0.58 + (phase % 0.1),
-      view: cowViewFromOctant(cowOctantFromScreen(at.ux, at.uy)),
-      octant: cowOctantFromScreen(at.ux, at.uy),
+      view: cowViewFromOctant(octant),
+      octant,
       moving: !waiting,
     });
   }

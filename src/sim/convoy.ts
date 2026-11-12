@@ -20,9 +20,9 @@ export const MOB_ABREAST = 6;
 export const MOB_LATERAL_TILES = 0.72;
 
 /**
- * Loose mob on the path. The moving column is up to 12 tiles long from the first
- * step (the tail can still be in the source camp), and the herder stays 2.5 tiles
- * behind that tail, so he walks the whole drive instead of standing at the gate.
+ * Loose mob on the path. The column grows to 12 tiles as the lead walks, and the
+ * tail stays on the route already travelled. The herder follows just behind that
+ * tail, closing to 2.5 tiles once the column has room, and he keeps moving.
  */
 export function columnMetrics(
   path: TilePoint[],
@@ -41,12 +41,12 @@ export function columnMetrics(
   const total = pathLengthTiles(path);
   const safe = Math.max(1, count);
   const abreast = safe <= 6 ? Math.min(2, safe) : MOB_ABREAST;
-  const spacingTiles = 1.15;
+  const spacingTiles = 0.92;
   const centerTiles = progress * total;
-  const ranks = Math.max(1, Math.ceil(safe / abreast));
-  const span = Math.min(MOB_LENGTH_TILES, Math.max(0, (ranks - 1) * spacingTiles));
-  const rearTiles = centerTiles - span;
-  const herderTiles = rearTiles - HERDER_BEHIND_TILES;
+  const span = Math.min(MOB_LENGTH_TILES, Math.max(0, centerTiles * 0.5));
+  const rearTiles = Math.max(0, centerTiles - span);
+  const gap = Math.min(HERDER_BEHIND_TILES, 0.85 + centerTiles * 0.052);
+  const herderTiles = Math.max(0, rearTiles - gap);
   return {
     total,
     spacingTiles,

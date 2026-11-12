@@ -17,6 +17,7 @@ export type PlacedAnimal = {
   octant: number;
   role: AnimalSpriteRole;
   calf: boolean;
+  moving?: boolean;
 };
 
 function hashUnit(n: number): number {
@@ -72,6 +73,7 @@ export function layoutAnimals(
         octant: offset?.octant ?? animal.facing,
         role: "herd-animal",
         calf,
+        moving: offset?.moving,
       });
       continue;
     }

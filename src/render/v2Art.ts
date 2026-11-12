@@ -23,10 +23,12 @@ const TREES = [
   "tree-shepherds-flip.png",
 ];
 const BUSHES = [
-  "bush-thorn-dense.png",
-  "bush-thorn-dense-flip.png",
+  "bush-thorn-sparse.png",
   "bush-thorn-sparse.png",
   "bush-thorn-sparse-flip.png",
+  "bush-thorn-sparse-flip.png",
+  "bush-thorn-dense.png",
+  "bush-thorn-dense-flip.png",
 ];
 const ROCKS = ["rocks-cluster.png", "rocks-cluster-flip.png", "rock-flat.png", "rock-flat-flip.png"];
 const LICKS = ["prop-lick-trough-roofed.png", "prop-lick-drum.png", "prop-lick-roofed-alt.png"];

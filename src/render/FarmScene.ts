@@ -164,7 +164,7 @@ import {
   vehiclePose,
 } from "./v2Art";
 import { yardGeometry } from "./yardDraw";
-import { ensureV2GroundFillTexture, v2GroundReady } from "./v2Ground";
+import { ensureV2GroundFillTexture, renderFarmRoad, v2GroundReady } from "./v2Ground";
 
 function pointInPolygon(x: number, y: number, corners: { x: number; y: number }[]): boolean {
   let inside = false;
@@ -249,6 +249,7 @@ export class FarmScene extends Phaser.Scene {
   private chunkRoots = new Map<string, Phaser.GameObjects.Container>();
   private chunkRenderTextures = new Map<string, Phaser.GameObjects.RenderTexture | Phaser.GameObjects.Image>();
   private groundFill?: Phaser.GameObjects.TileSprite;
+  private roadDecal?: Phaser.GameObjects.Image;
   private fenceArt: Phaser.GameObjects.Image[] = [];
   private fenceSig = "";
   private cowShadows: Phaser.GameObjects.Image[] = [];
@@ -669,10 +670,11 @@ export class FarmScene extends Phaser.Scene {
     return this.captureDiagnostics();
   }
 
-  /** One zoom for the whole drive. Pan so the herder stays in frame behind the mob. */
+  /** One zoom for the whole drive. Pan so the herder stays in frame behind the moving mob. */
   private frameReviewDrive(zoom: number): Record<string, unknown> {
     this.captureSkipCowCull = true;
     this.captureHideHerdLabel = true;
+    this.captureHideStaff = false;
     this.capturePin = null;
     this.syncHerdFromSim();
     this.placeHerd(performance.now());
@@ -683,8 +685,35 @@ export class FarmScene extends Phaser.Scene {
       this.reviewDriveZoom = clampZoom(zoom, this.minZoom, this.maxZoom);
     }
     camera.setZoom(this.reviewDriveZoom);
-    const herd = this.mobCenter();
-    const herder = this.farmerSprite?.visible ? { x: this.farmerSprite.x, y: this.farmerSprite.y } : herd;
+    if (!this.state.herd.transit) {
+      const herdPoints = this.herdOffsets.map((offset) => ({
+        x: this.herdVisual.x + offset.x,
+        y: this.herdVisual.y + offset.y,
+      }));
+      if (this.farmerSprite?.visible) {
+        herdPoints.push({ x: this.farmerSprite.x, y: this.farmerSprite.y });
+        herdPoints.push({ x: this.farmerSprite.x, y: this.farmerSprite.y - 120 });
+      }
+      const herdBounds = boundsFromPoints(herdPoints, 48);
+      if (herdBounds) {
+        const fitted = frameWorldRectInClearBand(
+          herdBounds,
+          camera.width,
+          camera.height,
+          viewportCameraInsets(),
+          this.minZoom,
+          this.reviewDriveZoom,
+          24,
+        );
+        camera.setZoom(fitted.zoom);
+        camera.scrollX = fitted.scrollX;
+        camera.scrollY = fitted.scrollY;
+        this.clampScroll();
+      }
+    }
+    const herd = this.movingMobCenter();
+    const herderSprite = this.state.herd.transit ? this.herderSpriteForTransit() : this.farmerSprite;
+    const herder = herderSprite?.visible ? { x: herderSprite.x, y: herderSprite.y } : herd;
     const viewW = camera.width / camera.zoom;
     const viewH = camera.height / camera.zoom;
     const margin = 0.2;
@@ -694,21 +723,96 @@ export class FarmScene extends Phaser.Scene {
     const limitY = viewH * (0.5 - margin);
     cx = Math.min(herder.x + limitX, Math.max(herder.x - limitX, cx));
     cy = Math.min(herder.y + limitY, Math.max(herder.y - limitY, cy));
-    this.jumpCameraTo(cx, cy, false);
+    if (this.state.herd.transit) this.jumpCameraTo(cx, cy, false);
     this.placeHerd(performance.now());
     this.placeFarmer();
     this.placeFarmhand();
+    const shownHerder = this.state.herd.transit ? this.herderSpriteForTransit() : this.farmerSprite;
+    const label = this.state.herd.transit?.herder === "piet" ? this.farmhandNameTag : this.farmerNameTag;
+    if (shownHerder?.visible) {
+      const labelY = label?.visible ? label.y : shownHerder.y - 48;
+      const focusY = Math.min(shownHerder.y, labelY);
+      const viewLeft = worldXAtScreenX(camera.scrollX, camera.width, camera.zoom, 48);
+      const viewRight = worldXAtScreenX(camera.scrollX, camera.width, camera.zoom, camera.width - 48);
+      const viewTop = worldYAtScreenY(camera.scrollY, camera.height, camera.zoom, 88);
+      const viewBottom = worldYAtScreenY(camera.scrollY, camera.height, camera.zoom, camera.height - 48);
+      let shiftX = 0;
+      let shiftY = 0;
+      if (shownHerder.x < viewLeft) shiftX = shownHerder.x - viewLeft;
+      else if (shownHerder.x > viewRight) shiftX = shownHerder.x - viewRight;
+      if (focusY < viewTop) shiftY = focusY - viewTop;
+      else if (shownHerder.y > viewBottom) shiftY = shownHerder.y - viewBottom;
+      if (shiftX !== 0 || shiftY !== 0) {
+        camera.scrollX += shiftX;
+        camera.scrollY += shiftY;
+        this.clampScroll();
+      }
+    }
     this.cullProps();
     this.fadeCoveringTrees();
-    const view = camera.worldView;
-    const herderVisible = Boolean(
-      this.farmerSprite?.visible &&
-        this.farmerSprite.x >= view.x &&
-        this.farmerSprite.x <= view.right &&
-        this.farmerSprite.y >= view.y &&
-        this.farmerSprite.y <= view.bottom,
+    const inside = (x: number, y: number) =>
+      x >= worldXAtScreenX(camera.scrollX, camera.width, camera.zoom, 0) &&
+      x <= worldXAtScreenX(camera.scrollX, camera.width, camera.zoom, camera.width) &&
+      y >= worldYAtScreenY(camera.scrollY, camera.height, camera.zoom, 0) &&
+      y <= worldYAtScreenY(camera.scrollY, camera.height, camera.zoom, camera.height);
+    const herderVisible = Boolean(shownHerder?.visible && inside(shownHerder.x, shownHerder.y));
+    const labelVisible = Boolean(label?.visible && inside(label.x, label.y));
+    const moving = this.herdOffsets.filter((offset) => offset.moving).length;
+    return {
+      zoom: camera.zoom,
+      herderVisible,
+      labelVisible,
+      label: label?.text ?? "",
+      moving,
+      x: herder.x,
+      y: herder.y,
+    };
+  }
+
+  /** Wide view of the two-track from the farm gate, past the homestead, to the yard. */
+  private prepareRoadWideCapture(): boolean {
+    this.capturePin = null;
+    const tileW = CONFIG.view.tileWidth;
+    const tileH = CONFIG.view.tileHeight;
+    const tracks = this.state.features.filter((feature) => feature.kind === "track");
+    const house = this.state.features.find((feature) => feature.kind === "house");
+    if (!house || tracks.length === 0) return false;
+    let nearest = tracks[0];
+    let nearestDist = Number.POSITIVE_INFINITY;
+    for (const tile of tracks) {
+      const dist = Math.hypot(tile.x - house.x, tile.y - house.y);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = tile;
+      }
+    }
+    const vertical = tracks.filter((tile) => tile.x === nearest.x).length;
+    const horizontal = tracks.filter((tile) => tile.y === nearest.y).length;
+    const spine =
+      vertical >= horizontal
+        ? tracks.filter((tile) => Math.abs(tile.x - nearest.x) <= 6)
+        : tracks.filter((tile) => Math.abs(tile.y - nearest.y) <= 6);
+    const points = spine.map((tile) => tileCenter(tile.x, tile.y, this.layout, tileW, tileH));
+    const bounds = boundsFromPoints(points, tileW * 1.4);
+    if (!bounds) return false;
+    const camera = this.cameras.main;
+    this.refreshZoomLimits();
+    const framed = frameWorldRectInClearBand(
+      bounds,
+      camera.width,
+      camera.height,
+      viewportCameraInsets(),
+      this.minZoom,
+      Math.min(this.maxZoom, 0.72),
+      20,
     );
-    return { zoom: camera.zoom, herderVisible, x: herder.x, y: herder.y };
+    camera.setZoom(framed.zoom);
+    camera.scrollX = framed.scrollX;
+    camera.scrollY = framed.scrollY;
+    this.clampScroll();
+    this.cullProps();
+    this.fadeCoveringTrees();
+    return true;
   }
 
   private pickDistantMoveCamp(): number | null {
@@ -1243,6 +1347,7 @@ export class FarmScene extends Phaser.Scene {
       prepareOverviewCapture: () => this.prepareOverviewCapture(),
       prepareHomesteadCapture: () => this.prepareHomesteadCapture(),
       prepareHomesteadAtDefaultZoom: () => this.prepareHomesteadAtDefaultZoom(),
+      prepareRoadWideCapture: () => this.prepareRoadWideCapture(),
       prepareHomesteadCloseCapture: () => this.prepareHomesteadCloseCapture(),
       prepareScaleReferenceCapture: () => this.prepareScaleReferenceCapture(),
       v2ArtAudit: () => this.v2ArtAudit(),
@@ -1310,6 +1415,11 @@ export class FarmScene extends Phaser.Scene {
       this.state.date = tick.date;
       this.bank = tick.bankMs;
       this.state.clock.bankMs = tick.bankMs;
+      const timeEl = document.getElementById("stat-time");
+      if (timeEl) {
+        const dayLength = this.state.clock?.settings.dayLengthSeconds;
+        timeEl.textContent = formatClockTime(this.state.date, this.bank, dayLength);
+      }
       for (let i = 0; i < tick.daySteps && i < CONFIG.view.maxDaysPerFrame; i += 1) {
         stepDay(this.state);
         steps += 1;
@@ -1489,6 +1599,8 @@ export class FarmScene extends Phaser.Scene {
     this.chunkRenderTextures.clear();
     this.groundFill?.destroy();
     this.groundFill = undefined;
+    this.roadDecal?.destroy();
+    this.roadDecal = undefined;
     this.chunkRoots.forEach((root) => root.destroy());
     this.chunkRoots.clear();
     const size = CONFIG.view.terrainChunkTiles;
@@ -1503,6 +1615,7 @@ export class FarmScene extends Phaser.Scene {
     if (v2GroundReady(this.textures)) {
       const fillKey = ensureV2GroundFillTexture(this, this.layout);
       if (fillKey) this.groundFill = this.add.tileSprite(0, 0, 64, 64, fillKey).setOrigin(0, 0).setDepth(-2);
+      this.roadDecal = renderFarmRoad(this, this.state, this.layout) ?? undefined;
     }
   }
 
@@ -1911,16 +2024,26 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private mobCenter(): { x: number; y: number } {
-    if (this.herdOffsets.length === 0) return { x: this.herdVisual.x, y: this.herdVisual.y };
+    return this.averageOffsets(this.herdOffsets);
+  }
+
+  /** Centre of the animals that are actually walking the route. */
+  private movingMobCenter(): { x: number; y: number } {
+    const moving = this.herdOffsets.filter((offset) => offset.moving);
+    return this.averageOffsets(moving.length > 0 ? moving : this.herdOffsets);
+  }
+
+  private averageOffsets(offsets: HerdOffset[]): { x: number; y: number } {
+    if (offsets.length === 0) return { x: this.herdVisual.x, y: this.herdVisual.y };
     let x = 0;
     let y = 0;
-    for (const offset of this.herdOffsets) {
+    for (const offset of offsets) {
       x += offset.x;
       y += offset.y;
     }
     return {
-      x: this.herdVisual.x + x / this.herdOffsets.length,
-      y: this.herdVisual.y + y / this.herdOffsets.length,
+      x: this.herdVisual.x + x / offsets.length,
+      y: this.herdVisual.y + y / offsets.length,
     };
   }
 
@@ -3593,6 +3716,7 @@ export class FarmScene extends Phaser.Scene {
         scale: 1,
         view: "right" as const,
         octant: spot.octant,
+        moving: spot.moving,
       }));
     const zoom = this.cameras.main.zoom;
     const cowLod = this.paintedSprites && zoom <= COW_LOD_ZOOM && !this.captureHideHerdLabel;
@@ -4334,10 +4458,12 @@ export class FarmScene extends Phaser.Scene {
     const tileW = CONFIG.view.tileWidth;
     const tileH = CONFIG.view.tileHeight;
     const pad = homesteadBoundsPad(tileW, tileH);
-    const yardKinds = new Set(["house", "windmill", "shed", "kraal", "reservoir"]);
+    const yardKinds = new Set(["house", "windmill", "shed", "kraal", "reservoir", "worker_house"]);
+    const house = this.state.features.find((feature) => feature.kind === "house");
     const points: { x: number; y: number }[] = [];
     for (const feature of this.state.features) {
       if (!yardKinds.has(feature.kind)) continue;
+      if (house && Math.hypot(feature.x - house.x, feature.y - house.y) > 16) continue;
       const pt = tileCenter(feature.x + 0.5, feature.y + 0.5, this.layout, tileW, tileH);
       const spritePad =
         feature.kind === "windmill" ? tileW * 2.2 : feature.kind === "shed" ? tileW * 1.9 : tileW * 1.15;
@@ -4389,9 +4515,10 @@ export class FarmScene extends Phaser.Scene {
         Math.min(this.maxZoom, 1.15),
         16,
       );
-      camera.setZoom(framed.zoom);
-      camera.scrollX = framed.scrollX;
-      camera.scrollY = framed.scrollY;
+      const readable = readableCampZoom(camera.width, CONFIG.view.tileWidth, this.zoomTargets());
+      const zoom = Math.max(framed.zoom, Math.min(readable, Math.min(this.maxZoom, 1.15)));
+      camera.setZoom(zoom);
+      camera.centerOn((bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2);
     } else {
       camera.setZoom(clampZoom(camera.zoom, this.minZoom, this.maxZoom));
     }
