@@ -25,13 +25,17 @@ function waitForServer(url, timeoutMs = 60000) {
 }
 
 async function waitForTransitMidpoint(page) {
-  for (let i = 0; i < 40; i += 1) {
+  await page.evaluate(() => window.__farmCapture?.setSpeed?.("x3"));
+  for (let i = 0; i < 80; i += 1) {
     const progress = await page.evaluate(() => {
       const scene = window.__farmCapture;
       return scene?.herdTransitProgress?.() ?? 0;
     });
-    if (progress >= 0.22 && progress <= 0.72) return progress;
-    await page.waitForTimeout(400);
+    const walking = await page.evaluate(
+      () => Boolean(window.__farmCapture?.herdTransitProgress?.() !== undefined),
+    );
+    if (walking && progress >= 0.28 && progress <= 0.68) return progress;
+    await page.waitForTimeout(250);
   }
   return 0;
 }
@@ -42,6 +46,7 @@ async function main() {
   try {
     await waitForServer("http://127.0.0.1:4173/");
     const browser = await chromium.launch();
+    let closeupDone = false;
     for (const viewport of [
       { name: "desktop", width: 1280, height: 800 },
       { name: "phone", width: 390, height: 844 },
@@ -61,8 +66,11 @@ async function main() {
       await page.screenshot({ path: path.join(outDir, `${viewport.name}-day.png`) });
 
       await page.evaluate(() => window.__farmCapture?.setNightForCapture?.());
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(700);
       await page.screenshot({ path: path.join(outDir, `${viewport.name}-night.png`) });
+
+      await page.evaluate(() => window.__farmCapture?.resetDaylightForCapture?.());
+      await page.waitForTimeout(400);
 
       await page.evaluate(() => window.__farmCapture?.zoomGrassNearCapture?.());
       await page.waitForTimeout(450);
@@ -77,9 +85,17 @@ async function main() {
       await page.evaluate(() => window.__farmCapture?.triggerHerdMoveDemo?.());
       await waitForTransitMidpoint(page);
       await page.evaluate(() => window.__farmCapture?.zoomHerdWalkCapture?.());
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(600);
       await page.screenshot({ path: path.join(outDir, `${viewport.name}-herd-walk.png`) });
 
+      if (!closeupDone && viewport.name === "desktop") {
+        await page.evaluate(() => window.__farmCapture?.zoomHerdCloseupCapture?.());
+        await page.waitForTimeout(500);
+        await page.screenshot({ path: path.join(outDir, "desktop-herd-closeup.png") });
+        closeupDone = true;
+      }
+
+      await page.evaluate(() => window.__farmCapture?.resetDaylightForCapture?.());
       await page.evaluate(() => window.__farmCapture?.openNotificationsDemo?.());
       await page.waitForTimeout(450);
       await page.screenshot({ path: path.join(outDir, `${viewport.name}-notifications.png`) });

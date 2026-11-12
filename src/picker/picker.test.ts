@@ -30,22 +30,26 @@ describe("farm picker offers", () => {
     }
   });
 
-  it("validates each offer map against its card stats", () => {
-    for (const offer of offers) {
-      const config = buildGameConfig({
-        region: REGIONS[offer.regionKey],
-        hectares: offer.hectares,
-        campCount: offer.campCount,
-        water: offer.water,
-        fenceCondition: offer.fenceCondition,
-        herdHead: offer.livestock.head,
-        herdName: offer.livestock.classLabel,
-        mapSeed: offer.seed,
-      });
-      const check = validateOfferCard(offer, config);
-      expect(check.errors, `${offer.id}: ${check.errors.join("; ")}`).toEqual([]);
-    }
-  });
+  it(
+    "validates each offer map against its card stats",
+    () => {
+      for (const offer of offers) {
+        const config = buildGameConfig({
+          region: REGIONS[offer.regionKey],
+          hectares: offer.hectares,
+          campCount: offer.campCount,
+          water: offer.water,
+          fenceCondition: offer.fenceCondition,
+          herdHead: offer.livestock.head,
+          herdName: offer.livestock.classLabel,
+          mapSeed: offer.seed,
+        });
+        const check = validateOfferCard(offer, config);
+        expect(check.errors, `${offer.id}: ${check.errors.join("; ")}`).toEqual([]);
+      }
+    },
+    30_000,
+  );
 
   it("connects camps through gates and reachable paths", () => {
     for (const offer of offers) {

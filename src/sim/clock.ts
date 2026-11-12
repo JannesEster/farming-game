@@ -56,12 +56,29 @@ export function realMsPerGameHour(hour: number, dayLengthSeconds: DayLengthSecon
   return seconds * 1000;
 }
 
-export function daylightBlend(hour: number): number {
+/** Canvas/CSS brightness while the sun is up (1 = full noon). */
+export function sceneDaylightBlend(hour: number): number {
   const h = ((hour % 24) + 24) % 24;
   if (h >= DAYLIGHT_START && h < DAYLIGHT_END) return 1;
-  if (h >= DAYLIGHT_END && h < 20) return clamp01(1 - (h - DAYLIGHT_END) / 4);
-  if (h >= 4 && h < DAYLIGHT_START) return clamp01((h - 4) / (DAYLIGHT_START - 4));
-  return 0.12;
+  if (h >= DAYLIGHT_END && h < 19) return clamp01(1 - 0.82 * (h - DAYLIGHT_END));
+  if (h >= 19 || h < 5) return 0.18;
+  if (h >= 5 && h < DAYLIGHT_START) return clamp01(0.18 + 0.82 * (h - 5));
+  return 1;
+}
+
+/** Blue-night overlay strength on the farm canvas (0 off, ~0.62 at midnight). */
+export function nightOverlayAlpha(hour: number): number {
+  const h = ((hour % 24) + 24) % 24;
+  const peak = 0.62;
+  if (h >= DAYLIGHT_START && h < DAYLIGHT_END) return 0;
+  if (h >= DAYLIGHT_END && h < 19) return peak * (h - DAYLIGHT_END);
+  if (h >= 19 || h < 5) return peak;
+  if (h >= 5 && h < DAYLIGHT_START) return peak * (DAYLIGHT_START - h);
+  return 0;
+}
+
+export function daylightBlend(hour: number): number {
+  return sceneDaylightBlend(hour);
 }
 
 function clamp01(value: number): number {

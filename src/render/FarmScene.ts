@@ -5,7 +5,7 @@ import { clamp } from "../sim/math";
 import { getGameFlow } from "../integration/GameFlowService";
 import { hasBlockingCard, popNextCard } from "../sim/story";
 import { presentStoryCard } from "./storyPresent";
-import { daylightBlend, tickRanchClock } from "../sim/clock";
+import { nightOverlayAlpha, sceneDaylightBlend, tickRanchClock } from "../sim/clock";
 import { elementVisible, isSimBlocked as simClockBlocked, speedMultiplier, transitMayAdvance } from "./simGate";
 import { syncAlertStrip } from "../integration/notificationHub";
 import { bfsCampRoute } from "../sim/path";
@@ -105,6 +105,9 @@ export class FarmScene extends Phaser.Scene {
   private market!: MarketSheet;
   private mode: SpeedMode = "x1";
   private nightOverlay?: Phaser.GameObjects.Rectangle;
+  private homesteadGlow?: Phaser.GameObjects.Graphics;
+  private homesteadLight?: { x: number; y: number };
+  private captureHideHerdLabel = false;
   private selected = false;
   private pendingCampId: number | null = null;
   private pendingCampName = "";
@@ -199,10 +202,11 @@ export class FarmScene extends Phaser.Scene {
     this.ring = this.add.graphics().setDepth(9);
     this.rain = this.add.graphics().setScrollFactor(0).setDepth(30000);
     this.nightOverlay = this.add
-      .rectangle(0, 0, this.scale.width, this.scale.height, 0x081018, 0)
+      .rectangle(0, 0, this.scale.width, this.scale.height, 0x081830, 0)
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(25000);
+    this.homesteadGlow = this.add.graphics().setDepth(25002);
     this.syncHerdFromSim();
     this.spawnCows();
     this.herdLabel = this.add
@@ -279,6 +283,32 @@ export class FarmScene extends Phaser.Scene {
     }
     this.installCaptureBridge();
     document.addEventListener("visibilitychange", this.onVisibilityChange);
+  }
+
+  private applyRanchLighting(): void {
+    const hour = this.state.date.hour;
+    const blend = sceneDaylightBlend(hour);
+    const night = nightOverlayAlpha(hour);
+    this.hud.setDaylight(blend);
+    if (this.nightOverlay) this.nightOverlay.setAlpha(night);
+    this.updateHomesteadGlow(night);
+  }
+
+  private updateHomesteadGlow(nightAlpha: number): void {
+    if (!this.homesteadGlow || !this.homesteadLight) {
+      this.homesteadGlow?.clear();
+      return;
+    }
+    this.homesteadGlow.clear();
+    if (nightAlpha < 0.1) return;
+    const strength = nightAlpha / 0.62;
+    const { x, y } = this.homesteadLight;
+    this.homesteadGlow.fillStyle(0xffc978, 0.28 * strength);
+    this.homesteadGlow.fillCircle(x - 14, y - 22, 10);
+    this.homesteadGlow.fillCircle(x + 10, y - 20, 8);
+    this.homesteadGlow.fillStyle(0xffe8b8, 0.2 * strength);
+    this.homesteadGlow.fillCircle(x - 14, y - 22, 5);
+    this.homesteadGlow.fillCircle(x + 10, y - 20, 4);
   }
 
   private setDayLength(seconds: DayLengthSeconds): void {
@@ -526,8 +556,18 @@ export class FarmScene extends Phaser.Scene {
       },
       setNightForCapture: () => {
         this.state.date.hour = 22;
-        this.hud.setDaylight(0.06);
-        if (this.nightOverlay) this.nightOverlay.setAlpha(0.72);
+        this.applyRanchLighting();
+        this.syncHud();
+        return true;
+      },
+      resetDaylightForCapture: () => {
+        this.state.date.hour = 11;
+        this.applyRanchLighting();
+        this.syncHud();
+        return true;
+      },
+      setSpeed: (mode: SpeedMode) => {
+        this.setSpeed(mode);
         return true;
       },
       zoomGrassNearCapture: () => {
@@ -547,9 +587,24 @@ export class FarmScene extends Phaser.Scene {
       },
       zoomHerdWalkCapture: () => {
         const camera = this.cameras.main;
-        camera.setZoom(clampZoom(0.58, this.minZoom, this.maxZoom));
-        this.jumpCameraTo(this.herdVisual.x, this.herdVisual.y, false);
+        this.captureHideHerdLabel = true;
+        this.refreshHerdLabel();
+        camera.setZoom(clampZoom(1.02, this.minZoom, this.maxZoom));
+        const center = this.mobCenter();
+        this.jumpCameraTo(center.x, center.y, false);
         this.clampScroll();
+        this.placeHerd(performance.now());
+        return camera.zoom;
+      },
+      zoomHerdCloseupCapture: () => {
+        const camera = this.cameras.main;
+        this.captureHideHerdLabel = true;
+        this.refreshHerdLabel();
+        camera.setZoom(clampZoom(1.22, this.minZoom, this.maxZoom));
+        const center = this.mobCenter();
+        this.jumpCameraTo(center.x, center.y, false);
+        this.clampScroll();
+        this.placeHerd(performance.now());
         return camera.zoom;
       },
       pickDistantMoveCamp: () => this.pickDistantMoveCamp(),
@@ -644,10 +699,8 @@ export class FarmScene extends Phaser.Scene {
       this.persist();
       getGameFlow().onSimDayAdvanced(this.state);
     }
-    const daylight = daylightBlend(this.state.date.hour);
-    this.hud.setDaylight(daylight);
-    if (this.nightOverlay) this.nightOverlay.setAlpha(0.55 * (1 - daylight));
-  this.updateScaleBar();
+    this.applyRanchLighting();
+    this.updateScaleBar();
     syncAlertStrip(this.state, {
       pushMessage: (t) => this.hud.setHint(t),
       pushLetter: (item) => this.hud.pushLetter(item),
@@ -859,6 +912,9 @@ export class FarmScene extends Phaser.Scene {
           .setScale(place.scale)
           .setDepth(8 + footY * 0.04);
         this.propSprites.push(image);
+        if (place.key === SPRITE_KEYS.farmhouse) {
+          this.homesteadLight = { x: footX, y: footY - tileH * 0.55 };
+        }
       }
       for (const feature of this.state.features) {
         if (HOMESTEAD_FEATURE_KINDS.has(feature.kind)) continue;
@@ -1133,7 +1189,7 @@ export class FarmScene extends Phaser.Scene {
   private refreshHerdLabel(): void {
     if (!this.herdLabel) return;
     this.herdLabel.setText(`${this.state.herd.headCount} head`);
-    this.herdLabel.setVisible(!this.selected);
+    this.herdLabel.setVisible(!this.selected && !this.captureHideHerdLabel);
     let top = this.herdVisual.y;
     for (const offset of this.herdOffsets) top = Math.min(top, this.herdVisual.y + offset.y);
     const center = this.mobCenter();
@@ -1161,7 +1217,7 @@ export class FarmScene extends Phaser.Scene {
     const bobAmp = this.reduceMotion ? 0 : CONFIG.view.cowBobPx;
     const walking = herdInTransit(this.state.herd);
     const zoom = this.cameras.main.zoom;
-    const cowLod = this.paintedSprites && zoom <= COW_LOD_ZOOM;
+    const cowLod = this.paintedSprites && zoom <= COW_LOD_ZOOM && !this.captureHideHerdLabel;
     this.cows.forEach((cow, index) => {
       const offset = this.herdOffsets[index] ?? {
         x: 0,

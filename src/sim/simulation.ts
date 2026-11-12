@@ -2,7 +2,11 @@ import { CONFIG, type GameConfig } from "./config";
 import { defaultRanchClock, ecologyScalePerGameDay, rollGameDayFromState } from "./clock";
 import { defaultNotificationState } from "./notifications";
 import { isSeasonStart, gameDaysInMonth } from "./calendar";
-import { createGameFromDefinition, loadDefaultFarmDefinition } from "./farmDefinition";
+import {
+  createGameFromDefinition,
+  isFarmDefinition,
+  loadDefaultFarmDefinition,
+} from "./farmDefinition";
 import { generateFarm } from "./generate";
 import {
   dailyDemandKg,
@@ -19,8 +23,21 @@ import { afterFeedDay } from "./story";
 import { herdInTransit, startHerdMove } from "./transit";
 import type { CampState, GameState, MoveResult } from "./types";
 
+function isDefaultRuntimeConfig(config: GameConfig): boolean {
+  return (
+    config.worldSeed === CONFIG.worldSeed &&
+    config.farm.hectares === CONFIG.farm.hectares &&
+    config.map.campCountMin === CONFIG.map.campCountMin &&
+    config.map.campCountMax === CONFIG.map.campCountMax &&
+    config.herd.headCount === CONFIG.herd.headCount &&
+    !config.map.herdStartNearYard
+  );
+}
+
 export function createGame(seed = CONFIG.worldSeed, config: GameConfig = CONFIG): GameState {
-  if (seed === CONFIG.worldSeed && cachedDefaultState) return cloneGameState(cachedDefaultState);
+  if (seed === CONFIG.worldSeed && cachedDefaultState && isDefaultRuntimeConfig(config)) {
+    return cloneGameState(cachedDefaultState);
+  }
   return generateFarm(seed, config);
 }
 
@@ -36,6 +53,17 @@ export async function preloadDefaultFarm(config: GameConfig = CONFIG): Promise<b
   if (!def || def.seed !== config.worldSeed) return false;
   cachedDefaultState = createGameFromDefinition(def, config);
   return true;
+}
+
+/** Vitest: avoid regenerating seed 3300 from scratch. */
+export function primeDefaultFarmCache(def: unknown, config: GameConfig = CONFIG): boolean {
+  if (!isFarmDefinition(def) || def.seed !== config.worldSeed) return false;
+  cachedDefaultState = createGameFromDefinition(def, config);
+  return true;
+}
+
+export function clearDefaultFarmCacheForTests(): void {
+  cachedDefaultState = null;
 }
 
 export function generateFarmState(seed: number, config: GameConfig = CONFIG): GameState {
