@@ -80,7 +80,7 @@ async function main() {
       const farmerMeta = await page.evaluate(() => ({
         inView: window.__farmCapture?.countFarmerInView?.() ?? 0,
         heightPx: window.__farmCapture?.farmerScreenHeightPx?.() ?? 0,
-        workerHouse: window.__farmCapture?.workerHouseInView?.() ?? false,
+        workerHouse: window.__farmCapture?.workerCottageSpriteBoundsInView?.() ?? false,
       }));
       if (farmerMeta.inView < 1) throw new Error(`${viewport.name}: farmer not in view`);
       if (farmerMeta.heightPx < 30) {
@@ -99,6 +99,7 @@ async function main() {
         cattle: window.__farmCapture?.countCattleInView?.() ?? 0,
         herder: (window.__farmCapture?.countFarmerInView?.() ?? 0) + (window.__farmCapture?.countFarmhandInView?.() ?? 0),
         herderPx: window.__farmCapture?.herderHerdScreenDistancePx?.() ?? 9999,
+        herderBehind: window.__farmCapture?.herderBehindHerdOnDrive?.() ?? false,
       }));
       if (driveMeta.cattle < 1 || driveMeta.herder < 1) {
         throw new Error(`${viewport.name}: herd drive needs herd and herder in view`);
@@ -106,6 +107,7 @@ async function main() {
       if (driveMeta.herderPx > 80) {
         throw new Error(`${viewport.name}: herder too far from herd (${driveMeta.herderPx.toFixed(1)}px)`);
       }
+      if (!driveMeta.herderBehind) throw new Error(`${viewport.name}: herder must trail behind the herd tail`);
       const drivePath = path.join(outDir, `${viewport.name}-herd-drive-gate.png`);
       await page.screenshot({ path: drivePath });
       hashes.drive = await fileHash(drivePath);
@@ -124,7 +126,12 @@ async function main() {
         throw new Error(`${viewport.name}: HUD hour should be night (got ${nightMeta.hour})`);
       }
       if (!nightMeta.workerAtHome) throw new Error(`${viewport.name}: Piet not at cottage tile at night`);
-      if (!nightMeta.workerHouseVisible) throw new Error(`${viewport.name}: worker cottage not in night shot`);
+      const cottageOnScreen = await page.evaluate(
+        () => window.__farmCapture?.workerCottageSpriteBoundsInView?.() ?? false,
+      );
+      if (!nightMeta.workerHouseVisible || !cottageOnScreen) {
+        throw new Error(`${viewport.name}: worker cottage sprite bounds not in night shot`);
+      }
       const nightPath = path.join(outDir, `${viewport.name}-workers-night.png`);
       await page.screenshot({ path: nightPath });
       hashes.night = await fileHash(nightPath);

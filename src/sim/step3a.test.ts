@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { isDaylightHour } from "./clock";
 import { createGame, findCamp, moveHerd, primeDefaultFarmCache } from "./simulation";
 import defaultFarm from "../../public/farms/default-farm.json";
-import { countWorkerHouses, freeWorkerHouseSlots } from "./housing";
-import { requestHerdMove, tickHerdingRealtime } from "./herding";
+import { countWorkerHouses, freeWorkerHouseSlots, workerHouseForFarmhand } from "./housing";
+import { requestHerdMove, syncHerderOnDrive, tickHerdingRealtime } from "./herding";
+import { herderPathProgressBehindTail } from "./convoy";
 import { tickPeopleSchedule, workerAtHomeAtNight } from "./people";
 import { farmerDisplayName } from "./playerName";
 import { migrateState } from "./stateMigrate";
@@ -32,7 +33,11 @@ describe("step 3a living farm", () => {
     expect(s.story?.farmhandPresence?.atHome).toBe(true);
     expect(s.story?.farmerPresence?.atHome).toBe(true);
     tickFarmhandWorld(s);
-    expect(s.story?.farmhandPresence?.tileX).toBe(s.features.find((f) => f.kind === "worker_house")?.x);
+    const door = workerHouseForFarmhand(s);
+    expect(door).toBeTruthy();
+    expect(Math.hypot(s.story!.farmhandPresence!.tileX - door!.x, s.story!.farmhandPresence!.tileY - door!.y)).toBeLessThan(
+      1.1,
+    );
   });
 
   it("queues night herd moves until daylight", () => {
@@ -93,6 +98,23 @@ describe("step 3a living farm", () => {
     expect(farmerDisplayName(s)).toBe("Farmer");
     s.story!.playerDisplayName = "Jannes";
     expect(farmerDisplayName(s)).toBe("Jannes");
+  });
+
+  it("places the herder on the path behind the filed tail while driving", () => {
+    const s = state();
+    const dest = s.camps.find((c) => c.id !== s.herd.campId)!;
+    s.date.hour = 10;
+    requestHerdMove(s, dest.id);
+    while (s.herd.transit?.phase === "approach") tickHerdingRealtime(s, 200, "x1");
+    expect(s.herd.transit?.phase).toBe("drive");
+    tickHerdingRealtime(s, 4_000, "x1");
+    const progress = s.herd.transit?.progress ?? 0;
+    const behind = herderPathProgressBehindTail(s);
+    expect(behind).toBeLessThan(progress);
+    syncHerderOnDrive(s);
+    const farmer = s.story?.farmerPresence;
+    expect(farmer?.onHerdingDuty).toBe(true);
+    expect(behind).toBeLessThanOrEqual(progress);
   });
 
   it("keeps Piet within one tile of his cottage between dusk and dawn", () => {

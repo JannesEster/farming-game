@@ -5,6 +5,7 @@ import { farmerDisplayName } from "./playerName";
 import { STEP3A } from "./step3aConfig";
 import { mainHouseTile, workerHouseForFarmhand } from "./housing";
 import { herdInTransit, tickTransitRealtime, walkGameHours, type TransitSpeed } from "./transit";
+import { herderPathProgressBehindTail } from "./convoy";
 import { pointOnPath, planHerdPath, pathLengthKm } from "./path";
 import type { GameState, HerdTransit, TilePoint } from "./types";
 import type { PersonPresence } from "./storyTypes";
@@ -180,12 +181,12 @@ export function syncHerderToApproach(state: GameState): void {
   presence.onHerdingDuty = true;
 }
 
-export function syncHerderOnDrive(state: GameState): void {
+export function syncHerderOnDrive(state: GameState, config: GameConfig = CONFIG): void {
   const transit = state.herd.transit;
   if (!transit || transit.phase !== "drive") return;
   const presence = presenceForHerder(state, transit.herder);
   if (!presence || transit.path.length < 2) return;
-  const trail = Math.max(0, transit.progress - STEP3A.herderTrailBehind);
+  const trail = herderPathProgressBehindTail(state, config);
   const tile = pointOnPath(transit.path, trail);
   presence.tileX = tile.x;
   presence.tileY = tile.y;

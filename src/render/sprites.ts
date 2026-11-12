@@ -112,23 +112,39 @@ export function ensureWorkerHouseTexture(scene: Phaser.Scene): void {
   const key = SPRITE_KEYS.workerHouse;
   if (scene.textures.exists(key)) return;
   const g = scene.make.graphics({ x: 0, y: 0 });
-  g.fillStyle(0xc9b59a, 1);
-  g.fillRoundedRect(8, 36, 72, 52, 3);
-  g.fillStyle(0x8b3a2a, 1);
+  g.fillStyle(0xb8a48c, 1);
+  g.fillRoundedRect(10, 44, 76, 42, 3);
+  g.fillStyle(0xc7a06a, 1);
+  g.fillRect(6, 78, 84, 8);
+  g.fillStyle(0xa04030, 1);
   g.beginPath();
-  g.moveTo(6, 38);
-  g.lineTo(44, 8);
-  g.lineTo(82, 38);
+  g.moveTo(8, 46);
+  g.lineTo(48, 12);
+  g.lineTo(88, 46);
   g.closePath();
   g.fillPath();
+  g.lineStyle(1, 0x7a2a1e, 0.85);
+  for (let i = 0; i < 7; i += 1) {
+    const y = 18 + i * 4;
+    g.lineBetween(20 + i * 3, y, 76 - i * 2, y + 8);
+  }
   g.fillStyle(0x4a3528, 1);
-  g.fillRect(34, 58, 20, 30);
-  g.fillStyle(0x6e8199, 1);
-  g.fillRect(18, 52, 14, 12);
-  g.fillRect(56, 52, 14, 12);
+  g.fillRect(40, 58, 18, 28);
+  g.fillStyle(0x3d2918, 1);
+  g.fillRect(46, 66, 6, 6);
+  g.fillStyle(0x6e8199, 0.9);
+  g.fillRect(22, 54, 12, 11);
+  g.fillRect(60, 54, 12, 11);
+  g.lineStyle(1, 0x5a6578, 1);
+  g.lineBetween(28, 54, 28, 65);
+  g.lineBetween(22, 59, 34, 59);
+  g.lineBetween(66, 54, 66, 65);
+  g.lineBetween(60, 59, 72, 59);
   g.generateTexture(key, 96, 96);
   g.destroy();
 }
+
+export const WORKER_COTTAGE_NATIVE_WIDTH = 96;
 
 export function inferPersonDir(dx: number, dy: number): PersonDir {
   if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? "e" : "w";

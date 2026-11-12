@@ -34,7 +34,20 @@ export function mainHouseTile(state: GameState): TilePoint {
 export function workerHouseForFarmhand(state: GameState): TilePoint | null {
   const houses = workerHouseFeatures(state);
   if (houses.length === 0) return null;
-  return { x: houses[0].x, y: houses[0].y };
+  return workerHouseDoorTile(state, houses[0]);
+}
+
+/** Tile just outside the cottage door, facing the main homestead yard. */
+export function workerHouseDoorTile(state: GameState, house: Feature): TilePoint {
+  const main = state.features.find((f) => f.kind === "house");
+  if (!main) return { x: house.x, y: house.y + 1 };
+  const dx = main.x - house.x;
+  const dy = main.y - house.y;
+  const len = Math.hypot(dx, dy) || 1;
+  return {
+    x: house.x + Math.round((dx / len) * 0.85),
+    y: house.y + Math.round((dy / len) * 0.85),
+  };
 }
 
 export function buildWorkerHouse(state: GameState, _config: GameConfig = CONFIG): { ok: boolean; message: string } {

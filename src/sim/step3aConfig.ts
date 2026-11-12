@@ -9,7 +9,5 @@ export const STEP3A = {
   approachBaseMs: 5_500,
   /** Herder tile steps per sim hour while approaching or on chores. */
   walkStepPerHour: 1.8,
-  /** Path progress behind the herd while driving (tiles along route). */
-  herderTrailBehind: 0.07,
   farmhandName: "Piet",
 } as const;

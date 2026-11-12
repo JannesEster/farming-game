@@ -51,10 +51,11 @@ export function tickPeopleSchedule(state: GameState, _config: GameConfig = CONFI
     const home = workerHouseForFarmhand(state) ?? mainHouseTile(state);
     const onDuty = piet.onHerdingDuty || activeHerder(state) === "piet";
     if (!daylight && !onDuty) {
-      piet.tileX = home.x;
-      piet.tileY = home.y;
-      piet.targetTileX = home.x;
-      piet.targetTileY = home.y;
+      const door = workerHouseForFarmhand(state) ?? home;
+      piet.tileX = door.x;
+      piet.tileY = door.y;
+      piet.targetTileX = door.x;
+      piet.targetTileY = door.y;
       piet.walkProgress = 1;
       piet.atHome = true;
       piet.activeJob = null;
@@ -71,8 +72,8 @@ export function workerAtHomeAtNight(state: GameState): boolean {
   if (!story?.farmhand.hired || !story.farmhandPresence) return true;
   const hour = state.date.hour;
   if (hour >= 6 && hour < 18) return true;
-  const home = workerHouseForFarmhand(state);
-  if (!home) return false;
+  const door = workerHouseForFarmhand(state);
+  if (!door) return false;
   const p = story.farmhandPresence;
-  return Math.hypot(p.tileX - home.x, p.tileY - home.y) <= 1.05;
+  return Math.hypot(p.tileX - door.x, p.tileY - door.y) <= 1.05;
 }
