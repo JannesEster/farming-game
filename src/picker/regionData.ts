@@ -1,10 +1,9 @@
 /**
  * Regional facts for farm picker cards (sourced in farm-life-lesson §4.1, §7.1, §8.1).
  * Assumption fields are marked in comments.
- * Listing hectares are 3 times the previous PR listing (which was already 3 times
- * the first playable size). Tree chances are tuned
- * so each region keeps about the same tree count. Bush chances are the old values
- * times the area scale and a 0.62 trim, because bushes share the tree random stream.
+ * Listing hectares are the original playable sizes. Live trees use the screenshot
+ * spacing in metres, so the count follows the true area. The tile chances below
+ * are only for the old tile generator.
  */
 
 import { BUSH_COUNT_TRIM, VEGETATION_COUNT_SCALE } from "../sim/config";
@@ -16,7 +15,7 @@ function keepBushCount(previousChance: number): number {
 export type RegionTemplate = {
   key: "karas" | "khomas" | "otjozondjupa" | "omaheke";
   label: string;
-  /** Listing hectares. Three times the previous PR listing. */
+  /** Listing hectares. The original playable size for this region. */
   listingHectares: number;
   /** S: NSA commercial census average ha where used for flavour text. */
   censusAvgHectares: number;
@@ -48,7 +47,7 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
   karas: {
     key: "karas",
     label: "//Karas",
-    listingHectares: 14_400 * 3,
+    listingHectares: 4_800,
     censusAvgHectares: 6_091,
     rainThreeSeasonMm: Math.round((130 + 91 + 100) / 3),
     landRateNadPerHa: 804,
@@ -69,7 +68,7 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
   khomas: {
     key: "khomas",
     label: "Khomas",
-    listingHectares: 7_800 * 3,
+    listingHectares: 2_600,
     censusAvgHectares: 3_829,
     rainThreeSeasonMm: Math.round((375 + 170 + 325) / 3),
     landRateNadPerHa: 1_857,
@@ -90,7 +89,7 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
   otjozondjupa: {
     key: "otjozondjupa",
     label: "Otjozondjupa",
-    listingHectares: 9_900 * 3,
+    listingHectares: 3_300,
     censusAvgHectares: 3_327,
     rainThreeSeasonMm: OTJO_RAIN,
     landRateNadPerHa: 1_951,
@@ -111,7 +110,7 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
   omaheke: {
     key: "omaheke",
     label: "Omaheke",
-    listingHectares: 9_600 * 3,
+    listingHectares: 3_200,
     censusAvgHectares: 3_531,
     rainThreeSeasonMm: Math.round((408 + 267 + 491) / 3),
     landRateNadPerHa: 2_213,

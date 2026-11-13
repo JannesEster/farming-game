@@ -73,6 +73,12 @@ export function tryDispatchHerdQueue(state: GameState, config: GameConfig = CONF
   if (state.herd.transit) story.herdMoveQueue = null;
 }
 
+function approachKmEstimate(state: GameState, herder: HerderId, herdTile: TilePoint, config: GameConfig): number {
+  const presence = presenceForHerder(state, herder);
+  const from = presence ? { x: presence.tileX, y: presence.tileY } : mainHouseTile(state);
+  return Math.hypot(herdTile.x - from.x, herdTile.y - from.y) * config.transit.kmPerTile * 1.25;
+}
+
 /** True when the walk out plus the drive would still be going at 18:00. */
 export function moveFitsBeforeDusk(
   state: GameState,
@@ -90,6 +96,9 @@ export function beginHerdMove(state: GameState, toCampId: number, config: GameCo
   if (!herder) return false;
   const path = planHerdPath(state, state.herd.campId, toCampId);
   const distanceKm = pathLengthKm(path, config);
+  const herdTile = path[0] ?? findCamp(state, state.herd.campId)?.anchor ?? mainHouseTile(state);
+  const approachKm = approachKmEstimate(state, herder, herdTile, config);
+  if (!moveFitsBeforeDusk(state, distanceKm, approachKm, config)) return false;
   if (state.story?.returnWalk) state.story.returnWalk = null;
   state.herd.transit = {
     toCampId,
@@ -119,8 +128,16 @@ export function requestHerdMove(state: GameState, campId: number, config: GameCo
   if (camp.id === state.herd.campId && !herdInTransit(state.herd)) return { ok: false, reason: "same" };
   if (!state.story) return { ok: false, reason: "missing" };
 
-  const hoursLeft = 18 - fractionalRanchHour(state, config);
-  if (!isDaylightHour(state.date.hour) || hoursLeft < 1) {
+  if (!isDaylightHour(state.date.hour)) {
+    state.story.herdMoveQueue = { toCampId: camp.id, reason: "night", campName: camp.name };
+    return { ok: true, campName: camp.name, queued: true, queueReason: "night" };
+  }
+
+  const preview = planHerdPath(state, state.herd.campId, camp.id);
+  const driveKm = pathLengthKm(preview, config);
+  const herder = pickHerder(state) ?? "farmer";
+  const approachKm = approachKmEstimate(state, herder, preview[0] ?? camp.anchor, config);
+  if (!moveFitsBeforeDusk(state, driveKm, approachKm, config)) {
     state.story.herdMoveQueue = { toCampId: camp.id, reason: "night", campName: camp.name };
     return { ok: true, campName: camp.name, queued: true, queueReason: "night" };
   }

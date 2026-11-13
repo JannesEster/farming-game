@@ -27,6 +27,20 @@ function tilesFromPrevious(previous: number): number {
   return Math.max(1, Math.round((previous * FARM_MAP_TILES) / PREVIOUS_MAP_TILES));
 }
 
+/**
+ * Kilometres per hour for each way of getting around.
+ * This build only walks. Cattle are 3.5. The farmer and a hired worker are 5.
+ * Horse and bakkie figures are reserved for later upgrades. Nothing reads them yet.
+ * Assumption: a stock horse at 12 km/h, a farm bakkie on a two-track at 40 km/h.
+ */
+export const MOVEMENT_KMH = {
+  footCattle: 3.5,
+  footHerder: 5,
+  worker: 5,
+  horse: 12,
+  bakkie: 40,
+} as const;
+
 export type GameConfig = {
   worldSeed: number;
   farm: {
@@ -308,10 +322,9 @@ export const CONFIG: GameConfig = {
 
   farm: {
     name: "Otjozondjupa",
-    // S: Otjozondjupa census average is 3,327 ha. The first playable ranch was 3,300 ha.
-    // A: listed area is 29,700 ha, three times the previous 9,900 ha listing.
-    // The outline is a rough rectangle, 20 km by 14.85 km, not a square.
-    hectares: 29_700,
+    // S: Otjozondjupa census average is 3,327 ha. The playable ranch is 3,300 ha.
+    // The outline is about 5.7 km by 5.7 km, in the same metres as the cow.
+    hectares: 3_300,
     // A. The yard, windmill and kraal are not grazing land.
     homesteadHectares: 8,
     // S: savanna farms are often quoted at 8 to 10 ha per LSU. A: this prototype uses 10, the lighter end of that quote.
@@ -332,8 +345,6 @@ export const CONFIG: GameConfig = {
     // A: typical litter left after a graze, as a fraction of that camp's own peak. Tuned for this map, not a measured litter curve.
     residualFractionOfPeak: 0.125,
     // A: share of camp hectares actively defoliated before you move the herd. NAU warns that use concentrates near water.
-    // The same 120 head on a camp about 3 times the area remove about a third as much dry matter per hectare,
-    // so a camp lasts longer. The 14 and 28 day move limits still apply.
     activeGrazingFractionOfCamp: 0.22,
     // S: NAU growing season rule, one to two weeks grazing. This build uses fourteen days.
     maxGrazingDaysRainySeason: 14,
@@ -371,9 +382,7 @@ export const CONFIG: GameConfig = {
 
   herd: {
     name: "Cattle herd",
-    // A. The playable mob stays 120 head. Capacity is 29,700 ha / 10 ha per LSU = 2,970 LSU.
-    // Stocking is now about 248 ha per head, against the guide of 10 ha per LSU.
-    // Assumption: one mob is what the yard and the phone show. The herd was not scaled with the land.
+    // A. 120 head is under the farm carrying capacity (3,300 ha / 10 ha per LSU = 330 LSU).
     headCount: 120,
     // S: the 450 kg LSU weight. A: every head in this prototype is treated as one LSU.
     averageLiveweightKg: 450,
@@ -548,7 +557,7 @@ export const CONFIG: GameConfig = {
   transit: {
     // One coordinate unit is one metre, the same metre as the cow. 0.001 km per unit.
     kmPerTile: 0.001,
-    maxSpanKm: 9.9,
+    maxSpanKm: 5.7,
     playMsMin: 6000,
     playMsMax: 15000,
     fastMsMin: 1500,
@@ -558,11 +567,11 @@ export const CONFIG: GameConfig = {
      * Cattle walking a drive. Assumption: Jannes said cattle walk about 3 to 4 km/h.
      * 3.5 is the middle of that band.
      */
-    cattleWalkKmH: 3.5,
+    cattleWalkKmH: MOVEMENT_KMH.footCattle,
     /** Kept for older call sites. Same figure as cattleWalkKmH. */
-    walkSpeedKmH: 3.5,
-    /** Herder walking to the herd, and home again. A normal walking pace. */
-    herderWalkKmH: 5,
+    walkSpeedKmH: MOVEMENT_KMH.footCattle,
+    /** Herder on foot. A hired worker uses the same pace until that number is raised. */
+    herderWalkKmH: MOVEMENT_KMH.footHerder,
     /**
      * Tuning value for Jannes. While a drive or the walk out to the herd is on,
      * the ranch clock runs at this fraction of its usual speed. 0.5 makes a

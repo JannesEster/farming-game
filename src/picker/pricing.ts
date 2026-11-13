@@ -28,10 +28,7 @@ export type HerdPrice = {
  */
 export function landListingDiscountFactor(): number {
   // TODO(A): tune with owner. Represents bundled sale / partial bond, not a published rate.
-  // Was 0.22, then 0.073 so the first area increase still fitted the old purse.
-  // Kept at 0.073 when the land grew again. The purse was raised instead,
-  // so a hectare still costs the same on the card.
-  return 0.073;
+  return 0.22;
 }
 
 /** TODO(A): transfer stock valued below replacement auction cost. */

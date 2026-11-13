@@ -15,15 +15,16 @@ import {
   PREVIOUS_MAP_TILES,
 } from "./config";
 import { generateFarm } from "./generate";
+import { chooseAvailableHerder, moveFitsBeforeDusk } from "./herding";
 import { carryingCapacityLsu } from "./pasture";
 import { campGateBetween, pathLengthKm, planHerdPath } from "./path";
 import { parseLegacySaved } from "./stateMigrate";
-import { createGame } from "./simulation";
+import { createGame, moveHerd } from "./simulation";
 import { hireFarmhand } from "./workers";
 import { setWorkPriority } from "./workGrid";
 import type { GameState } from "./types";
 
-const PREVIOUS_LISTING_HA = 9900;
+const LISTED_HA = 3300;
 
 function campAspect(camp: { rect?: { w: number; h: number }; tiles: { x: number; y: number }[] }): number {
   if (camp.rect && camp.rect.w > 0 && camp.rect.h > 0) {
@@ -53,10 +54,10 @@ describe("three times the farm area", () => {
     const sideRatio = FARM_MAP_TILES / PREVIOUS_MAP_TILES;
     expect(sideRatio).toBeGreaterThan(1.7);
     expect(sideRatio).toBeLessThan(1.76);
-    expect(CONFIG.farm.hectares).toBe(PREVIOUS_LISTING_HA * 3);
+    expect(CONFIG.farm.hectares).toBe(LISTED_HA);
     const outline = farmOutlineMetres(CONFIG.farm.hectares);
-    expect(outline.width).toBe(20_000);
-    expect(outline.height).toBe(14_850);
+    expect(outline.width).toBe(5_745);
+    expect(outline.height).toBe(5_745);
     expect(CONFIG.farm.homesteadHectares).toBe(8);
     expect(CONFIG.transit.kmPerTile).toBe(0.001);
     expect(CONFIG.herd.headCount).toBe(120);
@@ -64,24 +65,23 @@ describe("three times the farm area", () => {
 
   it("keeps cow world scale and raises carrying capacity with the hectares", () => {
     expect(PIXELS_PER_METRE).toBeCloseTo((64 * 0.62) / 2.4, 5);
-    expect(carryingCapacityLsu()).toBe(2970);
+    expect(carryingCapacityLsu()).toBe(330);
     expect(CONFIG.farm.hectaresPerLsu).toBe(10);
     expect(BUSH_COUNT_TRIM).toBeCloseTo(0.62, 5);
   });
 
   it("mixes eight to ten camps, smaller beside the house", () => {
     const state = generateFarm(3300);
-    const outline = farmOutlineMetres(9900 * 3);
+    const outline = farmOutlineMetres(LISTED_HA);
     expect(state.width).toBe(outline.width);
     expect(state.height).toBe(outline.height);
-    expect(state.width).toBeGreaterThan(state.height * 1.2);
     expect(campCountForSeed(3300)).toBe(9);
     expect(state.camps.length).toBe(9);
     const hectares = state.camps.map((camp) => camp.hectares);
     const sum = hectares.reduce((total, value) => total + value, 0);
-    expect(sum).toBeCloseTo(29_700, 0);
-    expect(Math.min(...hectares)).toBeGreaterThan(1000);
-    expect(Math.max(...hectares)).toBeLessThan(8000);
+    expect(Math.abs(sum - 3_300)).toBeLessThan(2);
+    expect(Math.min(...hectares)).toBeGreaterThan(100);
+    expect(Math.max(...hectares)).toBeLessThan(1_200);
     const cuts = new Set<number>();
     for (const camp of state.camps) {
       expect(campAspect(camp)).toBeLessThanOrEqual(2.5);
@@ -94,7 +94,7 @@ describe("three times the farm area", () => {
     const host = state.camps.find((camp) => camp.id === state.herd.campId)!;
     const near = state.camps.filter((camp) => {
       const rect = camp.rect!;
-      return Math.hypot(rect.x + rect.w / 2 - house!.x, rect.y + rect.h / 2 - house!.y) < 8000;
+      return Math.hypot(rect.x + rect.w / 2 - house!.x, rect.y + rect.h / 2 - house!.y) < 2_200;
     });
     const far = state.camps.filter((camp) => !near.includes(camp));
     const avg = (list: typeof near) => list.reduce((total, camp) => total + camp.hectares, 0) / list.length;
@@ -111,10 +111,10 @@ describe("three times the farm area", () => {
   });
 
   it("ships the exported default farm at the listed hectares", () => {
-    expect(defaultFarm.hectares).toBe(29_700);
+    expect(defaultFarm.hectares).toBe(3_300);
     expect(defaultFarm.camps.length).toBe(9);
-    expect(defaultFarm.width).toBe(20_000);
-    expect(defaultFarm.height).toBe(14_850);
+    expect(defaultFarm.width).toBe(5_745);
+    expect(defaultFarm.height).toBe(5_745);
   });
 
   it("keeps the screenshot tree spacing on every region", () => {
@@ -145,7 +145,7 @@ describe("three times the farm area", () => {
         }
         expect(offer.previewState.camps.length).toBeGreaterThanOrEqual(8);
         expect(offer.previewState.camps.length).toBeLessThanOrEqual(10);
-        if (offer.playable) expect(offer.askingPriceNad).toBeLessThanOrEqual(6_500_000);
+        if (offer.playable) expect(offer.askingPriceNad).toBeLessThanOrEqual(2_750_000);
       }
     }
   });
@@ -183,11 +183,28 @@ describe("three times the farm area", () => {
         longestKm = Math.max(longestKm, km);
         pairs += 1;
         expect(km).toBeGreaterThan(0.4);
-        expect(km).toBeLessThan(40);
+        expect(km).toBeLessThan(8);
       }
     }
     expect(pairs).toBeGreaterThan(6);
-    expect(longestKm).toBeGreaterThan(2);
+    expect(longestKm).toBeGreaterThan(0.8);
+    expect(longestKm / CONFIG.transit.cattleWalkKmH).toBeLessThan(6);
+    state.date = { ...state.date, hour: 6 };
+    expect(moveFitsBeforeDusk(state, longestKm, longestKm)).toBe(true);
+  });
+
+  it("starts a neighbour drive at first light", () => {
+    const state = generateFarm(3300);
+    state.date = { ...state.date, hour: 6 };
+    if (state.clock) state.clock.bankMs = 0;
+    expect(chooseAvailableHerder(state)).toBe("farmer");
+    const home = state.camps.find((camp) => camp.id === state.herd.campId)!;
+    const next = state.camps.find((camp) => camp.id !== home.id && campGateBetween(home, camp));
+    expect(next).toBeTruthy();
+    const started = moveHerd(state, next!.id);
+    expect(started.ok).toBe(true);
+    if (started.ok) expect(started.queued).toBeUndefined();
+    expect(state.herd.transit?.phase).toBe("approach");
   });
 
   it("rolls two game days without the clock sticking", () => {

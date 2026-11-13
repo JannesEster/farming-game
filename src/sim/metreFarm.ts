@@ -18,16 +18,10 @@ export function farmSideMetres(hectares: number): number {
   return Math.max(1, Math.round(Math.sqrt(hectares * 10000)));
 }
 
-/** Reference rectangle for 29,700 ha. Other listings use the same shape, scaled by area. */
-const OUTLINE_REF_HA = 29_700;
-const OUTLINE_REF_WIDTH_M = 20_000;
-
-/** Rough rectangle, longer east to west. 29,700 ha is 20 km by 14.85 km. */
+/** About 5.7 km by 5.7 km at 3,300 ha. The side is the square root of the listed area. */
 export function farmOutlineMetres(hectares: number): { width: number; height: number } {
-  const scale = Math.sqrt(Math.max(1, hectares) / OUTLINE_REF_HA);
-  const width = Math.max(1, Math.round(OUTLINE_REF_WIDTH_M * scale));
-  const height = Math.max(1, Math.round((hectares * 10000) / width));
-  return { width, height };
+  const side = Math.max(1, Math.round(Math.sqrt(Math.max(1, hectares) * 10000)));
+  return { width: side, height: side };
 }
 
 /**
