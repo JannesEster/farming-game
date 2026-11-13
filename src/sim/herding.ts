@@ -13,6 +13,7 @@ import {
   type TransitSpeed,
 } from "./transit";
 import { columnMetrics, herderPathProgressBehindTail, herderStandTile } from "./convoy";
+import { pointCampId, usesMetreCoords } from "./metreFarm";
 import { pathLengthKm, planHerdPath, planPersonPath, pointOnPath, WATER_STRUCTURE_CLEAR_TILES } from "./path";
 import type { GameState, HerdTransit, TilePoint } from "./types";
 import type { PersonPresence } from "./storyTypes";
@@ -267,7 +268,7 @@ function standOnRoute(state: GameState, transit: HerdTransit, tile: TilePoint): 
   const x = Math.round(tile.x);
   const y = Math.round(tile.y);
   if (x < 0 || y < 0 || x >= state.width || y >= state.height) return false;
-  const id = state.campIds[y * state.width + x];
+  const id = usesMetreCoords(state) ? pointCampId(state, x, y) : state.campIds[y * state.width + x];
   if (id === state.herd.campId || id === transit.toCampId) return true;
   return transit.path.some((step) => Math.max(Math.abs(step.x - x), Math.abs(step.y - y)) <= 1);
 }
@@ -313,7 +314,7 @@ function campsTouched(state: GameState, from: TilePoint, to: TilePoint): Set<num
     const x = Math.round(point.x);
     const y = Math.round(point.y);
     if (x < 0 || y < 0 || x >= state.width || y >= state.height) return;
-    const id = state.campIds[y * state.width + x];
+    const id = usesMetreCoords(state) ? pointCampId(state, x, y) : state.campIds[y * state.width + x];
     if (id >= 0) allow.add(id);
   };
   add(from);

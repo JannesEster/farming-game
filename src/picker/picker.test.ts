@@ -78,22 +78,20 @@ describe("farm picker offers", () => {
   it("starts Otjozondjupa herd in the camp beside the yard", () => {
     const otjo = offers.find((o) => o.id === "otjozondjupa-ranch")!;
     const state = otjo.previewState;
-    const width = state.width;
-    const grid = state.campIds;
-    const herdCamp = state.camps.find((c) => c.id === state.herd.campId)!;
-    let touchesYard = false;
-    for (const tile of herdCamp.tiles) {
-      const neighbors = [
-        [1, 0],
-        [-1, 0],
-        [0, 1],
-        [0, -1],
-      ] as const;
-      for (const [dx, dy] of neighbors) {
-        const id = grid[(tile.y + dy) * width + (tile.x + dx)];
-        if (id === -1) touchesYard = true;
-      }
-    }
-    expect(touchesYard).toBe(true);
+    const house = state.features.find((feature) => feature.kind === "house");
+    const ramp = state.features.find((feature) => feature.kind === "loading_ramp");
+    const herdCamp = state.camps.find((camp) => camp.id === state.herd.campId)!;
+    expect(house).toBeTruthy();
+    expect(ramp).toBeTruthy();
+    expect(herdCamp.rect).toBeTruthy();
+    const inside = (x: number, y: number) => {
+      const rect = herdCamp.rect!;
+      return x >= rect.x && y >= rect.y && x < rect.x + rect.w && y < rect.y + rect.h;
+    };
+    expect(inside(house!.x, house!.y)).toBe(true);
+    expect(inside(ramp!.x, ramp!.y)).toBe(true);
+    expect(Math.hypot(herdCamp.anchor.x - house!.x, herdCamp.anchor.y - house!.y)).toBeLessThan(40);
+    expect(Math.hypot(ramp!.x - house!.x, ramp!.y - house!.y)).toBeGreaterThan(8);
+    expect(Math.hypot(ramp!.x - house!.x, ramp!.y - house!.y)).toBeLessThan(40);
   });
 });

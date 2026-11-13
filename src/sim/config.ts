@@ -547,8 +547,8 @@ export const CONFIG: GameConfig = {
   },
 
   transit: {
-    // A. One tile is about 75 m. 9,900 ha is about 9.9 km on a side (132 tiles).
-    kmPerTile: 0.075,
+    // One coordinate unit is one metre, the same metre as the cow. 0.001 km per unit.
+    kmPerTile: 0.001,
     maxSpanKm: 9.9,
     playMsMin: 6000,
     playMsMax: 15000,

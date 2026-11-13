@@ -58,6 +58,9 @@ export type HerdTransit = {
   approachKm?: number;
 };
 
+/** Axis-aligned camp in world metres. The right and bottom edges are exclusive. */
+export type CampRect = { x: number; y: number; w: number; h: number };
+
 export type CampState = {
   id: number;
   name: string;
@@ -66,8 +69,10 @@ export type CampState = {
   standingDmKgPerHa: number;
   soilMoistureMm: number;
   restDays: number;
+  /** Sample points (corners and anchor). Membership for a metre camp is `rect`, not this list. */
   tiles: TilePoint[];
   anchor: TilePoint;
+  rect?: CampRect;
 };
 
 export type HerdState = {
@@ -109,6 +114,13 @@ export type GameState = {
   camps: CampState[];
   herd: HerdState;
   features: Feature[];
+  /** Centre line of the two-track, in metres. Drawn as a polyline, not one texture. */
+  road?: TilePoint[];
+  /**
+   * Set when an old tile-grid save was replaced with a fresh farm.
+   * The scene shows a note once, then clears it.
+   */
+  scaleReset?: boolean;
   /** Shared water installations from farm definition (wagon wheel layout). */
   farmWaterPoints?: FarmWaterPoint[];
   story?: StoryState;

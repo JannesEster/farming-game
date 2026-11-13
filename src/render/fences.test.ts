@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { CONFIG } from "../sim/config";
 import { generateFarm } from "../sim/generate";
+import { metreSharedGate } from "../sim/metreFarm";
 import { campGateBetween, fenceCrossingsOffGate } from "../sim/path";
 import { FENCE_WIRE_STRAND_OFFSET_PX, collectFenceSegments, mergeStraightFences, wireStrandOffset } from "./fences";
 import { isoLayout } from "./iso";
+import { PIXELS_PER_METRE } from "./worldScale";
 
 describe("double wire fences", () => {
   it("offsets strands by eight world pixels on a flat edge", () => {
@@ -66,14 +68,16 @@ describe("straight fence runs", () => {
 
   it("draws square-camp fences as long lines on the map axes, open only at the gate", () => {
     const state = generateFarm(3300);
-    const layout = isoLayout(state.width, state.height, CONFIG.view.tileWidth, CONFIG.view.tileHeight, CONFIG.view.boundsPadPx);
+    const tileW = PIXELS_PER_METRE;
+    const tileH = PIXELS_PER_METRE / 2;
+    const layout = isoLayout(state.width, state.height, tileW, tileH, CONFIG.view.boundsPadPx);
     const segments = collectFenceSegments(state, layout, state.herd.campId, false);
-    const edge = Math.hypot(CONFIG.view.tileWidth / 2, CONFIG.view.tileHeight / 2);
+    const edge = Math.hypot(tileW / 2, tileH / 2);
     const axis = (dx: number, dy: number) => {
       const len = Math.hypot(dx, dy) || 1;
       const ux = dx / len;
       const uy = dy / len;
-      const ne = { x: CONFIG.view.tileWidth / 2 / edge, y: CONFIG.view.tileHeight / 2 / edge };
+      const ne = { x: tileW / 2 / edge, y: tileH / 2 / edge };
       const nw = { x: -ne.x, y: ne.y };
       return Math.abs(ux * ne.x + uy * ne.y) > 0.995 || Math.abs(ux * nw.x + uy * nw.y) > 0.995;
     };
@@ -105,24 +109,16 @@ describe("straight fence runs", () => {
     for (let i = 0; i < state.camps.length && !checked; i += 1) {
       for (let j = i + 1; j < state.camps.length; j += 1) {
         const gate = campGateBetween(state.camps[i], state.camps[j]);
-        if (!gate) continue;
-        let far: { from: { x: number; y: number }; to: { x: number; y: number }; dist: number } | null = null;
-        for (const tile of state.camps[i].tiles) {
-          const neighbors = [
-            { x: tile.x + 1, y: tile.y },
-            { x: tile.x - 1, y: tile.y },
-            { x: tile.x, y: tile.y + 1 },
-            { x: tile.x, y: tile.y - 1 },
-          ];
-          for (const next of neighbors) {
-            if (next.x < 0 || next.y < 0 || next.x >= state.width || next.y >= state.height) continue;
-            if (state.campIds[next.y * state.width + next.x] !== state.camps[j].id) continue;
-            const dist = Math.hypot(tile.x - gate.fromGate.x, tile.y - gate.fromGate.y);
-            if (!far || dist > far.dist) far = { from: tile, to: next, dist };
-          }
-        }
-        if (!far || far.dist < 4) continue;
-        expect(fenceCrossingsOffGate(state, [far.from, far.to])).toBeGreaterThan(0);
+        const shared = state.camps[i].rect && state.camps[j].rect ? metreSharedGate(state.camps[i].rect!, state.camps[j].rect!) : null;
+        if (!gate || !shared) continue;
+        const verticalFence = shared.from.x !== shared.to.x;
+        const farFrom = verticalFence
+          ? { x: shared.from.x, y: shared.from.y + 80 }
+          : { x: shared.from.x + 80, y: shared.from.y };
+        const farTo = verticalFence
+          ? { x: shared.to.x, y: shared.to.y + 80 }
+          : { x: shared.to.x + 80, y: shared.to.y };
+        expect(fenceCrossingsOffGate(state, [farFrom, farTo])).toBeGreaterThan(0);
         expect(fenceCrossingsOffGate(state, [gate.fromGate, gate.toGate])).toBe(0);
         checked = true;
         break;

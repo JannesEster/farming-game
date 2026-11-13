@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { CONFIG } from "../sim/config";
+import { usesMetreCoords } from "../sim/metreFarm";
 import type { Feature, GameState } from "../sim/types";
 import type { IsoLayout } from "./iso";
 import { tileCenter } from "./iso";
@@ -415,8 +416,9 @@ export type V2PropResult = {
 
 /** Buildings, props, vegetation, and the handling yard, all from the v2 cut-outs. */
 export function placeV2Props(scene: Phaser.Scene, state: GameState, layout: IsoLayout): V2PropResult {
-  const tileW = CONFIG.view.tileWidth;
-  const tileH = CONFIG.view.tileHeight;
+  const metre = usesMetreCoords(state);
+  const tileW = metre ? PIXELS_PER_METRE : CONFIG.view.tileWidth;
+  const tileH = metre ? PIXELS_PER_METRE / 2 : CONFIG.view.tileHeight;
   const images: Phaser.GameObjects.Image[] = [];
   const placed: PlacedV2[] = [];
   const cottages: Phaser.GameObjects.Image[] = [];
@@ -453,7 +455,7 @@ export function placeV2Props(scene: Phaser.Scene, state: GameState, layout: IsoL
 
   const house = state.features.find((feature) => feature.kind === "house");
   if (house) {
-    const park = tileCenter(house.x + 2, house.y, layout, tileW, tileH);
+    const park = tileCenter(house.x + (metre ? 8 : 2), house.y, layout, tileW, tileH);
     const file = "vehicle-bakkie-se.png";
     const image = addSprite(scene, file, park.x, park.y + 4, 8 + park.y * 0.04, worldScaleOf(file));
     if (image) {
@@ -465,7 +467,7 @@ export function placeV2Props(scene: Phaser.Scene, state: GameState, layout: IsoL
       images.push(image);
       placeShadow(scene, image.x, image.y, 30, 10, 0.28, image.depth - 0.2);
     }
-    const tankTile = tileCenter(house.x + 1, house.y + 2, layout, tileW, tileH);
+    const tankTile = tileCenter(house.x + (metre ? 6 : 1), house.y + (metre ? 8 : 2), layout, tileW, tileH);
     const tank = addSprite(scene, "prop-water-tank.png", tankTile.x, tankTile.y, 8 + tankTile.y * 0.04);
     if (tank) {
       tank.setData("featureKind", "water_tank");
@@ -474,6 +476,7 @@ export function placeV2Props(scene: Phaser.Scene, state: GameState, layout: IsoL
     }
   }
 
+  if (!metre) {
   for (let y = 0; y < state.height; y += 1) {
     for (let x = 0; x < state.width; x += 1) {
       const id = state.campIds[y * state.width + x];
@@ -487,6 +490,7 @@ export function placeV2Props(scene: Phaser.Scene, state: GameState, layout: IsoL
       const image = addSprite(scene, file, center.x, center.y, 7 + center.y * 0.04);
       if (image) images.push(image);
     }
+  }
   }
 
   placeYard(scene, state, layout, tileW, tileH, images, placed);
@@ -551,12 +555,19 @@ type FenceSeg = { x1: number; y1: number; x2: number; y2: number; kind: "boundar
  * The wire itself is the straight line drawn by drawFences, so a run does not
  * stair-step from one tile-edge sprite to the next.
  */
-export function placeV2Fences(scene: Phaser.Scene, segments: FenceSeg[]): Phaser.GameObjects.Image[] {
+export function placeV2Fences(
+  scene: Phaser.Scene,
+  segments: FenceSeg[],
+  limit?: { maxPosts?: number; view?: { x: number; y: number; right: number; bottom: number } },
+): Phaser.GameObjects.Image[] {
   const images: Phaser.GameObjects.Image[] = [];
   const spacing = FENCE_POST_SPACING_METRES * PIXELS_PER_METRE;
   const seen = new Set<string>();
+  const maxPosts = limit?.maxPosts ?? 80;
+  const view = limit?.view;
+  const viewWide = view ? view.right - view.x > 8000 : false;
   for (const segment of segments) {
-    if (segment.gate) continue;
+    if (segment.gate || viewWide || maxPosts <= 0) continue;
     const dx = segment.x2 - segment.x1;
     const dy = segment.y2 - segment.y1;
     const length = Math.hypot(dx, dy);
@@ -564,9 +575,11 @@ export function placeV2Fences(scene: Phaser.Scene, segments: FenceSeg[]): Phaser
     const count = Math.max(1, Math.round(length / spacing));
     const file = dx >= 0 ? "fence-strainer-post-flip.png" : "fence-strainer-post.png";
     for (let i = 0; i <= count; i += 1) {
+      if (images.length >= maxPosts) break;
       const t = i / count;
       const x = segment.x1 + dx * t;
       const y = segment.y1 + dy * t;
+      if (view && (x < view.x - 120 || x > view.right + 120 || y < view.y - 120 || y > view.bottom + 120)) continue;
       if (coveredByGate(x, y, segments)) continue;
       const key = `${Math.round(x)}:${Math.round(y)}`;
       if (seen.has(key)) continue;

@@ -1,3 +1,4 @@
+import { usesMetreCoords } from "../sim/metreFarm";
 import { TILE_HOMESTEAD, TILE_OUTSIDE, type GameState } from "../sim/types";
 
 const COLORS = {
@@ -31,6 +32,15 @@ export function drawOfferMinimap(
 
   ctx.fillStyle = COLORS.sand;
   ctx.fillRect(0, 0, size, size);
+
+  if (usesMetreCoords(state)) {
+    state.camps.forEach((camp, index) => {
+      if (!camp.rect) return;
+      ctx.fillStyle = COLORS.camp[index % COLORS.camp.length];
+      ctx.fillRect(offX + camp.rect.x * scale, offY + camp.rect.y * scale, Math.max(1, camp.rect.w * scale), Math.max(1, camp.rect.h * scale));
+    });
+    return;
+  }
 
   const img = ctx.createImageData(w, h);
   for (let y = 0; y < h; y += 1) {

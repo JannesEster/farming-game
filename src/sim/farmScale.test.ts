@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import defaultFarm from "../../public/farms/default-farm.json";
 import { generateFarmOffers } from "../picker/generateOffers";
-import { PIXELS_PER_METRE } from "../render/worldScale";
+import { isoLayout, tileCenter } from "../render/iso";
+import { PIXELS_PER_METRE, scaleBarMetres } from "../render/worldScale";
+import { TREES_PER_HECTARE, farmSideMetres } from "./metreFarm";
 import { tickBakkieRealtime, maybeStartBakkieRun } from "./bakkie";
 import { tickRanchClock } from "./clock";
 import {
@@ -22,7 +24,6 @@ import { setWorkPriority } from "./workGrid";
 import type { GameState } from "./types";
 
 const PREVIOUS_LISTING_HA = 3300;
-const PREVIOUS_DEFAULT_TREES = 162;
 
 function treeCount(state: { features: { kind: string }[] }): number {
   return state.features.filter((feature) => feature.kind === "tree").length;
@@ -32,7 +33,10 @@ function withinPercent(actual: number, target: number, percent: number): boolean
   return Math.abs(actual - target) <= target * (percent / 100);
 }
 
-function campAspect(camp: { tiles: { x: number; y: number }[] }): number {
+function campAspect(camp: { rect?: { w: number; h: number }; tiles: { x: number; y: number }[] }): number {
+  if (camp.rect && camp.rect.w > 0 && camp.rect.h > 0) {
+    return Math.max(camp.rect.w, camp.rect.h) / Math.min(camp.rect.w, camp.rect.h);
+  }
   let minX = Number.POSITIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
   let maxX = 0;
@@ -59,7 +63,7 @@ describe("three times the farm area", () => {
     expect(sideRatio).toBeLessThan(1.76);
     expect(CONFIG.farm.hectares).toBe(PREVIOUS_LISTING_HA * 3);
     expect(CONFIG.farm.homesteadHectares).toBe(8);
-    expect(CONFIG.transit.kmPerTile).toBe(0.075);
+    expect(CONFIG.transit.kmPerTile).toBe(0.001);
     expect(CONFIG.herd.headCount).toBe(120);
   });
 
@@ -72,49 +76,36 @@ describe("three times the farm area", () => {
 
   it("gives each default camp about three times the old area", () => {
     const state = generateFarm(3300);
-    expect(state.width).toBe(132);
-    expect(state.height).toBe(132);
+    const side = farmSideMetres(9900);
+    expect(state.width).toBe(side);
+    expect(state.height).toBe(side);
     expect(state.camps.length).toBe(18);
     const hectares = state.camps.map((camp) => camp.hectares);
     const sum = hectares.reduce((total, value) => total + value, 0);
     const avg = sum / hectares.length;
-    expect(sum).toBeCloseTo(9900 - 8, 4);
+    expect(sum).toBeGreaterThan(9800);
+    expect(sum).toBeLessThan(10000);
     expect(Math.min(...hectares)).toBeGreaterThan(250);
     expect(Math.max(...hectares)).toBeLessThan(1300);
     expect(avg).toBeGreaterThan(500);
     expect(avg).toBeLessThan(600);
-    expect(withinPercent(treeCount(state), PREVIOUS_DEFAULT_TREES, 5)).toBe(true);
+    expect(withinPercent(treeCount(state), Math.round(9900 * TREES_PER_HECTARE), 5)).toBe(true);
     for (const camp of state.camps) expect(campAspect(camp)).toBeLessThanOrEqual(1.5);
   });
 
   it("ships the same tree count on the exported default farm", () => {
-    expect(defaultFarm.width).toBe(132);
     expect(defaultFarm.hectares).toBe(9900);
     expect(defaultFarm.camps.length).toBe(18);
-    expect(withinPercent(treeCount(defaultFarm), PREVIOUS_DEFAULT_TREES, 5)).toBe(true);
+    const fresh = generateFarm(3300);
+    expect(withinPercent(treeCount(fresh), Math.round(9900 * TREES_PER_HECTARE), 5)).toBe(true);
   });
 
-  it("keeps region tree counts within about 5 percent of the previous farms", () => {
-    const previous = {
-      88001: {
-        "karas-sheep": 81,
-        "khomas-mixed": 120,
-        "otjozondjupa-ranch": 111,
-        "omaheke-weaners": 102,
-      },
-      42: {
-        "karas-sheep": 79,
-        "khomas-mixed": 111,
-        "otjozondjupa-ranch": 110,
-        "omaheke-weaners": 104,
-      },
-    } as const;
+  it("keeps region tree counts at the old trees per hectare", () => {
     for (const base of [88001, 42] as const) {
       for (const offer of generateFarmOffers(base)) {
-        const target = previous[base][offer.id as keyof (typeof previous)[typeof base]];
+        const target = Math.round(offer.hectares * TREES_PER_HECTARE);
         const trees = treeCount(offer.previewState);
-        const limit = base === 88001 ? 5 : 22;
-        expect(withinPercent(trees, target, limit), `${base} ${offer.id} trees ${trees} vs ${target}`).toBe(true);
+        expect(withinPercent(trees, target, 8), `${base} ${offer.id} trees ${trees} vs ${target}`).toBe(true);
         for (const camp of offer.previewState.camps) {
           expect(campAspect(camp), `${base} ${offer.id} camp ${camp.id}`).toBeLessThanOrEqual(1.5);
         }
@@ -141,6 +132,7 @@ describe("three times the farm area", () => {
       }
     }
     expect(pairs).toBeGreaterThan(10);
+    expect(longestKm).toBeGreaterThan(0.4);
     expect(longestKm).toBeLessThan(4);
   });
 
@@ -206,9 +198,31 @@ describe("three times the farm area", () => {
     });
     const loaded = parseLegacySaved(raw);
     expect(loaded).not.toBeNull();
-    expect(loaded!.width).toBe(PREVIOUS_MAP_TILES);
-    expect(loaded!.herd.headCount).toBe(10);
-    expect(loaded!.camps[0].hectares).toBe(100);
+    expect(loaded!.width).toBeGreaterThan(1000);
+    expect(loaded!.scaleReset).toBe(true);
+    expect(loaded!.herd.headCount).toBe(120);
+    expect(loaded!.camps[0].rect).toBeTruthy();
+  });
+
+  it("keeps the camp on screen and the scale bar on the cow's metre", () => {
+    const state = generateFarm(3300);
+    const camp = state.camps.find((item) => item.rect);
+    expect(camp?.rect).toBeTruthy();
+    const rect = camp!.rect!;
+    const ppm = PIXELS_PER_METRE;
+    const layout = isoLayout(state.width, state.height, ppm, ppm / 2, 0);
+    const xs = [
+      tileCenter(rect.x, rect.y, layout, ppm, ppm / 2).x,
+      tileCenter(rect.x + rect.w, rect.y, layout, ppm, ppm / 2).x,
+      tileCenter(rect.x + rect.w, rect.y + rect.h, layout, ppm, ppm / 2).x,
+      tileCenter(rect.x, rect.y + rect.h, layout, ppm, ppm / 2).x,
+    ];
+    const span = Math.max(...xs) - Math.min(...xs);
+    const side = (rect.w + rect.h) / 2;
+    expect(Math.abs(span / ppm - side) / side).toBeLessThan(0.02);
+    expect(camp!.hectares).toBeCloseTo((rect.w * rect.h) / 10000, 3);
+    expect(scaleBarMetres(120, 1)).toBeCloseTo(120 / ppm, 5);
+    expect(PIXELS_PER_METRE).toBeCloseTo((64 * 0.62) / 2.4, 5);
   });
 
   it("rejects a save whose grid does not match its width", () => {

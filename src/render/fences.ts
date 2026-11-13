@@ -1,8 +1,9 @@
 import Phaser from "phaser";
 import { CONFIG } from "../sim/config";
+import { usesMetreCoords } from "../sim/metreFarm";
 import { fenceGateBetweenCamps } from "../sim/path";
 import { TILE_OUTSIDE, type GameState } from "../sim/types";
-import { tileTop } from "./iso";
+import { tileCenter, tileTop } from "./iso";
 import type { IsoLayout } from "./iso";
 import { palette } from "./palette";
 import { CAMP_GATE_METRES, PIXELS_PER_METRE } from "./worldScale";
@@ -30,12 +31,71 @@ function edgeHasGate(
   );
 }
 
+function edgeKey(x1: number, y1: number, x2: number, y2: number): string {
+  const a = `${Math.round(x1)},${Math.round(y1)}`;
+  const b = `${Math.round(x2)},${Math.round(y2)}`;
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+/** One straight run per rectangle edge. Shared edges are drawn once, with a gate at the middle. */
+function collectRectFenceSegments(
+  state: GameState,
+  layout: IsoLayout,
+  herdCampId: number,
+  selected: boolean,
+): FenceSegment[] {
+  const tileW = PIXELS_PER_METRE;
+  const tileH = PIXELS_PER_METRE / 2;
+  const edges = new Map<string, { x1: number; y1: number; x2: number; y2: number; a: number; b: number }>();
+  for (const camp of state.camps) {
+    const rect = camp.rect;
+    if (!rect) continue;
+    const sides = [
+      [rect.x, rect.y, rect.x + rect.w, rect.y],
+      [rect.x + rect.w, rect.y, rect.x + rect.w, rect.y + rect.h],
+      [rect.x + rect.w, rect.y + rect.h, rect.x, rect.y + rect.h],
+      [rect.x, rect.y + rect.h, rect.x, rect.y],
+    ];
+    for (const [x1, y1, x2, y2] of sides) {
+      const key = edgeKey(x1, y1, x2, y2);
+      const existing = edges.get(key);
+      if (existing) existing.b = camp.id;
+      else edges.set(key, { x1, y1, x2, y2, a: camp.id, b: TILE_OUTSIDE });
+    }
+  }
+  const segments: FenceSegment[] = [];
+  for (const edge of edges.values()) {
+    const p1 = tileCenter(edge.x1, edge.y1, layout, tileW, tileH);
+    const p2 = tileCenter(edge.x2, edge.y2, layout, tileW, tileH);
+    const kind: FenceSegment["kind"] =
+      edge.b < 0 ? "boundary" : selected && (edge.a === herdCampId || edge.b === herdCampId) ? "selected" : "inner";
+    segments.push({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, kind, gate: false });
+    if (edge.b < 0) continue;
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const midX = (p1.x + p2.x) / 2;
+    const midY = (p1.y + p2.y) / 2;
+    const half = 4;
+    segments.push({
+      x1: midX - (dx / len) * half,
+      y1: midY - (dy / len) * half,
+      x2: midX + (dx / len) * half,
+      y2: midY + (dy / len) * half,
+      kind,
+      gate: true,
+    });
+  }
+  return openFenceGates(mergeStraightFences(segments));
+}
+
 export function collectFenceSegments(
   state: GameState,
   layout: IsoLayout,
   herdCampId: number,
   selected: boolean,
 ): FenceSegment[] {
+  if (usesMetreCoords(state)) return collectRectFenceSegments(state, layout, herdCampId, selected);
   const tileW = CONFIG.view.tileWidth;
   const tileH = CONFIG.view.tileHeight;
   const segments: FenceSegment[] = [];
@@ -193,50 +253,49 @@ export function openFenceGates(segments: FenceSegment[], gapPx = CAMP_GATE_METRE
   let wires = segments.filter((segment) => !segment.gate);
   const half = gapPx / 2;
   for (const gate of gates) {
-    wires = wires.flatMap((wire) => {
-      const trimmed = trimWireForGate(wire, gate, half);
-      return trimmed ? [trimmed] : [];
-    });
+    wires = wires.flatMap((wire) => splitWireAtGate(wire, gate, half));
   }
   const opened = gates.map((gate) => widenGate(gate, half));
   return wires.concat(opened);
 }
 
-function trimWireForGate(segment: FenceSegment, gate: FenceSegment, half: number): FenceSegment | null {
+/** Cut a straight wire where a gate sits on it, and pull an end that already meets the gate. */
+function splitWireAtGate(segment: FenceSegment, gate: FenceSegment, half: number): FenceSegment[] {
   const gdx = gate.x2 - gate.x1;
   const gdy = gate.y2 - gate.y1;
   const glen = Math.hypot(gdx, gdy) || 1;
   const cross = (segment.x2 - segment.x1) * gdy - (segment.y2 - segment.y1) * gdx;
   const scale = (Math.hypot(segment.x2 - segment.x1, segment.y2 - segment.y1) || 1) * glen;
-  if (Math.abs(cross) / scale > 0.02) return segment;
+  if (Math.abs(cross) / scale > 0.02) return [segment];
   const dirx = gdx / glen;
   const diry = gdy / glen;
   const cx = (gate.x1 + gate.x2) / 2;
   const cy = (gate.y1 + gate.y2) / 2;
-  const touches = (x: number, y: number) =>
-    Math.hypot(x - gate.x1, y - gate.y1) < 1.5 || Math.hypot(x - gate.x2, y - gate.y2) < 1.5;
-  const pulled = (x: number, y: number) => {
-    const along = (x - cx) * dirx + (y - cy) * diry;
-    const side = along >= 0 ? 1 : -1;
-    return { x: cx + dirx * half * side, y: cy + diry * half * side };
+  const along = (x: number, y: number) => (x - cx) * dirx + (y - cy) * diry;
+  const a1 = along(segment.x1, segment.y1);
+  const a2 = along(segment.x2, segment.y2);
+  const lo = Math.min(a1, a2);
+  const hi = Math.max(a1, a2);
+  if (hi < -half - 1.5 || lo > half + 1.5) return [segment];
+  const forward = a2 >= a1;
+  const point = (d: number) => ({ x: cx + dirx * d, y: cy + diry * d });
+  const pieces: FenceSegment[] = [];
+  const push = (from: number, to: number) => {
+    if (to - from < 4) return;
+    const p = point(from);
+    const q = point(to);
+    pieces.push({
+      ...segment,
+      x1: forward ? p.x : q.x,
+      y1: forward ? p.y : q.y,
+      x2: forward ? q.x : p.x,
+      y2: forward ? q.y : p.y,
+      gate: false,
+    });
   };
-  let x1 = segment.x1;
-  let y1 = segment.y1;
-  let x2 = segment.x2;
-  let y2 = segment.y2;
-  if (touches(x1, y1)) {
-    const next = pulled(x1, y1);
-    x1 = next.x;
-    y1 = next.y;
-  }
-  if (touches(x2, y2)) {
-    const next = pulled(x2, y2);
-    x2 = next.x;
-    y2 = next.y;
-  }
-  const dot = (x2 - x1) * (segment.x2 - segment.x1) + (y2 - y1) * (segment.y2 - segment.y1);
-  if (dot <= 0 || Math.hypot(x2 - x1, y2 - y1) < 4) return null;
-  return { ...segment, x1, y1, x2, y2 };
+  if (lo < -half) push(lo, Math.min(hi, -half));
+  if (hi > half) push(Math.max(lo, half), hi);
+  return pieces;
 }
 
 function widenGate(gate: FenceSegment, half: number): FenceSegment {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { generateFarmOffers } from "../picker/generateOffers";
 import { generateFarm } from "./generate";
+import { pointCampId, usesMetreCoords } from "./metreFarm";
 import type { GameState } from "./types";
 import { campHasWaterAccess } from "./water";
 import { homesteadYardPieces, rampTouchesTrack } from "./waterLayout";
@@ -25,10 +26,16 @@ function assertGeneratedInfrastructure(state: GameState): void {
   expect(state.features.some((feature) => feature.kind === "kraal")).toBe(false);
   expect(cottage).toBeTruthy();
   expect(rampTouchesTrack(state)).toBe(true);
-  const idAt = (x: number, y: number) => state.campIds[y * state.width + x];
+  const idAt = (x: number, y: number) =>
+    usesMetreCoords(state) ? pointCampId(state, x, y) : state.campIds[y * state.width + x];
   expect(idAt(ramp!.x, ramp!.y)).toBeGreaterThanOrEqual(0);
   expect(idAt(pens[0].x, pens[0].y)).toBe(idAt(ramp!.x, ramp!.y));
-  expect(idAt(cottage!.x, cottage!.y)).toBe(-1);
+  if (usesMetreCoords(state)) {
+    expect(idAt(cottage!.x, cottage!.y)).toBe(idAt(house!.x, house!.y));
+    expect(Math.hypot(cottage!.x - house!.x, cottage!.y - house!.y)).toBeLessThan(20);
+  } else {
+    expect(idAt(cottage!.x, cottage!.y)).toBe(-1);
+  }
   expect(house).toBeTruthy();
   expect(Math.hypot(ramp!.x - house!.x, ramp!.y - house!.y)).toBeGreaterThan(8);
   const farPen = Math.max(...pens.map((pen) => Math.hypot(pen.x - ramp!.x, pen.y - ramp!.y)));

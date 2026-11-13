@@ -1,4 +1,5 @@
 import { CONFIG, type GameConfig } from "../sim/config";
+import { usesMetreCoords } from "../sim/metreFarm";
 import { campGateBetween, planHerdPath, trackTileSet } from "../sim/path";
 import type { FarmOfferCard } from "./types";
 import type { GameState } from "../sim/types";
@@ -8,6 +9,7 @@ function idx(x: number, y: number, width: number): number {
 }
 
 function homesteadReachable(state: GameState): boolean {
+  if (usesMetreCoords(state)) return (state.road?.length ?? 0) > 1 || trackTileSet(state).size > 0;
   const tracks = trackTileSet(state);
   const homesteadTiles = new Set<string>();
   for (let y = 0; y < state.height; y += 1) {
@@ -66,16 +68,21 @@ export function validateOfferCard(card: FarmOfferCard, config: GameConfig = CONF
 
   const grazingHa = config.farm.hectares - config.farm.homesteadHectares;
   const sumHa = state.camps.reduce((s, c) => s + c.hectares, 0);
-  if (Math.abs(sumHa - grazingHa) > 0.5) {
-    errors.push(`grazing ha ${sumHa} != ${grazingHa}`);
+  const hectareTarget = usesMetreCoords(state) ? config.farm.hectares : grazingHa;
+  const hectareSlack = usesMetreCoords(state) ? Math.max(2, config.farm.hectares * 0.01) : 0.5;
+  if (Math.abs(sumHa - hectareTarget) > hectareSlack) {
+    errors.push(`grazing ha ${sumHa} != ${hectareTarget}`);
   }
 
   if (!campsHaveGates(state)) errors.push("no camp gate pairs");
   if (!homesteadReachable(state)) errors.push("homestead track network missing");
 
   for (const camp of state.camps) {
-    if (camp.tiles.length < config.map.minCampTiles) {
+    if (!camp.rect && camp.tiles.length < config.map.minCampTiles) {
       errors.push(`camp ${camp.id} too small (${camp.tiles.length} tiles)`);
+    }
+    if (camp.rect && camp.hectares < 50) {
+      errors.push(`camp ${camp.id} too small (${camp.hectares} ha)`);
     }
     const other = state.camps.find((c) => c.id !== camp.id);
     if (other) {

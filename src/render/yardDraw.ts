@@ -1,6 +1,6 @@
 import type { Feature } from "../sim/types";
 import { tileCenter, type IsoLayout } from "./iso";
-import { PEN_DEPTH_METRES, metresPerTile } from "./worldScale";
+import { PEN_DEPTH_METRES, metresPerTile, projectsMetres } from "./worldScale";
 
 /**
  * Iso cattle yard drawn to match docs/reference/cattle-yards/yards-aerial.png:
@@ -93,13 +93,13 @@ function localOf(basis: Basis, feature: Feature): Local {
   return { into: dx * basis.ix + dy * basis.iy, along: dx * basis.ax + dy * basis.ay };
 }
 
-function penBoxes(basis: Basis, features: Feature[]): PenBox[] {
+function penBoxes(basis: Basis, features: Feature[], tileW: number): PenBox[] {
   const pens = features
     .filter((feature) => feature.kind === "holding_pen")
     .map((feature) => ({ feature, ...localOf(basis, feature) }))
     .sort((a, b) => a.along - b.along);
   if (pens.length === 0) return [];
-  const tileMetres = metresPerTile();
+  const tileMetres = projectsMetres(tileW) ? 1 : metresPerTile();
   const halfInto = PEN_DEPTH_METRES / 2 / tileMetres;
   return pens.map((pen) => {
     const alongMetres = pen.feature.scale >= 3 ? pen.feature.scale : 11;
@@ -133,7 +133,7 @@ function arcPoints(a: Pt, b: Pt, bend: number, steps: number): Pt[] {
 }
 
 /** Screen path of the race: a bend out of the pens, through the crush, and into the ramp. */
-function raceScreen(basis: Basis, features: Feature[], boxes: PenBox[]): Pt[] {
+function raceScreen(basis: Basis, features: Feature[], boxes: PenBox[], tileW: number): Pt[] {
   const crush = features.find((feature) => feature.kind === "crush");
   const crushLocal = crush ? localOf(basis, crush) : { into: 2, along: 2 };
   const front = boxes.length > 0 ? boxes[0].into0 : crushLocal.into + 1.4;
@@ -141,7 +141,8 @@ function raceScreen(basis: Basis, features: Feature[], boxes: PenBox[]): Pt[] {
   const start = screenOf(basis, { into: front, along: gateAlong });
   const crushPt = screenOf(basis, crushLocal);
   const rampPt = { x: basis.rampScreen.x, y: basis.rampScreen.y };
-  const depthPx = Math.hypot(basis.intoScreen.x, basis.intoScreen.y) * (PEN_DEPTH_METRES / metresPerTile());
+  const unit = projectsMetres(tileW) ? 1 : metresPerTile();
+  const depthPx = Math.hypot(basis.intoScreen.x, basis.intoScreen.y) * (PEN_DEPTH_METRES / unit);
   const bend = Math.max(16, depthPx * 0.45);
   const intoCrush = arcPoints(start, crushPt, bend, 8);
   const intoRamp = arcPoints(crushPt, rampPt, bend * 0.8, 7);
@@ -158,7 +159,7 @@ function screenOf(basis: Basis, local: Local): Pt {
 export function yardSlots(features: Feature[], layout: IsoLayout, tileW: number, tileH: number): YardSlots | null {
   const basis = readBasis(features, layout, tileW, tileH);
   if (!basis) return null;
-  const boxes = penBoxes(basis, features);
+  const boxes = penBoxes(basis, features, tileW);
   const pens = boxes.map((box) => {
     const center = screenOf(basis, {
       into: (box.into0 + box.into1) / 2,
@@ -175,7 +176,7 @@ export function yardSlots(features: Feature[], layout: IsoLayout, tileW: number,
       intoY: basis.intoScreen.y,
     };
   });
-  const race = raceScreen(basis, features, boxes);
+  const race = raceScreen(basis, features, boxes, tileW);
   return { pens, race };
 }
 
@@ -208,7 +209,7 @@ export function yardGeometry(
 ): YardGeometry | null {
   const basis = readBasis(features, layout, tileW, tileH);
   if (!basis) return null;
-  const boxes = penBoxes(basis, features);
+  const boxes = penBoxes(basis, features, tileW);
   if (boxes.length === 0) return null;
   const gateAlong = boxes[Math.min(1, boxes.length - 1)].along0;
   const edges: YardEdge[] = [];
@@ -244,7 +245,7 @@ export function yardGeometry(
   return {
     edges,
     corners: [first[0], first[3], last[1], last[2]],
-    race: raceScreen(basis, features, boxes),
+    race: raceScreen(basis, features, boxes, tileW),
     crush: crushLocal
       ? {
           ...screenOf(basis, crushLocal),

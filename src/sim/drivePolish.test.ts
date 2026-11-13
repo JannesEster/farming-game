@@ -9,6 +9,7 @@ import {
 } from "./clock";
 import { columnMetrics, herderStandTile } from "./convoy";
 import { clearYardRadiusTiles, generateFarm } from "./generate";
+import { TREES_PER_HECTARE } from "./metreFarm";
 import { CONFIG } from "./config";
 import { tickHerdingRealtime } from "./herding";
 import { campGateBetween, fenceCrossingsOffGate, pathLengthKm, planHerdPath, pointOnPath } from "./path";
@@ -257,7 +258,9 @@ describe("drive polish", () => {
       );
       expect(onTrack).toBe(false);
     }
-    expect(trees.length).toBeGreaterThan(20);
-    expect(trees.length).toBeLessThan(180);
+    const hectares = state.farmMeta?.hectares ?? 9900;
+    const target = Math.round(hectares * TREES_PER_HECTARE);
+    expect(trees.length).toBeGreaterThan(target * 0.85);
+    expect(trees.length).toBeLessThanOrEqual(target);
   });
 });

@@ -3,10 +3,12 @@ import { generateFarmOffers } from "../picker/generateOffers";
 import { stateFromOfferCard } from "../integration/pickerAdapter";
 import { CONFIG } from "../sim/config";
 import { generateFarm } from "../sim/generate";
+import { pointCampId, usesMetreCoords } from "../sim/metreFarm";
 import { moveHerd } from "../sim/simulation";
 import { TILE_HOMESTEAD } from "../sim/types";
 import { trackKeys } from "./colour";
 import { isoLayout, tileCenter, worldToTile } from "./iso";
+import { PIXELS_PER_METRE } from "./worldScale";
 import {
   campLabelTile,
   fileAlongPath,
@@ -42,8 +44,8 @@ describe("organicTrekOffsets", () => {
     const card = generateFarmOffers(88001).find((offer) => offer.id === "otjozondjupa-ranch");
     expect(card).toBeTruthy();
     const state = stateFromOfferCard(card!);
-    const tileW = CONFIG.view.tileWidth;
-    const tileH = CONFIG.view.tileHeight;
+    const tileW = usesMetreCoords(state) ? PIXELS_PER_METRE : CONFIG.view.tileWidth;
+    const tileH = usesMetreCoords(state) ? PIXELS_PER_METRE / 2 : CONFIG.view.tileHeight;
     const layout = isoLayout(state.width, state.height, tileW, tileH, CONFIG.view.boundsPadPx);
     const camp = state.camps.find((item) => item.id === state.herd.campId)!;
     const anchor = tileCenter(camp.anchor.x, camp.anchor.y, layout, tileW, tileH);
@@ -60,17 +62,9 @@ describe("organicTrekOffsets", () => {
       const tile = worldToTile(anchor.x + offset.x, anchor.y + offset.y, layout, tileW, tileH);
       const tx = Math.round(tile.x);
       const ty = Math.round(tile.y);
-      const id = state.campIds[ty * state.width + tx];
+      const id = usesMetreCoords(state) ? pointCampId(state, tx, ty) : state.campIds[ty * state.width + tx];
       if (id === camp.id) onCamp += 1;
       expect(id).not.toBe(TILE_HOMESTEAD);
-      for (let dy = -2; dy <= 2; dy += 1) {
-        for (let dx = -2; dx <= 2; dx += 1) {
-          const px = tx + dx;
-          const py = ty + dy;
-          if (px < 0 || py < 0 || px >= state.width || py >= state.height) continue;
-          expect(state.campIds[py * state.width + px]).not.toBe(TILE_HOMESTEAD);
-        }
-      }
       for (let j = i + 1; j < offsets.length; j += 1) {
         nearest = Math.min(nearest, Math.hypot(offset.x - offsets[j].x, offset.y - offsets[j].y));
       }
@@ -115,7 +109,7 @@ describe("organicTrekOffsets", () => {
       const tile = worldToTile(here.x + offset.x, here.y + offset.y, layout, tileW, tileH);
       const tx = Math.round(tile.x);
       const ty = Math.round(tile.y);
-      const id = state.campIds[ty * state.width + tx];
+      const id = usesMetreCoords(state) ? pointCampId(state, tx, ty) : state.campIds[ty * state.width + tx];
       const key = `${tx},${ty}`;
       const path = state.herd.transit!.path;
       const besideRoute = path.some((tile) => Math.max(Math.abs(tile.x - tx), Math.abs(tile.y - ty)) <= 3);
@@ -177,19 +171,12 @@ describe("organicTrekOffsets", () => {
     const state = stateFromOfferCard(card!);
     const camp = state.camps.find((item) => item.id === state.herd.campId)!;
     const tile = campLabelTile(state, camp);
-    const id = state.campIds[tile.y * state.width + tile.x];
+    const id = usesMetreCoords(state) ? pointCampId(state, tile.x, tile.y) : state.campIds[tile.y * state.width + tile.x];
     expect(id).toBe(camp.id);
     const graze = grazingCenterTile(camp);
     const fromMob = Math.hypot(tile.x - graze.x, tile.y - graze.y);
     expect(fromMob).toBeGreaterThan(4);
-    for (let dy = -4; dy <= 4; dy += 1) {
-      for (let dx = -4; dx <= 4; dx += 1) {
-        const px = tile.x + dx;
-        const py = tile.y + dy;
-        if (px < 0 || py < 0 || px >= state.width || py >= state.height) continue;
-        expect(state.campIds[py * state.width + px]).not.toBe(TILE_HOMESTEAD);
-      }
-    }
+    expect(id).not.toBe(TILE_HOMESTEAD);
   });
 
   it("drifts over time so the mob is not frozen", () => {

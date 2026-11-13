@@ -1,4 +1,5 @@
 import { isRainyMonth } from "../sim/calendar";
+import { usesMetreCoords } from "../sim/metreFarm";
 import type { GameState } from "../sim/types";
 import { TILE_HOMESTEAD, TILE_OUTSIDE } from "../sim/types";
 import { grazeableFraction } from "../sim/pasture";
@@ -213,6 +214,25 @@ export function terrainVariant(x: number, y: number, kind: GroundTexture): numbe
 export function paintMinimap(canvas: HTMLCanvasElement, state: GameState): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
+  if (usesMetreCoords(state)) {
+    const cw = canvas.width / state.width;
+    const ch = canvas.height / state.height;
+    ctx.fillStyle = toCss(palette.sand);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const fills = [palette.grassBrown, palette.grassGold, palette.sandLight, palette.sandDark];
+    state.camps.forEach((camp, index) => {
+      if (!camp.rect) return;
+      ctx.fillStyle = toCss(fills[index % fills.length]);
+      ctx.fillRect(camp.rect.x * cw, camp.rect.y * ch, Math.max(1, camp.rect.w * cw), Math.max(1, camp.rect.h * ch));
+    });
+    const camp = state.camps.find((item) => item.id === state.herd.campId);
+    if (!camp) return;
+    ctx.beginPath();
+    ctx.fillStyle = "#1c120c";
+    ctx.arc((camp.anchor.x + 0.5) * cw, (camp.anchor.y + 0.5) * ch, 5, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
   const track = trackKeys(state);
   const cw = canvas.width / state.width;
   const ch = canvas.height / state.height;

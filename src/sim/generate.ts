@@ -12,6 +12,7 @@ import { campGateBetween, campGateToward } from "./path";
 import { PIXELS_PER_METRE } from "../render/worldScale";
 import { placeCattleHandlingYard } from "./cattleYard";
 import { homesteadYardPieces, placeSharedWaterPoints } from "./waterLayout";
+import { buildMetreFarm } from "./metreFarm";
 import { createRng, type Rng } from "./rng";
 import {
   TILE_HOMESTEAD,
@@ -298,7 +299,8 @@ function isEdge(grid: number[], width: number, height: number, x: number, y: num
   return false;
 }
 
-function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: number } | null {
+/** Previous tile-grid builder. Unused by the metre farm. Kept so the square splitter stays readable in history. */
+export function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: number } | null {
   const width = config.map.tilesX;
   const height = config.map.tilesY;
   const span = config.map.campCountMax - config.map.campCountMin;
@@ -624,18 +626,8 @@ function ensureOpeningCamp(camp: CampState, features: Feature[], config: GameCon
 
 export function generateFarm(seed: number, config: GameConfig = CONFIG): GameState {
   const rng = createRng(seed);
-  let best: { state: GameState; score: number } | null = null;
-  for (let attempt = 0; attempt < config.map.placementAttempts; attempt += 1) {
-    const built = tryBuild(rng, config);
-    if (!built || built.state.camps.length === 0) continue;
-    if (!best || built.score > best.score) best = built;
-    if (built.score >= config.map.minCampTiles) break;
-  }
-  if (!best || best.state.camps.length < config.map.campCountMin) {
-    throw new Error("Could not place a farm with enough camps.");
-  }
-  best.state.seed = seed;
-  best.state.rngState = rng.getState();
-  initStoryPeople(best.state, config);
-  return best.state;
+  const state = buildMetreFarm(rng, config);
+  state.seed = seed;
+  state.rngState = rng.getState();
+  return state;
 }

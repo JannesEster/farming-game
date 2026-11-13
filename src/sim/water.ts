@@ -54,6 +54,16 @@ export function campWaterDistanceMetres(state: GameState, camp: CampState, confi
 export function waterGrazeMultiplier(state: GameState, camp: CampState, config: GameConfig = CONFIG): number {
   if (campHasTroughInPolygon(state, camp)) return 1;
   if (!campHasWaterAccess(state, camp)) return STEP3B.grazeRemoteFraction;
+  const trough = troughInCamp(state, camp);
+  const rect = camp.rect;
+  if (trough && rect) {
+    const onCamp =
+      trough.x >= rect.x - 1 &&
+      trough.x <= rect.x + rect.w + 1 &&
+      trough.y >= rect.y - 1 &&
+      trough.y <= rect.y + rect.h + 1;
+    if (onCamp) return 1;
+  }
   const dist = campWaterDistanceMetres(state, camp, config);
   if (!Number.isFinite(dist)) return STEP3B.grazeRemoteFraction;
   if (dist <= STEP3B.grazeFullWithinMetres) return 1;

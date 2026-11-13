@@ -10,8 +10,8 @@ import { V2_SPRITES, type V2SpriteMeta } from "./v2Manifest";
  * tiles nose to tail, and a calf is 0.68 of that. Those tile spans are the
  * sizes Jannes asked to keep. PIXELS_PER_METRE is the cow's length divided
  * into 2.4 m, so a bakkie, a house, or a windmill is the right number of
- * cow-lengths. The travel map stays at 75 m per tile for herding and the HUD
- * bar, and is not used for sprites.
+ * cow-lengths. Camp sides, fences, the road, travel and the HUD bar use this
+ * same metre. World coordinates are metres, so one unit is 1 / 1000 km.
  *
  * Every row is grade A: a stated assumption, with the source of the number.
  */
@@ -37,6 +37,19 @@ export function calfDisplayPx(): number {
 export const COW_LENGTH_METRES = 2.4;
 /** Cow length on screen, divided into a 2.4 m beast. Buildings and vehicles use this. */
 export const PIXELS_PER_METRE = (CONFIG.view.tileWidth * COW_BODY_TILES) / COW_LENGTH_METRES;
+
+/**
+ * HUD scale bar. Screen pixels divided by this constant are metres.
+ * `barPx` is the bar on the screen. `zoom` is the camera zoom.
+ */
+export function scaleBarMetres(barPx: number, zoom: number): number {
+  return barPx / (PIXELS_PER_METRE * Math.max(zoom, 0.000001));
+}
+
+/** True when a projection tile width is the cow's metre, not the 64 px authoring tile. */
+export function projectsMetres(tileW: number): boolean {
+  return Math.abs(tileW - PIXELS_PER_METRE) < 1.5;
+}
 
 export const PERSON_HEIGHT_METRES = 1.8;
 export const COW_SHOULDER_METRES = 1.4;

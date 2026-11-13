@@ -1,4 +1,7 @@
 import { fractionalHour } from "../sim/clock";
+import { CONFIG } from "../sim/config";
+import { pointCampId, usesMetreCoords } from "../sim/metreFarm";
+import { PIXELS_PER_METRE } from "./worldScale";
 import { columnMetrics, MOB_LATERAL_TILES } from "../sim/convoy";
 import { pointOnPath } from "../sim/path";
 import type { CampState, GameState, TilePoint } from "../sim/types";
@@ -36,6 +39,7 @@ function openingNear(state: GameState, path: TilePoint[], x: number, y: number, 
     const gx = Math.round(tx);
     const gy = Math.round(ty);
     if (gx < 0 || gy < 0 || gx >= state.width || gy >= state.height) return TILE_OUTSIDE;
+    if (usesMetreCoords(state)) return pointCampId(state, gx, gy);
     return state.campIds[gy * state.width + gx];
   };
   for (let i = 1; i < path.length; i += 1) {
@@ -75,7 +79,7 @@ function tileAllowed(
 ): boolean {
   if (tx < 0 || ty < 0 || tx >= state.width || ty >= state.height) return false;
   const key = `${tx},${ty}`;
-  const id = state.campIds[ty * state.width + tx];
+  const id = usesMetreCoords(state) ? pointCampId(state, tx, ty) : state.campIds[ty * state.width + tx];
   if (id === TILE_HOMESTEAD) return false;
   if (id === TILE_OUTSIDE) return inTransit && track.has(key);
   if (inTransit) {
@@ -151,6 +155,7 @@ function campInsetDepth(camp: CampState): Map<string, number> {
 }
 
 function homesteadTiles(state: GameState): TilePoint[] {
+  if (usesMetreCoords(state)) return [];
   const tiles: TilePoint[] = [];
   for (let y = 0; y < state.height; y += 1) {
     for (let x = 0; x < state.width; x += 1) {
@@ -206,6 +211,42 @@ function onCampTile(
  * Loose grazing mob. Animals stand on interior tiles of the camp, clear of
  * the homestead, with enough space to read each animal.
  */
+function spreadMetreMob(
+  camp: CampState,
+  count: number,
+  seed: number,
+  layout: IsoLayout,
+  tileW: number,
+  tileH: number,
+): HerdOffset[] {
+  const next = rng(seed + camp.id * 997);
+  const anchor = tileCenter(camp.anchor.x, camp.anchor.y, layout, tileW, tileH);
+  const offsets: HerdOffset[] = [];
+  const placed: { mx: number; my: number }[] = [];
+  for (let i = 0; i < count; i += 1) {
+    let mx = 0;
+    let my = 0;
+    for (let attempt = 0; attempt < 14; attempt += 1) {
+      mx = (next() - 0.5) * 36;
+      my = (next() - 0.5) * 22;
+      if (placed.every((point) => (point.mx - mx) ** 2 + (point.my - my) ** 2 >= 1.6)) break;
+    }
+    placed.push({ mx, my });
+    const spot = tileCenter(camp.anchor.x + mx, camp.anchor.y + my, layout, tileW, tileH);
+    offsets.push({
+      x: spot.x - anchor.x,
+      y: spot.y - anchor.y,
+      flip: false,
+      coat: Math.floor(next() * 6) % 6,
+      scale: 0.92 + next() * 0.12,
+      view: randomView(next),
+      octant: Math.floor(next() * 8) % 8,
+      moving: false,
+    });
+  }
+  return offsets;
+}
+
 export function spreadInCamp(
   camp: CampState,
   count: number,
@@ -215,8 +256,9 @@ export function spreadInCamp(
   tileH: number,
   state?: GameState,
 ): HerdOffset[] {
-  const next = rng(seed + camp.id * 997);
   if (count <= 0) return [];
+  if (camp.rect) return spreadMetreMob(camp, count, seed, layout, tileW, tileH);
+  const next = rng(seed + camp.id * 997);
   const yards = state ? homesteadTiles(state) : [];
   const grazeTiles = camp.tiles.filter((tile) => yardsAway(tile, yards) >= 4);
   const members = new Set((grazeTiles.length > 0 ? grazeTiles : camp.tiles).map((tile) => `${tile.x},${tile.y}`));
@@ -431,7 +473,9 @@ export function fileAlongPath(
     lengths.push(lengths[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y));
   }
   const total = lengths[lengths.length - 1] || 1;
-  const tilePx = Math.hypot(tileW / 2, tileH / 2);
+  const spacingW = Math.abs(tileW - PIXELS_PER_METRE) < 1.5 ? CONFIG.view.tileWidth : tileW;
+  const spacingH = Math.abs(tileW - PIXELS_PER_METRE) < 1.5 ? CONFIG.view.tileHeight : tileH;
+  const tilePx = Math.hypot(spacingW / 2, spacingH / 2);
   const metrics = columnMetrics(path, progress, count);
   const leadDist = progress * total;
   const rearDist = metrics.rearProgress * total;
@@ -439,7 +483,13 @@ export function fileAlongPath(
   const nearGate = openingNear(state, path, leadTile.x, leadTile.y, 3);
   const lanes = nearGate ? Math.min(2, count) : Math.min(metrics.abreast, Math.max(1, count));
   const lateral = tilePx * (nearGate ? 0.4 : MOB_LATERAL_TILES);
-  const spanPx = Math.max(tilePx * 0.6, leadDist - rearDist);
+  // A long path is in metres. The iso short axis can squash that 45 m file so only
+  // part of the herd is placed, and the rest are drawn back at the camp. Stretch
+  // the file in spacing steps so every animal stays on the road.
+  const projected = Math.max(tilePx * 0.6, leadDist - rearDist);
+  const ranksNeeded = Math.max(1, Math.ceil(count / Math.max(1, lanes)));
+  const spanPx =
+    metrics.total > 80 ? Math.max(projected, (ranksNeeded - 1) * tilePx * 0.92) : projected;
   const ranks = Math.max(1, Math.round(spanPx / (tilePx * 0.92)));
   const movingCount = Math.min(count, Math.max(lanes, ranks * lanes));
   const spacing = ranks <= 1 ? 0 : spanPx / (ranks - 1);
@@ -490,7 +540,7 @@ export function fileAlongPath(
     const tx = Math.round(tile.x);
     const ty = Math.round(tile.y);
     if (tx < 0 || ty < 0 || tx >= state.width || ty >= state.height) return false;
-    const id = state.campIds[ty * state.width + tx];
+    const id = usesMetreCoords(state) ? pointCampId(state, tx, ty) : state.campIds[ty * state.width + tx];
     if (id === TILE_HOMESTEAD) return false;
     if (id === fromId || id === destId || track.has(`${tx},${ty}`)) return true;
     return onCorridor(tx, ty);
@@ -521,7 +571,9 @@ export function fileAlongPath(
     const sy = Math.round(stood.y);
     const stoodId =
       sx >= 0 && sy >= 0 && sx < state.width && sy < state.height
-        ? state.campIds[sy * state.width + sx]
+        ? usesMetreCoords(state)
+          ? pointCampId(state, sx, sy)
+          : state.campIds[sy * state.width + sx]
         : TILE_OUTSIDE;
     if (stoodId === fromId || stoodId === destId) {
       const nudged = nudgeInsideCamp(state, foot.x, foot.y, layout, tileW, tileH);
@@ -563,6 +615,12 @@ function tileNearHomestead(state: GameState, x: number, y: number, clearance: nu
 
 /** Camp number sits on grass. If the centroid falls on the yard, move it off the buildings. */
 export function campLabelTile(state: GameState, camp: CampState): TilePoint {
+  if (camp.rect) {
+    const cx = camp.rect.x + camp.rect.w / 2;
+    const cy = camp.rect.y + camp.rect.h / 2;
+    if (Math.hypot(cx - camp.anchor.x, cy - camp.anchor.y) > 40) return { x: Math.round(cx), y: Math.round(cy) };
+    return { x: Math.round(cx), y: Math.round(camp.rect.y + Math.min(camp.rect.h * 0.2, 400)) };
+  }
   if (camp.tiles.length === 0) return camp.anchor;
   let sx = 0;
   let sy = 0;
