@@ -16,7 +16,7 @@ import { defaultWorkGrid, setWorkPriority, tickFarmhandWorld, WORK_JOB_LABELS } 
 import { hireFarmhand } from "../sim/workers";
 import type { DayLengthSeconds } from "../sim/clock";
 import { driveSlowsClock, herdInTransit, herdMoveActive, herdWorldTile, pathTangent } from "../sim/transit";
-import { beginHerdMove, syncHerderOnDrive, tickHerdingRealtime } from "../sim/herding";
+import { beginHerdMove, snapHerderToDrive, syncHerderOnDrive, tickHerdingRealtime } from "../sim/herding";
 import { freeWorkerHouseSlots } from "../sim/housing";
 import { ensurePeopleState, tickPeopleSchedule, workerAtHomeAtNight } from "../sim/people";
 import { farmerDisplayName, DEFAULT_PLAYER_DISPLAY_NAME } from "../sim/playerName";
@@ -91,7 +91,7 @@ import { mountOpsSheet, type OpsSheet } from "./opsSheet";
 import { doubleTapGoesHome } from "./tap";
 import { resolveGroundTap, resolveHerdTap } from "./selection";
 import { isoLayout, tileCenter, tileTop, worldToTile, type IsoLayout } from "./iso";
-import { paintCampShapes, paintTwoTrack, syncMetreChunks } from "./metreView";
+import { farmMapView, liveCameraView, paintCampShapes, paintTwoTrack, syncMetreChunks } from "./metreView";
 import { palette } from "./palette";
 import { campLabelTile, offsetsForHerd } from "./herdLayout";
 import { layoutAnimals } from "./animalLayout";
@@ -140,7 +140,7 @@ import {
   KRAAL_WIDTH_METRES,
   personDisplayPx,
   PIXELS_PER_METRE,
-  scaleBarMetres,
+  chooseScaleBar,
   RESERVOIR_DIAMETER_METRES,
   ROCK_CLUSTER_METRES,
   SHED_WIDTH_METRES,
@@ -233,7 +233,6 @@ export class FarmScene extends Phaser.Scene {
   private roadGraphics?: Phaser.GameObjects.Graphics;
   private herdMarker?: Phaser.GameObjects.Text;
   private metreChunks = new Map<string, Phaser.GameObjects.Graphics>();
-  private metreZoomBucket = -1;
   private vegSprites: Phaser.GameObjects.Image[] = [];
   private vegDots: Phaser.GameObjects.Graphics | null = null;
   private vegKey = "";
@@ -662,9 +661,12 @@ export class FarmScene extends Phaser.Scene {
     this.setSpeed("pause");
     if (typeof progress === "number" && this.state.herd.transit) {
       this.state.herd.transit.progress = Math.max(0.05, Math.min(0.95, progress));
+      snapHerderToDrive(this.state);
     }
     this.syncHerdFromSim();
     this.placeHerd(performance.now());
+    this.placeFarmer();
+    this.placeFarmhand();
     return true;
   }
 
@@ -691,10 +693,15 @@ export class FarmScene extends Phaser.Scene {
     this.jumpCameraTo(center.x, center.y, false);
     this.placeHerd(performance.now());
     this.placeHerd(performance.now());
+    this.placeFarmer();
+    this.placeFarmhand();
     const refined = this.movingMobCenter();
+    const herder = this.herderSpriteForTransit();
     const heldZoom = clampZoom(zoom, this.minZoom, this.maxZoom);
     camera.setZoom(heldZoom);
-    camera.centerOn(refined.x, refined.y);
+    const hx = herder?.visible ? herder.x : refined.x;
+    const hy = herder?.visible ? herder.y : refined.y;
+    camera.centerOn(refined.x * 0.72 + hx * 0.28, refined.y * 0.72 + hy * 0.28);
     this.clampScroll();
     this.captureFollow = { x: refined.x, y: refined.y, zoom: camera.zoom };
     this.panVel = null;
@@ -919,6 +926,45 @@ export class FarmScene extends Phaser.Scene {
     return camera.zoom <= 0.08;
   }
 
+  /** Handling yard beside the two-track, out from the homestead. */
+  private prepareHandlingYardCapture(): boolean {
+    this.capturePin = null;
+    const ramp = this.state.features.find((feature) => feature.kind === "loading_ramp");
+    const house = this.state.features.find((feature) => feature.kind === "house");
+    if (!ramp) return false;
+    const at = tileCenter(ramp.x, ramp.y, this.layout, this.groundTileW, this.groundTileH);
+    const span = 42 * PIXELS_PER_METRE;
+    const points = [
+      { x: at.x - span, y: at.y - span * 0.55 },
+      { x: at.x + span, y: at.y + span * 0.55 },
+    ];
+    if (house) {
+      const home = tileCenter(house.x, house.y, this.layout, this.groundTileW, this.groundTileH);
+      const far = Math.hypot(home.x - at.x, home.y - at.y);
+      if (far < span * 3) points.push(home);
+    }
+    const bounds = boundsFromPoints(points, 24);
+    if (!bounds) return false;
+    const camera = this.cameras.main;
+    this.refreshZoomLimits();
+    const framed = frameWorldRectInClearBand(
+      bounds,
+      camera.width,
+      camera.height,
+      viewportCameraInsets(),
+      this.minZoom,
+      Math.min(this.maxZoom, 0.85),
+      20,
+    );
+    camera.setZoom(framed.zoom);
+    camera.scrollX = framed.scrollX;
+    camera.scrollY = framed.scrollY;
+    this.clampScroll();
+    this.syncMetreFrame();
+    this.redrawFences();
+    return true;
+  }
+
   /** One camp, edge to edge, with its water point. */
   private prepareOneCampCapture(): boolean {
     this.capturePin = null;
@@ -1071,8 +1117,11 @@ export class FarmScene extends Phaser.Scene {
           transit.approachProgress = 1;
         }
         transit.progress = Math.max(0, Math.min(0.99, progress));
+        snapHerderToDrive(this.state);
         this.syncHerdFromSim();
         this.placeHerd(performance.now());
+        this.placeFarmer();
+        this.placeFarmhand();
         this.redrawFences();
         if (transit.phase === "drive") this.hud.setHint(COPY.hintMoving);
         return true;
@@ -1547,6 +1596,7 @@ export class FarmScene extends Phaser.Scene {
       prepareFenceLineCapture: () => this.prepareFenceLineCapture(),
       prepareFarmMapCapture: () => this.prepareFarmMapCapture(),
       prepareOneCampCapture: () => this.prepareOneCampCapture(),
+      prepareHandlingYardCapture: () => this.prepareHandlingYardCapture(),
       prepareHomesteadCloseCapture: () => this.prepareHomesteadCloseCapture(),
       prepareScaleReferenceCapture: () => this.prepareScaleReferenceCapture(),
       v2ArtAudit: () => this.v2ArtAudit(),
@@ -1675,10 +1725,10 @@ export class FarmScene extends Phaser.Scene {
     this.placeFarmer();
     this.refreshCampLabelScale();
     this.cullProps();
-    this.fadeCoveringTrees();
     this.syncGroundFill();
     this.cullChunks();
     if (this.metre) this.syncMetreFrame();
+    this.fadeCoveringTrees();
     if (this.blades && !this.reduceMotion && !this.paintedSprites) {
       this.blades.rotation += (delta / 1000) * CONFIG.view.windmillRadiansPerSecond;
     }
@@ -1766,16 +1816,21 @@ export class FarmScene extends Phaser.Scene {
     const tileW = CONFIG.view.tileWidth * zoom;
     const metresPerTile = CONFIG.transit.kmPerTile * 1000;
     const barPx = 120;
-    const metres = this.metre ? scaleBarMetres(barPx, zoom) : (barPx / tileW) * metresPerTile;
-    const label =
-      metres >= 1000
-        ? `${(metres / 1000).toFixed(1)} km`
-        : metres >= 100
-          ? `${Math.round(metres / 50) * 50} m`
-          : metres >= 20
-            ? `${Math.round(metres / 10) * 10} m`
-            : `${Math.max(1, Math.round(metres))} m`;
-    this.hud.setScaleBar(label);
+    if (this.metre) {
+      const bar = chooseScaleBar(zoom);
+      this.hud.setScaleBar(bar.label, bar.px);
+    } else {
+      const metres = (barPx / tileW) * metresPerTile;
+      const label =
+        metres >= 1000
+          ? `${(metres / 1000).toFixed(1)} km`
+          : metres >= 100
+            ? `${Math.round(metres / 50) * 50} m`
+            : metres >= 20
+              ? `${Math.round(metres / 10) * 10} m`
+              : `${Math.max(1, Math.round(metres))} m`;
+      this.hud.setScaleBar(label, 120);
+    }
     if (!this.metre && v2GroundReady(this.textures)) {
       this.roadDecal = syncFarmRoadLod(this, this.roadDecal, this.state, this.layout, zoom);
     }
@@ -1970,12 +2025,8 @@ export class FarmScene extends Phaser.Scene {
   private syncMetreFrame(): void {
     const camera = this.cameras.main;
     const zoom = camera.zoom;
-    const bucket = zoom < 0.08 ? 0 : zoom < 0.22 ? 1 : 2;
-    if (this.campMap && bucket !== this.metreZoomBucket) {
-      paintCampShapes(this.campMap, this.state, this.layout, this.groundTileW, this.groundTileH, zoom);
-      this.metreZoomBucket = bucket;
-    } else if (this.campMap && bucket === 0) {
-      paintCampShapes(this.campMap, this.state, this.layout, this.groundTileW, this.groundTileH, zoom);
+    if (this.campMap) {
+      paintCampShapes(this.campMap, this.state, this.layout, this.groundTileW, this.groundTileH, zoom, farmMapView(this));
     }
     if (this.roadGraphics) {
       if (zoom >= 0.18) paintTwoTrack(this.roadGraphics, this.state, this.layout, this.groundTileW, this.groundTileH);
@@ -2427,7 +2478,9 @@ export class FarmScene extends Phaser.Scene {
     const herdCamp = this.state.herd.campId;
     const zoom = this.cameras.main.zoom;
     const paintedFence = v2Ready(this.textures);
-    const sig = `${herdCamp}:${this.selected ? 1 : 0}:${paintedFence ? 1 : 0}:${Math.round(zoom * 50)}`;
+    const live = this.metre ? liveCameraView(this) : null;
+    const viewKey = live ? `${Math.round(live.x / 240)}:${Math.round(live.y / 240)}` : "0";
+    const sig = `${herdCamp}:${this.selected ? 1 : 0}:${paintedFence ? 1 : 0}:${Math.round(zoom * 50)}:${viewKey}`;
     if (sig === this.fenceSig) return;
     this.fenceSig = sig;
     this.fenceGates.forEach((gate) => gate.destroy());
@@ -2435,12 +2488,13 @@ export class FarmScene extends Phaser.Scene {
     this.fenceArt.forEach((sprite) => sprite.destroy());
     this.fenceArt = [];
     const segments = collectFenceSegments(this.state, this.layout, herdCamp, this.selected);
-    drawFences(this.fences, segments, zoom, { posts: !paintedFence && !this.metre });
-    const view = this.cameras.main.worldView;
+    const closeFence = Boolean(live && live.width < 5000);
+    if (closeFence) this.fences.clear();
+    else drawFences(this.fences, segments, zoom, { posts: !paintedFence && !this.metre });
     if (paintedFence) {
       this.fenceArt = placeV2Fences(this, segments, {
-        maxPosts: this.metre && zoom < 0.28 ? 0 : 60,
-        view: this.metre ? { x: view.x, y: view.y, right: view.right, bottom: view.bottom } : undefined,
+        maxPosts: this.metre && zoom < 0.08 ? 0 : 240,
+        view: live ? { x: live.x, y: live.y, right: live.right, bottom: live.bottom } : undefined,
       });
     } else this.fenceGates = placeGateSprites(this, segments, this.paintedSprites);
   }
@@ -2593,6 +2647,7 @@ export class FarmScene extends Phaser.Scene {
       return;
     }
     const placed = this.placePersonSprite(this.farmerSprite, presence, "farmer", this.farmerLastPos);
+    this.standHerderBehindTail(this.farmerSprite, placed);
     this.farmerSprite.setVisible(true);
     if (this.farmerNameTag) {
       this.farmerNameTag.setText(farmerDisplayName(this.state));
@@ -2603,6 +2658,53 @@ export class FarmScene extends Phaser.Scene {
       this.farmerNameTag.setDepth(this.farmerSprite.depth + 2);
       this.farmerNameTag.setVisible(true);
     }
+  }
+
+  /** Draw the herder 3.6 m behind the rearmost animal, clear of the loose mob. */
+  private standHerderBehindTail(
+    sprite: Phaser.GameObjects.Image,
+    placed: { x: number; y: number },
+  ): void {
+    const transit = this.state.herd.transit;
+    if (!transit || transit.phase !== "drive" || transit.path.length < 2) return;
+    const herderSprite = transit.herder === "piet" ? this.farmhandSprite : this.farmerSprite;
+    if (herderSprite !== sprite) return;
+    const metrics = columnMetrics(transit.path, transit.progress, this.state.herd.headCount);
+    const rearM = pointOnPath(transit.path, metrics.rearProgress);
+    const aheadM = pointOnPath(
+      transit.path,
+      Math.min(1, metrics.rearProgress + 10 / Math.max(metrics.total, 1)),
+    );
+    const rearS = tileCenter(rearM.x, rearM.y, this.layout, this.groundTileW, this.groundTileH);
+    const aheadS = tileCenter(aheadM.x, aheadM.y, this.layout, this.groundTileW, this.groundTileH);
+    let dx = aheadS.x - rearS.x;
+    let dy = aheadS.y - rearS.y;
+    const pix = Math.hypot(dx, dy);
+    const metres = Math.hypot(aheadM.x - rearM.x, aheadM.y - rearM.y);
+    if (pix < 1 || metres < 0.2) return;
+    dx /= pix;
+    dy /= pix;
+    let tailX = rearS.x;
+    let tailY = rearS.y;
+    let minAlong = 0;
+    for (const offset of this.herdOffsets) {
+      const x = this.herdVisual.x + offset.x;
+      const y = this.herdVisual.y + offset.y;
+      const along = (x - rearS.x) * dx + (y - rearS.y) * dy;
+      if (along < minAlong) {
+        minAlong = along;
+        tailX = x;
+        tailY = y;
+      }
+    }
+    // The cow sprite reaches back from its feet, so the open sand behind the rump is 3.6 m.
+    const gap = (3.6 + 2.2) * (pix / metres);
+    const hx = tailX - dx * gap;
+    const hy = tailY - dy * gap;
+    sprite.setPosition(hx, hy);
+    sprite.setDepth(8 + hy * 0.04 + 0.5);
+    placed.x = hx;
+    placed.y = hy;
   }
 
   private herderSpriteForTransit(): Phaser.GameObjects.Image | undefined {
@@ -3905,6 +4007,7 @@ export class FarmScene extends Phaser.Scene {
       "farmhand",
       this.farmhandLastPos,
     );
+    this.standHerderBehindTail(this.farmhandSprite, placed);
     this.farmhandSprite.setVisible(true);
     const jobShort =
       presence.activeJob && WORK_JOB_LABELS[presence.activeJob]
@@ -4430,6 +4533,7 @@ export class FarmScene extends Phaser.Scene {
       if (typeof kind !== "string" || kind === "tree" || kind === "bush") continue;
       add(prop, 0.46);
     }
+    for (const fence of this.fenceArt) add(fence, 0.85);
     const treeSprites = this.propSprites.concat(this.vegSprites);
     for (const prop of treeSprites) {
       if (prop.getData("featureKind") !== "tree" || !prop.visible) continue;

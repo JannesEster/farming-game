@@ -574,6 +574,57 @@ export function placeV2Fences(
   const maxPosts = limit?.maxPosts ?? 80;
   const view = limit?.view;
   const viewWide = view ? view.right - view.x > 8000 : false;
+  const closeEnough = !view || view.right - view.x < 5000;
+  const stale: Phaser.GameObjects.GameObject[] = [];
+  scene.children.each((child) => {
+    if (child.name === "metre-fence-wire") stale.push(child);
+  });
+  stale.forEach((child) => child.destroy());
+  if (closeEnough) {
+    for (const segment of segments) {
+      if (segment.gate) continue;
+      const minX = Math.min(segment.x1, segment.x2);
+      const maxX = Math.max(segment.x1, segment.x2);
+      const minY = Math.min(segment.y1, segment.y2);
+      const maxY = Math.max(segment.y1, segment.y2);
+      if (view && (maxX < view.x - 80 || minX > view.right + 80 || maxY < view.y - 80 || minY > view.bottom + 80)) {
+        continue;
+      }
+      const dx = segment.x2 - segment.x1;
+      const dy = segment.y2 - segment.y1;
+      const len = Math.hypot(dx, dy) || 1;
+      const ox = (-dy / len) * 5;
+      const oy = (dx / len) * 5;
+      const piece = 24 * PIXELS_PER_METRE;
+      const steps = Math.max(1, Math.ceil(len / piece));
+      for (let step = 0; step < steps; step += 1) {
+        const t0 = step / steps;
+        const t1 = (step + 1) / steps;
+        const x1 = segment.x1 + dx * t0;
+        const y1 = segment.y1 + dy * t0;
+        const x2 = segment.x1 + dx * t1;
+        const y2 = segment.y1 + dy * t1;
+        if (
+          view &&
+          (Math.max(x1, x2) < view.x - 40 ||
+            Math.min(x1, x2) > view.right + 40 ||
+            Math.max(y1, y2) < view.y - 40 ||
+            Math.min(y1, y2) > view.bottom + 40)
+        ) {
+          continue;
+        }
+        const wire = scene.add.graphics().setName("metre-fence-wire");
+        wire.setDepth(8 + ((y1 + y2) / 2) * 0.04 + 0.15);
+        wire.lineStyle(2.8, 0x2a241c, 1);
+        for (const sign of [-1, 1]) {
+          wire.beginPath();
+          wire.moveTo(x1 + ox * sign, y1 + oy * sign);
+          wire.lineTo(x2 + ox * sign, y2 + oy * sign);
+          wire.strokePath();
+        }
+      }
+    }
+  }
   for (const segment of segments) {
     if (segment.gate || viewWide || maxPosts <= 0) continue;
     const dx = segment.x2 - segment.x1;
@@ -592,7 +643,7 @@ export function placeV2Fences(
       const key = `${Math.round(x)}:${Math.round(y)}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const image = addSprite(scene, file, x, y, 5 + y * 0.01);
+      const image = addSprite(scene, file, x, y, 8 + y * 0.04 + 0.45);
       if (image) images.push(image);
     }
   }
@@ -607,7 +658,7 @@ export function placeV2Fences(
     const scale = length / sprite.width;
     const midX = (segment.x1 + segment.x2) / 2;
     const midY = (segment.y1 + segment.y2) / 2;
-    const depth = 5.4 + midY * 0.01;
+    const depth = 8 + midY * 0.04 + 0.55;
     const image = scene.add
       .image(midX + (sprite.anchorX - 0.5) * sprite.width * scale, midY, sprite.key)
       .setOrigin(sprite.anchorX, sprite.anchorY)

@@ -52,7 +52,7 @@ export type Hud = {
   pushLetter(item: NotificationItem): void;
   syncAlerts(labels: string[]): void;
   pushNewsLog(lines: string[]): void;
-  setScaleBar(label: string): void;
+  setScaleBar(label: string, widthPx?: number): void;
   setDaylight(blend: number): void;
   setNightChrome(active: boolean): void;
   destroy(): void;
@@ -266,6 +266,7 @@ export function mountHud(options: {
     newsLog.hidden = true;
   });
   const scaleLabel = required(root, "scale-label");
+  const scaleTick = required(root, "scale-tick");
   const buttons: Record<SpeedMode, HTMLButtonElement> = {
     pause: requiredButton(root, "speed-pause"),
     x1: requiredButton(root, "speed-x1"),
@@ -684,8 +685,9 @@ export function mountHud(options: {
       }
       while (newsLogList.childElementCount > 200) newsLogList.lastElementChild?.remove();
     },
-    setScaleBar(label) {
+    setScaleBar(label, widthPx = 120) {
       scaleLabel.textContent = label;
+      scaleTick.style.width = `${Math.max(36, Math.round(widthPx))}px`;
     },
     setDaylight(blend) {
       root.style.setProperty("--daylight-blend", String(Math.max(0, Math.min(1, blend))));

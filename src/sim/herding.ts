@@ -340,6 +340,23 @@ function standOnRoute(state: GameState, transit: HerdTransit, tile: TilePoint): 
   return transit.path.some((step) => Math.max(Math.abs(step.x - x), Math.abs(step.y - y)) <= 1);
 }
 
+/** Put the herder on the stand 3 to 4 m behind the tail. Used when a drive jumps ahead. */
+export function snapHerderToDrive(state: GameState): void {
+  const transit = state.herd.transit;
+  if (!transit || (transit.phase !== "drive" && transit.phase !== "approach")) return;
+  const presence = presenceForHerder(state, transit.herder);
+  if (!presence || transit.path.length < 2) return;
+  const tile = herderStandTile(transit.path, transit.progress, state.herd.headCount);
+  presence.tileX = tile.x;
+  presence.tileY = tile.y;
+  presence.targetTileX = tile.x;
+  presence.targetTileY = tile.y;
+  presence.walkProgress = 0.35;
+  presence.onHerdingDuty = true;
+  presence.atHome = false;
+  presence.activityLabel = `Driving herd (${Math.round(transit.progress * 100)}%)`;
+}
+
 export function syncHerderOnDrive(state: GameState, _config: GameConfig = CONFIG): void {
   const transit = state.herd.transit;
   if (!transit || transit.phase !== "drive") return;

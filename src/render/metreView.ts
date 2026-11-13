@@ -1,11 +1,13 @@
 import Phaser from "phaser";
 import type { GameState } from "../sim/types";
-import { tileCenter, worldToTile, type IsoLayout } from "./iso";
+import { tileCenter, type IsoLayout } from "./iso";
 import { palette } from "./palette";
+import { ensureMetreSandTexture } from "./v2Ground";
 import { PIXELS_PER_METRE } from "./worldScale";
 
-const CHUNK_M = 48;
-const CAMP_FILLS = [palette.grassBrown, palette.grassGold, 0x9a6238, 0x7a542c, 0xa56a32, 0x8a5830];
+/** Muted Kalahari earth. Only the far farm map uses flat camp fills. */
+const CAMP_FILLS = [0x8d4e2a, 0x7a4524, 0x9a5a32, 0x6e3e22, 0xa06838, 0x84502c];
+const SAND_NAME = "metre-sand";
 
 function corners(
   x: number,
@@ -24,7 +26,30 @@ function corners(
   ].map((point) => new Phaser.Math.Vector2(point.x, point.y));
 }
 
-/** Flat camp shapes. Used when the camera is too far for grass chunks. */
+/**
+ * World rectangle the camera is showing right now.
+ * `worldView` lags a frame behind `scroll` and `zoom`, so a capture that
+ * moves the camera and then draws fences would otherwise use the previous shot.
+ */
+export function liveCameraView(scene: Phaser.Scene): { x: number; y: number; right: number; bottom: number; width: number; height: number } {
+  const camera = scene.cameras.main;
+  const zoom = Math.max(camera.zoom, 0.000001);
+  const width = camera.width / zoom;
+  const height = camera.height / zoom;
+  // Phaser 4: the world point at the screen centre is scroll + screenSize / 2.
+  const x = camera.scrollX + camera.width / 2 - width / 2;
+  const y = camera.scrollY + camera.height / 2 - height / 2;
+  return { x, y, right: x + width, bottom: y + height, width, height };
+}
+
+/** True only for the whole-farm map. A single camp still gets the sand texture. */
+export function farmMapView(scene: Phaser.Scene): boolean {
+  const camera = scene.cameras.main;
+  const widthM = camera.width / (Math.max(camera.zoom, 0.000001) * PIXELS_PER_METRE);
+  return widthM > 4500;
+}
+
+/** Flat camp shapes. Only the far farm map. Close and mid views use the sand texture. */
 export function paintCampShapes(
   graphics: Phaser.GameObjects.Graphics,
   state: GameState,
@@ -32,15 +57,17 @@ export function paintCampShapes(
   tileW: number,
   tileH: number,
   zoom: number,
+  far = zoom < 0.05,
 ): void {
   graphics.clear();
+  if (!far) return;
   const line = Math.max(1.2, Math.min(48, 1.6 / Math.max(zoom, 0.002)));
   state.camps.forEach((camp, index) => {
     if (!camp.rect) return;
     const poly = corners(camp.rect.x, camp.rect.y, camp.rect.w, camp.rect.h, layout, tileW, tileH);
-    graphics.fillStyle(CAMP_FILLS[index % CAMP_FILLS.length], zoom < 0.2 ? 1 : 0.35);
+    graphics.fillStyle(CAMP_FILLS[index % CAMP_FILLS.length], 1);
     graphics.fillPoints(poly, true);
-    graphics.lineStyle(line, palette.fenceStrong, 0.9);
+    graphics.lineStyle(line, 0x5c4030, 0.85);
     graphics.strokePoints(poly, true);
   });
   if (state.road && state.road.length > 1 && zoom < 0.2) {
@@ -95,65 +122,36 @@ export function paintTwoTrack(
   stroke(1);
 }
 
-/** Grass diamonds only for the chunks the camera can see. */
+/** Kalahari sand under the close and mid camera. Hidden on the farm map. */
 export function syncMetreChunks(
   scene: Phaser.Scene,
   layout: IsoLayout,
-  tileW: number,
-  tileH: number,
+  _tileW: number,
+  _tileH: number,
   chunks: Map<string, Phaser.GameObjects.Graphics>,
   zoom: number,
 ): void {
-  if (zoom < 0.22) {
-    chunks.forEach((chunk) => chunk.destroy());
-    chunks.clear();
+  chunks.forEach((chunk) => chunk.destroy());
+  chunks.clear();
+  const existing = scene.children.getByName(SAND_NAME);
+  const sand = existing instanceof Phaser.GameObjects.TileSprite ? existing : null;
+  if (farmMapView(scene) || zoom < 0.02) {
+    sand?.setVisible(false);
     return;
   }
-  const view = scene.cameras.main.worldView;
-  const samples = [
-    worldToTile(view.x, view.y, layout, tileW, tileH),
-    worldToTile(view.right, view.y, layout, tileW, tileH),
-    worldToTile(view.x, view.bottom, layout, tileW, tileH),
-    worldToTile(view.right, view.bottom, layout, tileW, tileH),
-    worldToTile((view.x + view.right) / 2, (view.y + view.bottom) / 2, layout, tileW, tileH),
-  ];
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const sample of samples) {
-    minX = Math.min(minX, sample.x);
-    minY = Math.min(minY, sample.y);
-    maxX = Math.max(maxX, sample.x);
-    maxY = Math.max(maxY, sample.y);
-  }
-  const keep = new Set<string>();
-  const x0 = Math.floor(minX / CHUNK_M) - 1;
-  const x1 = Math.floor(maxX / CHUNK_M) + 1;
-  const y0 = Math.floor(minY / CHUNK_M) - 1;
-  const y1 = Math.floor(maxY / CHUNK_M) + 1;
-  for (let cy = y0; cy <= y1; cy += 1) {
-    for (let cx = x0; cx <= x1; cx += 1) {
-      if (keep.size >= 16) break;
-      const key = `${cx},${cy}`;
-      keep.add(key);
-      let chunk = chunks.get(key);
-      if (!chunk) {
-        chunk = scene.add.graphics().setDepth(0.35);
-        const x = cx * CHUNK_M;
-        const y = cy * CHUNK_M;
-        const poly = corners(x, y, CHUNK_M, CHUNK_M, layout, tileW, tileH);
-        const shade = ((cx * 3 + cy * 5) & 1) === 0 ? 0x6d7a34 : 0x627030;
-        chunk.fillStyle(shade, 0.96);
-        chunk.fillPoints(poly, true);
-        chunks.set(key, chunk);
-      }
-      chunk.setVisible(true);
-    }
-  }
-  for (const [key, chunk] of chunks) {
-    if (keep.has(key)) continue;
-    chunk.destroy();
-    chunks.delete(key);
-  }
+  const key = ensureMetreSandTexture(scene, layout);
+  if (!key) return;
+  const view = liveCameraView(scene);
+  const pad = 8;
+  const width = Math.max(8, view.width + pad * 2);
+  const height = Math.max(8, view.height + pad * 2);
+  const sprite =
+    sand ??
+    scene.add.tileSprite(0, 0, 64, 64, key).setOrigin(0, 0).setDepth(0.15).setName(SAND_NAME);
+  sprite.setTexture(key);
+  sprite.setPosition(view.x - pad, view.y - pad);
+  sprite.setSize(width, height);
+  sprite.tilePositionX = view.x - pad;
+  sprite.tilePositionY = view.y - pad;
+  sprite.setVisible(true);
 }

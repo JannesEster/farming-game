@@ -129,11 +129,30 @@ describe("three times the farm area", () => {
         ];
         let total = 0;
         let windows = 0;
+        const crossesFence = (x: number, y: number) =>
+          offer.previewState.camps.some((camp) => {
+            const rect = camp.rect;
+            if (!rect) return false;
+            const pad = 18;
+            const vertical =
+              rect.x > x - pad &&
+              rect.x < x + side + pad &&
+              rect.y < y + side &&
+              rect.y + rect.h > y;
+            const horizontal =
+              rect.y > y - pad &&
+              rect.y < y + side + pad &&
+              rect.x < x + side &&
+              rect.x + rect.w > x;
+            return vertical || horizontal;
+          });
         for (const [x, y] of spots) {
           if (x + side >= offer.previewState.width || y + side >= offer.previewState.height) continue;
+          if (crossesFence(x, y)) continue;
           total += treesInRect(offer.previewState, x, y, x + side, y + side).length;
           windows += 1;
         }
+        expect(windows, `${base} ${offer.id}`).toBeGreaterThan(0);
         const expected = TREES_PER_M2 * side * side;
         const perWindow = total / windows;
         expect(

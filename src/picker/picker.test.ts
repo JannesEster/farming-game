@@ -90,8 +90,8 @@ describe("farm picker offers", () => {
     };
     expect(inside(house!.x, house!.y)).toBe(true);
     expect(inside(ramp!.x, ramp!.y)).toBe(true);
-    expect(Math.hypot(herdCamp.anchor.x - house!.x, herdCamp.anchor.y - house!.y)).toBeLessThan(40);
-    expect(Math.hypot(ramp!.x - house!.x, ramp!.y - house!.y)).toBeGreaterThan(8);
-    expect(Math.hypot(ramp!.x - house!.x, ramp!.y - house!.y)).toBeLessThan(40);
+    expect(Math.hypot(herdCamp.anchor.x - house!.x, herdCamp.anchor.y - house!.y)).toBeGreaterThan(40);
+    expect(Math.hypot(ramp!.x - house!.x, ramp!.y - house!.y)).toBeGreaterThan(200);
+    expect(Math.hypot(ramp!.x - house!.x, ramp!.y - house!.y)).toBeLessThan(800);
   });
 });

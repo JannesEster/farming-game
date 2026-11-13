@@ -33,11 +33,15 @@ function assertGeneratedInfrastructure(state: GameState): void {
   if (usesMetreCoords(state)) {
     expect(idAt(cottage!.x, cottage!.y)).toBe(idAt(house!.x, house!.y));
     expect(Math.hypot(cottage!.x - house!.x, cottage!.y - house!.y)).toBeLessThan(20);
+    expect(Math.hypot(ramp!.x - house!.x, ramp!.y - house!.y)).toBeGreaterThan(200);
+    expect(Math.hypot(ramp!.x - house!.x, ramp!.y - house!.y)).toBeLessThan(800);
+    const herd = state.camps.find((camp) => camp.id === state.herd.campId);
+    expect(Math.hypot(herd!.anchor.x - house!.x, herd!.anchor.y - house!.y)).toBeGreaterThan(40);
   } else {
     expect(idAt(cottage!.x, cottage!.y)).toBe(-1);
+    expect(Math.hypot(ramp!.x - house!.x, ramp!.y - house!.y)).toBeGreaterThan(8);
   }
   expect(house).toBeTruthy();
-  expect(Math.hypot(ramp!.x - house!.x, ramp!.y - house!.y)).toBeGreaterThan(8);
   const farPen = Math.max(...pens.map((pen) => Math.hypot(pen.x - ramp!.x, pen.y - ramp!.y)));
   expect(farPen).toBeGreaterThanOrEqual(5);
   expect(state.camps.every((camp) => campHasWaterAccess(state, camp))).toBe(true);

@@ -86,6 +86,11 @@ async function main() {
     await desk.waitForTimeout(500);
     report.shots.push(await shot(desk, "fence-gate.png"));
     report.fence = fence;
+
+    const yard = await desk.evaluate(() => window.__farmCapture.prepareHandlingYardCapture());
+    await desk.waitForTimeout(400);
+    report.shots.push(await shot(desk, "handling-yard-road.png"));
+    report.yard = yard;
     await desk.close();
 
     const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });

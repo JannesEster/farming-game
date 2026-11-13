@@ -450,6 +450,61 @@ function shiftOffWater(
   return best;
 }
 
+/**
+ * Loose mob on a metre road. Uneven edges, a few animals straggling wide,
+ * and a narrow file for the last 36 m up to a gate. Offsets are in screen pixels.
+ */
+function looseMetreFile(
+  count: number,
+  seed: number,
+  timeMs: number,
+  leadDist: number,
+  total: number,
+  pointAt: (distance: number) => { x: number; y: number; ux: number; uy: number },
+  path: TilePoint[],
+  state: GameState,
+  herdX: number,
+  herdY: number,
+  tileW: number,
+  tileH: number,
+): HerdOffset[] {
+  const pxPerM = Math.hypot(tileW / 2, tileH / 2);
+  const spanPx = Math.min(42 * pxPerM, Math.max(16 * pxPerM, leadDist * 0.45));
+  const rearPx = Math.max(0, leadDist - spanPx);
+  const offsets: HerdOffset[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const phase = cowPhase(seed, i);
+    const alongRoll = unitHash(seed, i, 1);
+    const bunch = unitHash(seed, i, 2);
+    const along = rearPx + Math.max(0.08, alongRoll) * spanPx * (0.55 + bunch * 0.45);
+    const wobble = Math.sin(timeMs / 700 + phase * 9) * pxPerM * 0.35;
+    const dist = Math.max(rearPx, Math.min(leadDist, along + wobble));
+    const at = pointAt(dist);
+    const metre = pointOnPath(path, total > 0 ? dist / total : 0);
+    const nearGate = openingNear(state, path, metre.x, metre.y, 36);
+    const roll = unitHash(seed, i, 3);
+    const fromRearM = (dist - rearPx) / Math.max(pxPerM, 0.001);
+    const tail = fromRearM < 12;
+    const wide = (roll - 0.5) * (roll < 0.18 || roll > 0.82 ? 18 : 12);
+    const acrossM = nearGate || tail ? (roll - 0.5) * (nearGate ? 4.4 : 5) : wide;
+    const footX = at.x + -at.uy * acrossM * pxPerM;
+    const footY = at.y + at.ux * acrossM * pxPerM;
+    const heading = Math.atan2(at.uy, at.ux) + (unitHash(seed, i, 9) - 0.5) * 0.7;
+    const octant = cowOctantFromScreen(Math.cos(heading), Math.sin(heading));
+    offsets.push({
+      x: footX - herdX,
+      y: footY - herdY,
+      flip: false,
+      coat: Math.floor(phase * 6) % 6,
+      scale: 0.58 + (phase % 0.1),
+      view: cowViewFromOctant(octant),
+      octant,
+      moving: true,
+    });
+  }
+  return offsets;
+}
+
 /** Queue the herd along the walked path so they file through the gate on camp or track tiles. */
 export function fileAlongPath(
   state: GameState,
@@ -524,6 +579,10 @@ export function fileAlongPath(
     const len = Math.hypot(dx, dy) || 1;
     return { x: a.x + dx * t, y: a.y + dy * t, ux: dx / len, uy: dy / len };
   };
+
+  if (metrics.total > 80) {
+    return looseMetreFile(count, seed, timeMs, leadDist, total, pointAt, path, state, herdX, herdY, tileW, tileH);
+  }
 
   const offsets: HerdOffset[] = [];
   const track = trackKeys(state);

@@ -24,6 +24,7 @@ import {
   displayScaleForSprite,
   keyRatios,
   largestPenM2PerHead,
+  chooseScaleBar,
   metresPerTile,
   truckBayTiles,
   truckToYardRatio,
@@ -112,6 +113,17 @@ describe("world scale", () => {
     expect(truckToYardRatio()).toBeGreaterThan(0.55);
     expect(truckToYardRatio()).toBeLessThan(0.85);
     expect(truckBayTiles()).toBeGreaterThanOrEqual(5);
+  });
+
+  it("rounds the scale bar to a nice distance and matches the bar length", () => {
+    const close = chooseScaleBar(1);
+    expect([5, 10, 20, 50, 100, 250, 500, 1000, 2000]).toContain(close.metres);
+    expect(close.px).toBeGreaterThanOrEqual(48);
+    expect(close.px).toBeLessThanOrEqual(200);
+    expect(close.label.endsWith(" m") || close.label.endsWith(" km")).toBe(true);
+    const far = chooseScaleBar(0.02);
+    expect(far.metres).toBeGreaterThanOrEqual(100);
+    expect(far.label).toMatch(/m|km/);
   });
 
   it("draws a gravel run long enough for the road train on a generated farm", () => {

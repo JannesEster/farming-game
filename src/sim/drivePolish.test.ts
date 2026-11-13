@@ -296,6 +296,18 @@ describe("drive polish", () => {
       if (herder < rear - 0.3) behind += 1;
     }
     expect(behind).toBe(samples.length);
+    const long = columnMetrics(
+      [
+        { x: 0, y: 0 },
+        { x: 400, y: 0 },
+      ],
+      0.5,
+      80,
+    );
+    const longRear = long.rearProgress * long.total;
+    const longHerder = long.herderProgress * long.total;
+    expect(longRear - longHerder).toBeGreaterThanOrEqual(3);
+    expect(longRear - longHerder).toBeLessThanOrEqual(4);
     const stand = herderStandTile(path, 0.5, 80);
     const filed = columnMetrics(path, 0.5, 80);
     const rear = pointOnPath(path, filed.rearProgress);

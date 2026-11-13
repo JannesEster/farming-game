@@ -46,6 +46,33 @@ export function scaleBarMetres(barPx: number, zoom: number): number {
   return barPx / (PIXELS_PER_METRE * Math.max(zoom, 0.000001));
 }
 
+/** Round distances for the HUD bar. The bar length matches the label. */
+export const SCALE_BAR_STOPS_M = [5, 10, 20, 50, 100, 250, 500, 1000, 2000] as const;
+
+export function chooseScaleBar(
+  zoom: number,
+  targetPx = 120,
+): { metres: number; px: number; label: string } {
+  const pxPerM = PIXELS_PER_METRE * Math.max(zoom, 0.000001);
+  let best: number = SCALE_BAR_STOPS_M[0];
+  let bestDist = Number.POSITIVE_INFINITY;
+  let anyInRange = false;
+  for (const metres of SCALE_BAR_STOPS_M) {
+    const px = metres * pxPerM;
+    const inRange = px >= 48 && px <= 200;
+    if (inRange) anyInRange = true;
+    if (anyInRange && !inRange) continue;
+    const dist = Math.abs(px - targetPx);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = metres;
+    }
+  }
+  const px = Math.round(best * pxPerM);
+  const label = best >= 1000 ? `${best / 1000} km` : `${best} m`;
+  return { metres: best, px, label };
+}
+
 /** True when a projection tile width is the cow's metre, not the 64 px authoring tile. */
 export function projectsMetres(tileW: number): boolean {
   return Math.abs(tileW - PIXELS_PER_METRE) < 1.5;

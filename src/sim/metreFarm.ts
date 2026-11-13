@@ -258,35 +258,29 @@ export function buildMetreFarm(rng: Rng, config: GameConfig = CONFIG, seed = con
     { kind: "lick_feeder", x: house.x + 4, y: house.y + 12, scale: 0.85 },
   ];
 
-  const roadX = house.x + 18;
-  const yardY = house.y + 4;
-  const ramp = { x: roadX + 1, y: yardY };
+  // Handling yard sits out in the camp, a few hundred metres from the house,
+  // beside the two-track. The road runs from the homestead, past the yard, to the boundary.
+  const roadX = Math.round(house.x + 26);
+  const boundaryY = rect.y + rect.h - 4;
+  const yardY = Math.round(Math.min(house.y + 320, boundaryY - 50));
+  const ramp = { x: roadX - 1, y: yardY };
   features.push(
     { kind: "loading_ramp", x: ramp.x, y: ramp.y, scale: 1 },
-    { kind: "holding_pen", x: roadX + 6, y: yardY, scale: 1 },
-    { kind: "holding_pen", x: roadX + 6, y: yardY + 12, scale: 1 },
-    { kind: "holding_pen", x: roadX + 6, y: yardY + 24, scale: 1.2 },
-    { kind: "crush", x: roadX + 10, y: yardY + 8, scale: 1 },
-    { kind: "race", x: roadX + 8, y: yardY + 4, scale: 1 },
-    { kind: "handling_roof", x: roadX + 10, y: yardY + 8, scale: 1 },
+    { kind: "holding_pen", x: roadX - 18, y: yardY - 10, scale: 1 },
+    { kind: "holding_pen", x: roadX - 18, y: yardY + 8, scale: 1 },
+    { kind: "holding_pen", x: roadX - 32, y: yardY - 1, scale: 1.2 },
+    { kind: "crush", x: roadX - 8, y: yardY + 1, scale: 1 },
+    { kind: "race", x: roadX - 12, y: yardY, scale: 1 },
+    { kind: "handling_roof", x: roadX - 8, y: yardY + 1, scale: 1 },
   );
 
-  let gatePoint = { x: house.x, y: rect.y + 1 };
-  for (const other of camps) {
-    if (other.id === host.id || !other.rect) continue;
-    const gate = metreSharedGate(rect, other.rect);
-    if (!gate) continue;
-    if (gate.from.y < house.y && Math.abs(gate.from.y - (rect.y + rect.h)) > Math.abs(gate.from.y - rect.y)) {
-      gatePoint = gate.from;
-      break;
-    }
+  const roadStart = { x: roadX, y: Math.round(house.y + 12) };
+  const road = polyline({ x: house.x + 16, y: house.y + 8 }, roadStart, 8);
+  for (const point of polyline(roadStart, { x: roadX, y: boundaryY }, 1)) {
+    const last = road[road.length - 1];
+    if (!last || last.x !== point.x || last.y !== point.y) road.push(point);
   }
-  const roadEnd = { x: roadX, y: yardY };
-  const road = polyline(gatePoint, roadEnd, 200);
-  if (road.length === 0 || road[road.length - 1].x !== roadEnd.x || road[road.length - 1].y !== roadEnd.y) {
-    road.push(roadEnd);
-  }
-  for (let i = 0; i <= 24; i += 1) road.push({ x: roadX - i, y: yardY });
+  road.push({ x: ramp.x + 1, y: ramp.y });
   for (const point of road) features.push({ kind: "track", x: point.x, y: point.y, scale: 1 });
 
   const waterPoints = placeSharedWater(camps);
@@ -294,7 +288,7 @@ export function buildMetreFarm(rng: Rng, config: GameConfig = CONFIG, seed = con
     features.push({ kind: "trough", x: point.trough.x, y: point.trough.y, scale: 1 });
   }
 
-  const start = inside(rect, { x: house.x + 6, y: house.y + 28 }, 8);
+  const start = inside(rect, { x: house.x - 18, y: house.y - 80 }, 24);
   host.anchor = start;
   if (!host.tiles.some((tile) => tile.x === start.x && tile.y === start.y)) host.tiles.push(start);
   const hostWater = waterPoints.find((point) => point.servedCampIds.includes(host.id));

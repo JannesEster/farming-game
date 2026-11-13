@@ -1,25 +1,14 @@
-import { PIXELS_PER_METRE } from "../render/worldScale";
 import type { GameState, TilePoint } from "./types";
 
 /**
- * On-screen area of one isometric tile, in the cow's metres.
- * A tile is a 64 by 32 diamond. PIXELS_PER_METRE turns that into real ground.
+ * Open veld from the first-round homestead shot: big trees with sand between
+ * them, bushes scattered, not a woodland. A 12 m camelthorn needs this gap
+ * so the canopies do not join. The count still grows with the true area.
  */
-export const TILE_SCREEN_M2 = (64 * 32) / 2 / PIXELS_PER_METRE ** 2;
-
-/**
- * Tree and bush counts on the 132-tile farm in the PR screenshots.
- * That map looks about 500 m across. These counts are the spacing to keep.
- */
-export const SCREEN_REFERENCE_TILES = 132 * 132;
-export const SCREEN_REFERENCE_TREES = 159;
-export const SCREEN_REFERENCE_BUSHES = 501;
-
-const REFERENCE_M2 = SCREEN_REFERENCE_TILES * TILE_SCREEN_M2;
-/** Trees per square metre of ground, matching the screenshot spacing. */
-export const TREES_PER_M2 = SCREEN_REFERENCE_TREES / REFERENCE_M2;
-/** Bushes per square metre of ground, matching the screenshot spacing. */
-export const BUSHES_PER_M2 = SCREEN_REFERENCE_BUSHES / REFERENCE_M2;
+export const TREE_SPACING_M = 34;
+export const BUSH_SPACING_M = 24;
+export const TREES_PER_M2 = 1 / (TREE_SPACING_M * TREE_SPACING_M);
+export const BUSHES_PER_M2 = 1 / (BUSH_SPACING_M * BUSH_SPACING_M);
 
 const TREE_CELL_M = 1 / Math.sqrt(TREES_PER_M2);
 const BUSH_CELL_M = 1 / Math.sqrt(BUSHES_PER_M2);
@@ -30,8 +19,11 @@ const TREE_KEEP = 1 / (1 + CLUMP_FRACTION);
 
 const TREE_CLEAR_M = 18;
 const BUSH_CLEAR_M = 12;
-const WATER_CLEAR_M = 16;
+const WATER_CLEAR_M = 14;
 const ROAD_CLEAR_M = 8;
+/** A 12 m camelthorn canopy reaches well past its trunk, so the wire stays in the open. */
+const FENCE_CLEAR_TREE_M = 28;
+const FENCE_CLEAR_BUSH_M = 6;
 const BUILDING_KINDS = new Set([
   "house",
   "shed",
@@ -104,11 +96,51 @@ function nearRoad(x: number, y: number, road: TilePoint[], gap: number): boolean
   return false;
 }
 
-function blocked(x: number, y: number, width: number, height: number, obstacles: Obstacles, clear: number): boolean {
+function distToSegment(x: number, y: number, x1: number, y1: number, x2: number, y2: number): number {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len2 = dx * dx + dy * dy || 1;
+  const t = Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / len2));
+  const px = x1 + dx * t - x;
+  const py = y1 + dy * t - y;
+  return px * px + py * py;
+}
+
+function nearFence(x: number, y: number, state: GameState, gap: number): boolean {
+  const gap2 = gap * gap;
+  for (const camp of state.camps) {
+    const rect = camp.rect;
+    if (!rect) continue;
+    const sides = [
+      [rect.x, rect.y, rect.x + rect.w, rect.y],
+      [rect.x + rect.w, rect.y, rect.x + rect.w, rect.y + rect.h],
+      [rect.x + rect.w, rect.y + rect.h, rect.x, rect.y + rect.h],
+      [rect.x, rect.y + rect.h, rect.x, rect.y],
+    ];
+    for (const [x1, y1, x2, y2] of sides) {
+      if (x < Math.min(x1, x2) - gap || x > Math.max(x1, x2) + gap) continue;
+      if (y < Math.min(y1, y2) - gap || y > Math.max(y1, y2) + gap) continue;
+      if (distToSegment(x, y, x1, y1, x2, y2) < gap2) return true;
+    }
+  }
+  return false;
+}
+
+function blocked(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  obstacles: Obstacles,
+  clear: number,
+  state: GameState,
+  fenceGap: number,
+): boolean {
   if (x < 2 || y < 2 || x >= width - 2 || y >= height - 2) return true;
   if (nearPoints(x, y, obstacles.buildings, clear)) return true;
   if (nearPoints(x, y, obstacles.water, WATER_CLEAR_M)) return true;
   if (nearRoad(x, y, obstacles.road, ROAD_CLEAR_M)) return true;
+  if (nearFence(x, y, state, fenceGap)) return true;
   return false;
 }
 
@@ -150,7 +182,7 @@ export function treesInRect(state: GameState, x0: number, y0: number, x1: number
     for (let i = i0; i <= i1; i += 1) {
       if (unit(state.seed, i, j, 1) >= TREE_KEEP) continue;
       const tree = cellPoint(state.seed, i, j, TREE_CELL_M, 4, 4);
-      if (!blocked(tree.x, tree.y, width, height, blocks, TREE_CLEAR_M) && inside(tree)) out.push(tree);
+      if (!blocked(tree.x, tree.y, width, height, blocks, TREE_CLEAR_M, state, FENCE_CLEAR_TREE_M) && inside(tree)) out.push(tree);
       if (unit(state.seed, i, j, 2) >= CLUMP_FRACTION) continue;
       const angle = unit(state.seed, i, j, 6) * Math.PI * 2;
       const dist = 4.5 + unit(state.seed, i, j, 7) * 6.5;
@@ -159,7 +191,7 @@ export function treesInRect(state: GameState, x0: number, y0: number, x1: number
         y: tree.y + Math.sin(angle) * dist,
         scale: 0.85 + unit(state.seed, i, j, 8) * 0.3,
       };
-      if (!blocked(partner.x, partner.y, width, height, blocks, TREE_CLEAR_M) && inside(partner)) out.push(partner);
+      if (!blocked(partner.x, partner.y, width, height, blocks, TREE_CLEAR_M, state, FENCE_CLEAR_TREE_M) && inside(partner)) out.push(partner);
     }
   }
   return out;
@@ -183,7 +215,7 @@ export function bushesInRect(state: GameState, x0: number, y0: number, x1: numbe
     for (let i = i0; i <= i1; i += 1) {
       const bush = cellPoint(state.seed, i, j, BUSH_CELL_M, 1.6, 20);
       if (bush.x < minX || bush.x >= maxX || bush.y < minY || bush.y >= maxY) continue;
-      if (blocked(bush.x, bush.y, width, height, blocks, BUSH_CLEAR_M)) continue;
+      if (blocked(bush.x, bush.y, width, height, blocks, BUSH_CLEAR_M, state, FENCE_CLEAR_BUSH_M)) continue;
       out.push(bush);
     }
   }
