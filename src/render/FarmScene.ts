@@ -91,7 +91,7 @@ import { mountOpsSheet, type OpsSheet } from "./opsSheet";
 import { doubleTapGoesHome } from "./tap";
 import { resolveGroundTap, resolveHerdTap } from "./selection";
 import { isoLayout, tileCenter, tileTop, worldToTile, type IsoLayout } from "./iso";
-import { farmMapView, liveCameraView, paintCampShapes, paintTwoTrack, syncMetreChunks } from "./metreView";
+import { farmMapView, liveCameraView, paintCampShapes, paintMidWater, paintTwoTrack, syncMetreChunks } from "./metreView";
 import { palette } from "./palette";
 import { campLabelTile, offsetsForHerd } from "./herdLayout";
 import { layoutAnimals } from "./animalLayout";
@@ -231,6 +231,7 @@ export class FarmScene extends Phaser.Scene {
   private metre = false;
   private campMap?: Phaser.GameObjects.Graphics;
   private roadGraphics?: Phaser.GameObjects.Graphics;
+  private midMarks?: Phaser.GameObjects.Graphics;
   private herdMarker?: Phaser.GameObjects.Text;
   private metreChunks = new Map<string, Phaser.GameObjects.Graphics>();
   private vegSprites: Phaser.GameObjects.Image[] = [];
@@ -998,6 +999,7 @@ export class FarmScene extends Phaser.Scene {
     camera.scrollY = framed.scrollY;
     this.clampScroll();
     this.syncMetreFrame();
+    this.redrawFences();
     return true;
   }
 
@@ -1868,9 +1870,11 @@ export class FarmScene extends Phaser.Scene {
   private paintMetreBase(): void {
     this.campMap?.destroy();
     this.roadGraphics?.destroy();
+    this.midMarks?.destroy();
     this.herdMarker?.destroy();
     this.campMap = this.add.graphics().setDepth(0.2);
     this.roadGraphics = this.add.graphics().setDepth(1.2);
+    this.midMarks = this.add.graphics().setDepth(3.4);
     this.herdMarker = this.add
       .text(0, 0, "", {
         fontFamily: "Segoe UI, Helvetica Neue, sans-serif",
@@ -2031,6 +2035,11 @@ export class FarmScene extends Phaser.Scene {
     if (this.roadGraphics) {
       if (zoom >= 0.18) paintTwoTrack(this.roadGraphics, this.state, this.layout, this.groundTileW, this.groundTileH);
       else this.roadGraphics.clear();
+    }
+    if (this.midMarks) {
+      const mid = this.metre && zoom >= 0.02 && zoom < 0.18 && !farmMapView(this);
+      if (mid) paintMidWater(this.midMarks, this.state, this.layout, this.groundTileW, this.groundTileH, zoom);
+      else this.midMarks.clear();
     }
     syncMetreChunks(this, this.layout, this.groundTileW, this.groundTileH, this.metreChunks, zoom);
     this.syncVegetation(zoom);
@@ -2489,14 +2498,15 @@ export class FarmScene extends Phaser.Scene {
     this.fenceArt = [];
     const segments = collectFenceSegments(this.state, this.layout, herdCamp, this.selected);
     const closeFence = Boolean(live && live.width < 5000);
+    const midFence = Boolean(this.metre && live && !closeFence && zoom >= 0.02 && zoom < 0.2);
     if (closeFence) this.fences.clear();
-    else drawFences(this.fences, segments, zoom, { posts: !paintedFence && !this.metre });
-    if (paintedFence) {
+    else drawFences(this.fences, segments, zoom, { posts: !paintedFence && !this.metre, single: midFence });
+    if (paintedFence && !midFence) {
       this.fenceArt = placeV2Fences(this, segments, {
         maxPosts: this.metre && zoom < 0.08 ? 0 : 240,
         view: live ? { x: live.x, y: live.y, right: live.right, bottom: live.bottom } : undefined,
       });
-    } else this.fenceGates = placeGateSprites(this, segments, this.paintedSprites);
+    } else if (!midFence) this.fenceGates = placeGateSprites(this, segments, this.paintedSprites);
   }
 
   private syncHerdFromSim(): void {

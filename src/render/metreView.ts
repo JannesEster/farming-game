@@ -88,7 +88,46 @@ export function paintCampShapes(
   }
 }
 
-/** Two ruts, 1.6 m centre to centre, each about 0.4 m wide. Real width, so it vanishes on the farm map. */
+/**
+ * A whole camp at a glance: each water point is a small windmill over a trough.
+ * Close zoom uses the real sprites, and the farm map uses the dots above.
+ */
+export function paintMidWater(
+  graphics: Phaser.GameObjects.Graphics,
+  state: GameState,
+  layout: IsoLayout,
+  tileW: number,
+  tileH: number,
+  zoom: number,
+): void {
+  graphics.clear();
+  const size = 28 / Math.max(zoom, 0.004);
+  for (const point of state.farmWaterPoints ?? []) {
+    const at = tileCenter(point.trough.x, point.trough.y, layout, tileW, tileH);
+    const footY = at.y + size * 0.22;
+    const hubY = at.y - size * 0.42;
+    graphics.fillStyle(0x2f6a64, 1);
+    graphics.fillEllipse(at.x, footY, size * 0.92, size * 0.34);
+    graphics.fillStyle(0x7ec8bf, 1);
+    graphics.fillEllipse(at.x, footY - size * 0.04, size * 0.7, size * 0.2);
+    graphics.lineStyle(Math.max(1.4, size * 0.07), 0x1c1814, 1);
+    graphics.beginPath();
+    graphics.moveTo(at.x, footY - size * 0.08);
+    graphics.lineTo(at.x, hubY);
+    graphics.strokePath();
+    graphics.strokeCircle(at.x, hubY, size * 0.3);
+    graphics.beginPath();
+    graphics.moveTo(at.x - size * 0.3, hubY);
+    graphics.lineTo(at.x + size * 0.3, hubY);
+    graphics.moveTo(at.x, hubY - size * 0.3);
+    graphics.lineTo(at.x, hubY + size * 0.3);
+    graphics.strokePath();
+    graphics.fillStyle(0xf2efe6, 1);
+    graphics.fillCircle(at.x, hubY, size * 0.07);
+  }
+}
+
+/** Two pale sandy ruts, 1.6 m centre to centre, each 0.4 m wide. Real width, so it vanishes on the farm map. */
 export function paintTwoTrack(
   graphics: Phaser.GameObjects.Graphics,
   state: GameState,
@@ -101,8 +140,8 @@ export function paintTwoTrack(
   if (!road || road.length < 2) return;
   const rut = 0.4 * PIXELS_PER_METRE;
   const offsetM = 0.8;
-  const stroke = (sign: number) => {
-    graphics.lineStyle(Math.max(1, rut * 0.5), sign < 0 ? palette.trackRut : palette.track, 0.9);
+  const stroke = (sign: number, width: number, alpha: number) => {
+    graphics.lineStyle(Math.max(1, width), palette.track, alpha);
     graphics.beginPath();
     road.forEach((point, index) => {
       const next = road[Math.min(road.length - 1, index + 1)];
@@ -118,8 +157,10 @@ export function paintTwoTrack(
     });
     graphics.strokePath();
   };
-  stroke(-1);
-  stroke(1);
+  for (const sign of [-1, 1]) {
+    stroke(sign, rut + 2.2, 0.34);
+    stroke(sign, rut, 0.82);
+  }
 }
 
 /** Kalahari sand under the close and mid camera. Hidden on the farm map. */

@@ -363,9 +363,21 @@ export function drawFences(
   graphics: Phaser.GameObjects.Graphics,
   segments: FenceSegment[],
   cameraZoom = 1,
-  options: { posts?: boolean } = {},
+  options: { posts?: boolean; single?: boolean } = {},
 ): void {
   graphics.clear();
+  if (options.single) {
+    const width = 1.6 / Math.max(cameraZoom, 0.004);
+    graphics.lineStyle(width, 0x2a241c, 0.95);
+    for (const segment of segments) {
+      if (segment.gate) continue;
+      graphics.beginPath();
+      graphics.moveTo(segment.x1, segment.y1);
+      graphics.lineTo(segment.x2, segment.y2);
+      graphics.strokePath();
+    }
+    return;
+  }
   const zoomBoost = Math.max(1, 0.62 / Math.max(cameraZoom, 0.12));
   const buckets: Record<FenceSegment["kind"], FenceSegment[]> = {
     inner: [],

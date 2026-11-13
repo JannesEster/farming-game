@@ -279,7 +279,23 @@ function placeRun(
       depth,
       scale,
     );
-    if (image) images.push(image);
+    if (image) {
+      darkenSteel(image, file);
+      images.push(image);
+    }
+  }
+}
+
+const STEEL_TINT = 0x6e675c;
+
+function darkenSteel(image: Phaser.GameObjects.Image, file: string): void {
+  if (
+    file.startsWith("yard-panel") ||
+    file.startsWith("yard-corner") ||
+    file.startsWith("yard-gate") ||
+    file.startsWith("yard-race")
+  ) {
+    image.setTint(STEEL_TINT);
   }
 }
 
@@ -311,6 +327,7 @@ function placeAlongPath(
       const file = fileFor(b.x - a.x, b.y - a.y);
       const piece = addSprite(scene, file, x, y, depth, worldScaleOf(file));
       if (piece) {
+        darkenSteel(piece, file);
         piece.setData("featureKind", kind);
         images.push(piece);
         out.push({ image: piece, kind });
@@ -337,6 +354,31 @@ function densify(points: { x: number; y: number }[], step: number): { x: number;
   return out;
 }
 
+function placeTurningPatch(
+  scene: Phaser.Scene,
+  ramp: { x: number; y: number; intoX: number; intoY: number } | null,
+): void {
+  scene.children.getByName("yard-turn")?.destroy();
+  if (!ramp) return;
+  const px = Math.hypot(ramp.intoX, ramp.intoY) || 1;
+  const ix = ramp.intoX / px;
+  const iy = ramp.intoY / px;
+  const ax = -iy;
+  const ay = ix;
+  const at = (intoM: number, alongM: number) => ({
+    x: ramp.x + ix * intoM * px + ax * alongM * px,
+    y: ramp.y + iy * intoM * px + ay * alongM * px,
+  });
+  const patch = scene.add.graphics().setDepth(0.4).setName("yard-turn");
+  for (const along of [-6, -1, 4, 9]) {
+    const centre = at(-5, along);
+    for (let ring = 6; ring >= 1; ring -= 1) {
+      patch.fillStyle(0xe0b06a, 0.06);
+      patch.fillCircle(centre.x, centre.y, ring * 1.15 * px);
+    }
+  }
+}
+
 function placeYard(
   scene: Phaser.Scene,
   state: GameState,
@@ -348,6 +390,7 @@ function placeYard(
 ): void {
   const geometry = yardGeometry(state.features, layout, tileW, tileH);
   if (!geometry) return;
+  placeTurningPatch(scene, geometry.ramp);
   geometry.pens.forEach((pen, index) => {
     const floor = renderPenFloor(scene, layout, [pen.corners], `pen-${index}`);
     if (!floor) return;
@@ -363,7 +406,10 @@ function placeYard(
     if (edge.gate) {
       const gate = nw ? "yard-gate-nw-se.png" : "yard-gate.png";
       const mid = addSprite(scene, gate, (edge.x1 + edge.x2) / 2, (edge.y1 + edge.y2) / 2, depth);
-      if (mid) images.push(mid);
+      if (mid) {
+        darkenSteel(mid, gate);
+        images.push(mid);
+      }
       placeRun(scene, nw ? "yard-panel-straight-nw-se.png" : "yard-panel-straight.png", edge.x1, edge.y1, edge.x1 + (edge.x2 - edge.x1) * 0.38, edge.y1 + (edge.y2 - edge.y1) * 0.38, depth, images);
       placeRun(scene, nw ? "yard-panel-straight-nw-se.png" : "yard-panel-straight.png", edge.x1 + (edge.x2 - edge.x1) * 0.62, edge.y1 + (edge.y2 - edge.y1) * 0.62, edge.x2, edge.y2, depth, images);
     } else {
@@ -374,7 +420,10 @@ function placeYard(
   geometry.corners.forEach((corner, index) => {
     const file = index % 2 === 0 ? "yard-corner.png" : "yard-corner-flipped.png";
     const image = addSprite(scene, file, corner.x, corner.y, 8 + corner.y * 0.04 + 0.2);
-    if (image) images.push(image);
+    if (image) {
+      darkenSteel(image, file);
+      images.push(image);
+    }
   });
   placeAlongPath(
     scene,
@@ -404,6 +453,7 @@ function placeYard(
     const file = geometry.ramp.intoX >= 0 ? "yard-loading-ramp.png" : "yard-loading-ramp-up-nw.png";
     const image = addSprite(scene, file, geometry.ramp.x, geometry.ramp.y, 8 + geometry.ramp.y * 0.04 + 0.2);
     if (image) {
+      image.setTint(0x8a7560);
       image.setData("featureKind", "loading_ramp");
       image.setData("tileX", geometry.ramp.tileX);
       image.setData("tileY", geometry.ramp.tileY);

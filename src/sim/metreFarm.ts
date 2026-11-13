@@ -264,15 +264,22 @@ export function buildMetreFarm(rng: Rng, config: GameConfig = CONFIG, seed = con
   const boundaryY = rect.y + rect.h - 4;
   const yardY = Math.round(Math.min(house.y + 320, boundaryY - 50));
   const ramp = { x: roadX - 1, y: yardY };
+  // One row of pens sharing edges, west of the road. Along is south, into is west.
+  // Centres sit half a length apart so the 11 m, 9 m and 8 m pens touch.
+  const penRow = [
+    { along: 5.5, scale: 11 },
+    { along: 15.5, scale: 9 },
+    { along: 24, scale: 8 },
+  ];
   features.push(
     { kind: "loading_ramp", x: ramp.x, y: ramp.y, scale: 1 },
-    { kind: "holding_pen", x: roadX - 18, y: yardY - 10, scale: 1 },
-    { kind: "holding_pen", x: roadX - 18, y: yardY + 8, scale: 1 },
-    { kind: "holding_pen", x: roadX - 32, y: yardY - 1, scale: 1.2 },
-    { kind: "crush", x: roadX - 8, y: yardY + 1, scale: 1 },
-    { kind: "race", x: roadX - 12, y: yardY, scale: 1 },
-    { kind: "handling_roof", x: roadX - 8, y: yardY + 1, scale: 1 },
+    { kind: "race", x: ramp.x - 4, y: ramp.y + 11, scale: 1 },
+    { kind: "crush", x: ramp.x - 2, y: ramp.y + 11, scale: 1 },
+    { kind: "handling_roof", x: ramp.x - 2, y: ramp.y + 11, scale: 1 },
   );
+  for (const pen of penRow) {
+    features.push({ kind: "holding_pen", x: ramp.x - 6, y: ramp.y + pen.along, scale: pen.scale });
+  }
 
   const roadStart = { x: roadX, y: Math.round(house.y + 12) };
   const road = polyline({ x: house.x + 16, y: house.y + 8 }, roadStart, 8);

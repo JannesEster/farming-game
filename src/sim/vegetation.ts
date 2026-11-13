@@ -61,7 +61,13 @@ function obstacles(state: GameState): Obstacles {
   if (cached) return cached;
   const buildings: TilePoint[] = [];
   for (const feature of state.features) {
-    if (BUILDING_KINDS.has(feature.kind)) buildings.push({ x: feature.x, y: feature.y });
+    if (!BUILDING_KINDS.has(feature.kind)) continue;
+    buildings.push({ x: feature.x, y: feature.y });
+    if (feature.kind === "loading_ramp") {
+      buildings.push({ x: feature.x + 6, y: feature.y });
+      buildings.push({ x: feature.x + 6, y: feature.y + 8 });
+      buildings.push({ x: feature.x + 6, y: feature.y - 6 });
+    }
   }
   const water = (state.farmWaterPoints ?? []).map((point) => ({ x: point.trough.x, y: point.trough.y }));
   const value = { buildings, water, road: state.road ?? [] };
