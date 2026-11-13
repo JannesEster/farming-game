@@ -3,7 +3,7 @@ import defaultFarm from "../../public/farms/default-farm.json";
 import { generateFarmOffers } from "../picker/generateOffers";
 import { isoLayout, tileCenter } from "../render/iso";
 import { PIXELS_PER_METRE, scaleBarMetres } from "../render/worldScale";
-import { farmSideMetres } from "./metreFarm";
+import { campCountForSeed, farmOutlineMetres } from "./metreFarm";
 import { TREES_PER_M2, treesInRect } from "./vegetation";
 import { tickBakkieRealtime, maybeStartBakkieRun } from "./bakkie";
 import { tickRanchClock } from "./clock";
@@ -15,7 +15,6 @@ import {
   PREVIOUS_MAP_TILES,
 } from "./config";
 import { generateFarm } from "./generate";
-import { moveFitsBeforeDusk } from "./herding";
 import { carryingCapacityLsu } from "./pasture";
 import { campGateBetween, pathLengthKm, planHerdPath } from "./path";
 import { parseLegacySaved } from "./stateMigrate";
@@ -24,7 +23,7 @@ import { hireFarmhand } from "./workers";
 import { setWorkPriority } from "./workGrid";
 import type { GameState } from "./types";
 
-const PREVIOUS_LISTING_HA = 3300;
+const PREVIOUS_LISTING_HA = 9900;
 
 function campAspect(camp: { rect?: { w: number; h: number }; tiles: { x: number; y: number }[] }): number {
   if (camp.rect && camp.rect.w > 0 && camp.rect.h > 0) {
@@ -55,6 +54,9 @@ describe("three times the farm area", () => {
     expect(sideRatio).toBeGreaterThan(1.7);
     expect(sideRatio).toBeLessThan(1.76);
     expect(CONFIG.farm.hectares).toBe(PREVIOUS_LISTING_HA * 3);
+    const outline = farmOutlineMetres(CONFIG.farm.hectares);
+    expect(outline.width).toBe(20_000);
+    expect(outline.height).toBe(14_850);
     expect(CONFIG.farm.homesteadHectares).toBe(8);
     expect(CONFIG.transit.kmPerTile).toBe(0.001);
     expect(CONFIG.herd.headCount).toBe(120);
@@ -62,32 +64,57 @@ describe("three times the farm area", () => {
 
   it("keeps cow world scale and raises carrying capacity with the hectares", () => {
     expect(PIXELS_PER_METRE).toBeCloseTo((64 * 0.62) / 2.4, 5);
-    expect(carryingCapacityLsu()).toBe(990);
+    expect(carryingCapacityLsu()).toBe(2970);
     expect(CONFIG.farm.hectaresPerLsu).toBe(10);
     expect(BUSH_COUNT_TRIM).toBeCloseTo(0.62, 5);
   });
 
-  it("gives each default camp about three times the old area", () => {
+  it("mixes eight to ten camps, smaller beside the house", () => {
     const state = generateFarm(3300);
-    const side = farmSideMetres(9900);
-    expect(state.width).toBe(side);
-    expect(state.height).toBe(side);
-    expect(state.camps.length).toBe(18);
+    const outline = farmOutlineMetres(9900 * 3);
+    expect(state.width).toBe(outline.width);
+    expect(state.height).toBe(outline.height);
+    expect(state.width).toBeGreaterThan(state.height * 1.2);
+    expect(campCountForSeed(3300)).toBe(9);
+    expect(state.camps.length).toBe(9);
     const hectares = state.camps.map((camp) => camp.hectares);
     const sum = hectares.reduce((total, value) => total + value, 0);
-    const avg = sum / hectares.length;
-    expect(sum).toBeGreaterThan(9800);
-    expect(sum).toBeLessThan(10000);
-    expect(Math.min(...hectares)).toBeGreaterThan(250);
-    expect(Math.max(...hectares)).toBeLessThan(1300);
-    expect(avg).toBeGreaterThan(500);
-    expect(avg).toBeLessThan(600);
-    for (const camp of state.camps) expect(campAspect(camp)).toBeLessThanOrEqual(1.5);
+    expect(sum).toBeCloseTo(29_700, 0);
+    expect(Math.min(...hectares)).toBeGreaterThan(1000);
+    expect(Math.max(...hectares)).toBeLessThan(8000);
+    const cuts = new Set<number>();
+    for (const camp of state.camps) {
+      expect(campAspect(camp)).toBeLessThanOrEqual(2.5);
+      expect(campAspect(camp)).toBeGreaterThan(1);
+      if (camp.rect && camp.rect.x > 0) cuts.add(camp.rect.x);
+    }
+    expect(cuts.size).toBeGreaterThan(3);
+    const house = state.features.find((feature) => feature.kind === "house");
+    expect(house).toBeTruthy();
+    const host = state.camps.find((camp) => camp.id === state.herd.campId)!;
+    const near = state.camps.filter((camp) => {
+      const rect = camp.rect!;
+      return Math.hypot(rect.x + rect.w / 2 - house!.x, rect.y + rect.h / 2 - house!.y) < 8000;
+    });
+    const far = state.camps.filter((camp) => !near.includes(camp));
+    const avg = (list: typeof near) => list.reduce((total, camp) => total + camp.hectares, 0) / list.length;
+    expect(near.length).toBeGreaterThan(0);
+    expect(far.length).toBeGreaterThan(0);
+    expect(avg(near)).toBeLessThan(avg(far));
+    expect(host.hectares).toBeLessThan(avg(far));
+    for (const camp of state.camps) {
+      const neighbours = state.camps.filter((other) => other.id !== camp.id && campGateBetween(camp, other));
+      expect(neighbours.length).toBeGreaterThan(0);
+      const watered = state.farmWaterPoints?.some((point) => point.servedCampIds.includes(camp.id));
+      expect(watered).toBe(true);
+    }
   });
 
   it("ships the exported default farm at the listed hectares", () => {
-    expect(defaultFarm.hectares).toBe(9900);
-    expect(defaultFarm.camps.length).toBe(18);
+    expect(defaultFarm.hectares).toBe(29_700);
+    expect(defaultFarm.camps.length).toBe(9);
+    expect(defaultFarm.width).toBe(20_000);
+    expect(defaultFarm.height).toBe(14_850);
   });
 
   it("keeps the screenshot tree spacing on every region", () => {
@@ -114,10 +141,11 @@ describe("three times the farm area", () => {
           `${base} ${offer.id} trees ${perWindow.toFixed(0)} vs ${expected.toFixed(1)}`,
         ).toBeLessThan(0.1);
         for (const camp of offer.previewState.camps) {
-          expect(campAspect(camp), `${base} ${offer.id} camp ${camp.id}`).toBeLessThanOrEqual(1.5);
+          expect(campAspect(camp), `${base} ${offer.id} camp ${camp.id}`).toBeLessThanOrEqual(2.5);
         }
-        expect(offer.askingPriceNad).toBeLessThanOrEqual(2_750_000);
-        expect(offer.previewState.camps.length).toBeGreaterThan(8);
+        expect(offer.previewState.camps.length).toBeGreaterThanOrEqual(8);
+        expect(offer.previewState.camps.length).toBeLessThanOrEqual(10);
+        if (offer.playable) expect(offer.askingPriceNad).toBeLessThanOrEqual(6_500_000);
       }
     }
   });
@@ -141,7 +169,7 @@ describe("three times the farm area", () => {
     expect(Math.abs(perScreen - reference) / reference).toBeLessThan(0.1);
   });
 
-  it("still finishes a neighbour drive that starts at 07:00 before dusk", () => {
+  it("measures neighbour drives on the larger camps", () => {
     const state = generateFarm(3300);
     state.date = { ...state.date, hour: 7 };
     if (state.clock) state.clock.bankMs = 0;
@@ -154,12 +182,12 @@ describe("three times the farm area", () => {
         const km = pathLengthKm(path);
         longestKm = Math.max(longestKm, km);
         pairs += 1;
-        expect(moveFitsBeforeDusk(state, km, km)).toBe(true);
+        expect(km).toBeGreaterThan(0.4);
+        expect(km).toBeLessThan(40);
       }
     }
-    expect(pairs).toBeGreaterThan(10);
-    expect(longestKm).toBeGreaterThan(0.4);
-    expect(longestKm).toBeLessThan(4);
+    expect(pairs).toBeGreaterThan(6);
+    expect(longestKm).toBeGreaterThan(2);
   });
 
   it("rolls two game days without the clock sticking", () => {

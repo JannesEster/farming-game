@@ -12,10 +12,10 @@ describe("FarmDefinition", () => {
     const state = createGame(CONFIG.worldSeed);
     const def = farmDefinitionFromState(state);
     expect(def.schemaVersion).toBe(2);
-    expect(def.hectares).toBe(9900);
+    expect(def.hectares).toBe(29700);
     expect(def.metresPerTile).toBeCloseTo(metresPerTileFromConfig(), 3);
     expect(def.metresPerTile).toBeCloseTo(1, 3);
-    expect(def.camps.length).toBeGreaterThan(10);
+    expect(def.camps.length).toBe(9);
     expect(def.gates.length).toBeGreaterThan(0);
     expect(def.campIds).toEqual([]);
   });

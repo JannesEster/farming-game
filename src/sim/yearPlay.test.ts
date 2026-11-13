@@ -98,6 +98,9 @@ describe("year of play", () => {
     const smallest = state.camps
       .filter((camp) => camp.id >= 0)
       .sort((a, b) => a.hectares - b.hectares)[0];
+    // The smallest camp is now more than a thousand hectares, so 120 head can live there.
+    // This check knocks the grass back to show that an empty camp still starves a herd that never moves.
+    smallest.standingDmKgPerHa = 1;
     state.herd.campId = smallest.id;
     state.herd.daysInCamp = 0;
     for (let day = 0; day < 370; day += 1) {

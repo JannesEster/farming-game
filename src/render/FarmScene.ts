@@ -15,7 +15,7 @@ import { campIdAt, moveHerd, stepDay } from "../sim/simulation";
 import { defaultWorkGrid, setWorkPriority, tickFarmhandWorld, WORK_JOB_LABELS } from "../sim/workGrid";
 import { hireFarmhand } from "../sim/workers";
 import type { DayLengthSeconds } from "../sim/clock";
-import { herdInTransit, herdMoveActive, herdWorldTile, pathTangent } from "../sim/transit";
+import { driveSlowsClock, herdInTransit, herdMoveActive, herdWorldTile, pathTangent } from "../sim/transit";
 import { beginHerdMove, syncHerderOnDrive, tickHerdingRealtime } from "../sim/herding";
 import { freeWorkerHouseSlots } from "../sim/housing";
 import { ensurePeopleState, tickPeopleSchedule, workerAtHomeAtNight } from "../sim/people";
@@ -1581,7 +1581,7 @@ export class FarmScene extends Phaser.Scene {
     if (this.capturePin) this.applyCapturePin();
     this.presentQueuedCard();
     const blocked = this.clockBlocked();
-    const driveOn = herdMoveActive(this.state.herd) || Boolean(this.state.story?.returnWalk) || Boolean(this.state.story?.cutOut && this.state.story.cutOut.phase !== "done" && this.state.story.cutOut.phase !== "queued");
+    const driveOn = driveSlowsClock(this.state.herd) || Boolean(this.state.story?.returnWalk) || Boolean(this.state.story?.cutOut && this.state.story.cutOut.phase !== "done" && this.state.story.cutOut.phase !== "queued");
     if (!this.state.clock) {
       this.state.clock = {
         settings: {

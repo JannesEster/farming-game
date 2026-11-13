@@ -626,7 +626,7 @@ function ensureOpeningCamp(camp: CampState, features: Feature[], config: GameCon
 
 export function generateFarm(seed: number, config: GameConfig = CONFIG): GameState {
   const rng = createRng(seed);
-  const state = buildMetreFarm(rng, config);
+  const state = buildMetreFarm(rng, config, seed);
   state.seed = seed;
   state.rngState = rng.getState();
   return state;

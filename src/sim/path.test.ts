@@ -19,15 +19,15 @@ function centroid(tiles: { x: number; y: number }[]): { x: number; y: number } {
 }
 
 describe("herd paths", () => {
-  it("builds seed 3300 with 18 camps in the expected hectare band", () => {
+  it("builds seed 3300 with 9 camps in the expected hectare band", () => {
     const state = createGame(3300);
-    expect(state.camps.length).toBe(18);
+    expect(state.camps.length).toBe(9);
     const ha = state.camps.map((c) => c.hectares);
-    expect(Math.min(...ha)).toBeGreaterThanOrEqual(250);
-    expect(Math.max(...ha)).toBeLessThanOrEqual(1300);
+    expect(Math.min(...ha)).toBeGreaterThanOrEqual(1000);
+    expect(Math.max(...ha)).toBeLessThanOrEqual(8000);
     const avg = ha.reduce((a, b) => a + b, 0) / ha.length;
-    expect(avg).toBeGreaterThan(480);
-    expect(avg).toBeLessThan(620);
+    expect(avg).toBeGreaterThan(2500);
+    expect(avg).toBeLessThan(4000);
   });
 
   it("picks the near gate, not the far side of the camp", () => {

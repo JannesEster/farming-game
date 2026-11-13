@@ -308,11 +308,10 @@ export const CONFIG: GameConfig = {
 
   farm: {
     name: "Otjozondjupa",
-    // S: Otjozondjupa census average is 3,327 ha. The previous playable ranch was 3,300 ha.
-    // A: the property area is 3 times that, 9,900 ha. The map is 132 tiles on a side.
-    // One tile stays 75 m, so the side is 9.9 km. That square is 9,801 ha.
-    // The listing uses 9,900 so it is exactly 3 times 3,300.
-    hectares: 3300 * FARM_AREA_SCALE,
+    // S: Otjozondjupa census average is 3,327 ha. The first playable ranch was 3,300 ha.
+    // A: listed area is 29,700 ha, three times the previous 9,900 ha listing.
+    // The outline is a rough rectangle, 20 km by 14.85 km, not a square.
+    hectares: 29_700,
     // A. The yard, windmill and kraal are not grazing land.
     homesteadHectares: 8,
     // S: savanna farms are often quoted at 8 to 10 ha per LSU. A: this prototype uses 10, the lighter end of that quote.
@@ -372,9 +371,9 @@ export const CONFIG: GameConfig = {
 
   herd: {
     name: "Cattle herd",
-    // A. Herd stays 120 head. Capacity is 9,900 ha / 10 ha per LSU = 990 LSU.
-    // Stocking is lighter than before: about 82 ha per head, against the guide of 10 ha per LSU.
-    // Assumption: the herd was not tripled when the land was.
+    // A. The playable mob stays 120 head. Capacity is 29,700 ha / 10 ha per LSU = 2,970 LSU.
+    // Stocking is now about 248 ha per head, against the guide of 10 ha per LSU.
+    // Assumption: one mob is what the yard and the phone show. The herd was not scaled with the land.
     headCount: 120,
     // S: the 450 kg LSU weight. A: every head in this prototype is treated as one LSU.
     averageLiveweightKg: 450,
@@ -578,13 +577,12 @@ export const CONFIG: GameConfig = {
   },
 
   map: {
-    // A. Large ranch layout, many fenced camps. Same camp count as the 76 tile ranch.
-    // Border, inset, and centre spacing scale with the side so camps stay spread out.
+    // A. Eight to ten camps. The metre map picks 8, 9, or 10 from the seed, not this range.
     tilesX: FARM_MAP_TILES,
     tilesY: FARM_MAP_TILES,
     borderTiles: tilesFromPrevious(3),
-    campCountMin: 12,
-    campCountMax: 18,
+    campCountMin: 8,
+    campCountMax: 10,
     centerInset: tilesFromPrevious(4),
     campCenterMinDistance: tilesFromPrevious(7),
     minCampTiles: Math.round(70 * (FARM_MAP_TILES / PREVIOUS_MAP_TILES) ** 2),

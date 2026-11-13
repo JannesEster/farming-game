@@ -40,7 +40,7 @@ function assertGeneratedInfrastructure(state: GameState): void {
   expect(Math.hypot(ramp!.x - house!.x, ramp!.y - house!.y)).toBeGreaterThan(8);
   const farPen = Math.max(...pens.map((pen) => Math.hypot(pen.x - ramp!.x, pen.y - ramp!.y)));
   expect(farPen).toBeGreaterThanOrEqual(5);
-  expect(state.camps.some((camp) => !campHasWaterAccess(state, camp))).toBe(true);
+  expect(state.camps.every((camp) => campHasWaterAccess(state, camp))).toBe(true);
   expect(state.features.some((feature) => feature.kind === "lick_feeder")).toBe(true);
   const start = state.camps.find((camp) => camp.id === state.herd.campId);
   expect(start && campHasWaterAccess(state, start)).toBe(true);
@@ -57,7 +57,7 @@ describe("generated farm water and yard", () => {
     }
   });
 
-  it("gives every generated offer shared water, a dry camp, and a road-side cattle yard", () => {
+  it("gives every generated offer shared water and a road-side cattle yard", () => {
     for (const seed of [88001, 42]) {
       for (const card of generateFarmOffers(seed)) {
         assertGeneratedInfrastructure(card.previewState);

@@ -75,7 +75,7 @@ describe("sourced constants", () => {
     expect(CONFIG.pasture.lsuLiveweightKg).toBe(450);
     expect(CONFIG.pasture.dailyIntakeFractionOfLiveweight).toBe(0.03);
     expect(CONFIG.pasture.consumableFractionOfStandingDm).toBe(0.5);
-    expect(CONFIG.farm.hectares).toBe(9900);
+    expect(CONFIG.farm.hectares).toBe(29700);
     expect(CONFIG.farm.hectaresPerLsu).toBe(10);
     expect(CONFIG.pasture.fullRestDays).toBe(42);
     expect(CONFIG.calendar.seasonStartMonth).toBe(7);
@@ -340,9 +340,10 @@ describe("the running farm", () => {
       expect(kinds.has("kraal")).toBe(false);
       const troughs = first.features.filter((feature) => feature.kind === "trough");
       expect(troughs.length).toBeGreaterThan(0);
+      expect(troughs.length).toBeGreaterThan(0);
       expect(troughs.length).toBeLessThan(first.camps.length);
       expect(first.farmWaterPoints?.length ?? 0).toBeGreaterThan(0);
-      expect(first.camps.some((camp) => !campHasWaterAccess(first, camp))).toBe(true);
+      expect(first.camps.every((camp) => campHasWaterAccess(first, camp))).toBe(true);
       expect(findCamp(first, first.herd.campId)).toBeDefined();
       expect(first.camps.map((item) => [item.hectares, item.standingDmKgPerHa, item.tiles.length])).toEqual(
         second.camps.map((item) => [item.hectares, item.standingDmKgPerHa, item.tiles.length]),

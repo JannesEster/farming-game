@@ -5,6 +5,7 @@ import { farmerDisplayName } from "./playerName";
 import { STEP3A } from "./step3aConfig";
 import { mainHouseTile, workerHouseForFarmhand } from "./housing";
 import {
+  finishTransit,
   fractionalRanchHour,
   gameHoursElapsed,
   herdInTransit,
@@ -27,7 +28,7 @@ function ensureTransitFields(transit: HerdTransit): void {
 
 export function activeHerder(state: GameState): HerderId | null {
   const transit = state.herd.transit;
-  if (transit && transit.phase) {
+  if (transit && transit.phase && transit.phase !== "night") {
     ensureTransitFields(transit);
     return transit.herder ?? null;
   }
@@ -38,7 +39,7 @@ export function herderIsBusy(state: GameState): HerderId | null {
   const t = state.herd.transit;
   if (!t) return null;
   ensureTransitFields(t);
-  if (t.phase === "approach" || t.progress < 1) return t.herder ?? null;
+  if (t.phase === "night" || t.phase === "approach" || t.progress < 1) return t.herder ?? null;
   return null;
 }
 
@@ -72,12 +73,6 @@ export function tryDispatchHerdQueue(state: GameState, config: GameConfig = CONF
   if (state.herd.transit) story.herdMoveQueue = null;
 }
 
-function approachKmEstimate(state: GameState, herder: HerderId, herdTile: TilePoint, config: GameConfig): number {
-  const presence = presenceForHerder(state, herder);
-  const from = presence ? { x: presence.tileX, y: presence.tileY } : mainHouseTile(state);
-  return Math.hypot(herdTile.x - from.x, herdTile.y - from.y) * config.transit.kmPerTile * 1.25;
-}
-
 /** True when the walk out plus the drive would still be going at 18:00. */
 export function moveFitsBeforeDusk(
   state: GameState,
@@ -95,9 +90,6 @@ export function beginHerdMove(state: GameState, toCampId: number, config: GameCo
   if (!herder) return false;
   const path = planHerdPath(state, state.herd.campId, toCampId);
   const distanceKm = pathLengthKm(path, config);
-  const herdTile = path[0] ?? findCamp(state, state.herd.campId)?.anchor ?? mainHouseTile(state);
-  const approachKm = approachKmEstimate(state, herder, herdTile, config);
-  if (!moveFitsBeforeDusk(state, distanceKm, approachKm, config)) return false;
   if (state.story?.returnWalk) state.story.returnWalk = null;
   state.herd.transit = {
     toCampId,
@@ -127,16 +119,8 @@ export function requestHerdMove(state: GameState, campId: number, config: GameCo
   if (camp.id === state.herd.campId && !herdInTransit(state.herd)) return { ok: false, reason: "same" };
   if (!state.story) return { ok: false, reason: "missing" };
 
-  if (!isDaylightHour(state.date.hour)) {
-    state.story.herdMoveQueue = { toCampId: camp.id, reason: "night", campName: camp.name };
-    return { ok: true, campName: camp.name, queued: true, queueReason: "night" };
-  }
-
-  const preview = planHerdPath(state, state.herd.campId, camp.id);
-  const driveKm = pathLengthKm(preview, config);
-  const herder = pickHerder(state) ?? "farmer";
-  const approachKm = approachKmEstimate(state, herder, preview[0] ?? camp.anchor, config);
-  if (!moveFitsBeforeDusk(state, driveKm, approachKm, config)) {
+  const hoursLeft = 18 - fractionalRanchHour(state, config);
+  if (!isDaylightHour(state.date.hour) || hoursLeft < 1) {
     state.story.herdMoveQueue = { toCampId: camp.id, reason: "night", campName: camp.name };
     return { ok: true, campName: camp.name, queued: true, queueReason: "night" };
   }
@@ -185,8 +169,12 @@ export function tickHerdApproach(
   syncHerderToApproach(state);
   if (transit.approachProgress >= 1) {
     transit.phase = "drive";
-    transit.progress = 0;
-    transit.hoursApplied = 0;
+    if (transit.resumeDrive) {
+      transit.resumeDrive = false;
+    } else {
+      transit.progress = 0;
+      transit.hoursApplied = 0;
+    }
   }
 }
 
@@ -210,6 +198,59 @@ export function tickReturnWalk(state: GameState, deltaMs: number, mode: TransitS
   if (walk.progress >= 1 && state.story) state.story.returnWalk = null;
 }
 
+/** About half an hour of cattle walking. Nearer than this, finish into the next camp. */
+const NIGHT_FINISH_KM = 1.75;
+
+function sendHerderHome(state: GameState, who: HerderId | undefined): void {
+  const presence = presenceForHerder(state, who);
+  const home = who === "piet" ? workerHouseForFarmhand(state) ?? mainHouseTile(state) : mainHouseTile(state);
+  if (presence) {
+    presence.tileX = home.x;
+    presence.tileY = home.y;
+    presence.targetTileX = home.x;
+    presence.targetTileY = home.y;
+    presence.walkProgress = 1;
+    presence.onHerdingDuty = false;
+    presence.atHome = true;
+    presence.activityLabel = "At the main house";
+  }
+  if (state.story) state.story.returnWalk = null;
+}
+
+function holdHerdForNight(state: GameState): void {
+  const transit = state.herd.transit;
+  if (!transit || transit.phase === "night") return;
+  ensureTransitFields(transit);
+  if (transit.phase === "approach") {
+    const camp = findCamp(state, transit.toCampId);
+    const who = transit.herder;
+    state.herd.transit = null;
+    if (state.story && camp) {
+      state.story.herdMoveQueue = { toCampId: camp.id, reason: "night", campName: camp.name };
+    }
+    sendHerderHome(state, who);
+    return;
+  }
+  const remaining = (1 - transit.progress) * transit.distanceKm;
+  if (remaining <= NIGHT_FINISH_KM) {
+    finishTransit(state);
+    return;
+  }
+  transit.phase = "night";
+  transit.resumeDrive = true;
+  sendHerderHome(state, transit.herder);
+}
+
+function resumeHerdAfterNight(state: GameState): void {
+  const transit = state.herd.transit;
+  if (!transit || transit.phase !== "night") return;
+  transit.phase = "approach";
+  transit.approachPath = undefined;
+  transit.approachProgress = 0;
+  transit.resumeDrive = true;
+  if (state.story) state.story.returnWalk = null;
+}
+
 export function tickHerdingRealtime(
   state: GameState,
   deltaMs: number,
@@ -217,12 +258,21 @@ export function tickHerdingRealtime(
   config: GameConfig = CONFIG,
 ): void {
   tryDispatchHerdQueue(state, config);
-  const transit = state.herd.transit;
+  let transit = state.herd.transit;
+  if (transit && transit.phase !== "night" && !isDaylightHour(state.date.hour)) {
+    holdHerdForNight(state);
+    transit = state.herd.transit;
+  }
+  if (transit?.phase === "night" && isDaylightHour(state.date.hour)) {
+    resumeHerdAfterNight(state);
+    transit = state.herd.transit;
+  }
   if (!transit) {
     tickReturnWalk(state, deltaMs, mode, config);
     return;
   }
   ensureTransitFields(transit);
+  if (transit.phase === "night") return;
   if (transit.phase === "approach") {
     tickHerdApproach(state, deltaMs, mode, config);
     return;
@@ -350,6 +400,9 @@ export function herdMoveStatusLine(state: GameState): string {
   if (!transit) return "";
   ensureTransitFields(transit);
   const name = transit.herder === "piet" ? STEP3A.farmhandName : farmerDisplayName(state);
+  if (transit.phase === "night") {
+    return "Herd is held for the night. The drive continues at dawn.";
+  }
   if (transit.phase === "approach") {
     const pct = Math.round((transit.approachProgress ?? 0) * 100);
     return `${name} walking to herd (${pct}%)`;

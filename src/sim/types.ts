@@ -36,7 +36,7 @@ export type Feature = {
   scale: number;
 };
 
-export type HerdTransitPhase = "approach" | "drive";
+export type HerdTransitPhase = "approach" | "drive" | "night";
 
 export type HerderId = "farmer" | "piet";
 
@@ -56,6 +56,8 @@ export type HerdTransit = {
   approachProgress?: number;
   approachPath?: TilePoint[];
   approachKm?: number;
+  /** Set when dusk paused a drive. The next morning keeps this progress. */
+  resumeDrive?: boolean;
 };
 
 /** Axis-aligned camp in world metres. The right and bottom edges are exclusive. */

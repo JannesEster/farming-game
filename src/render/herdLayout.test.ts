@@ -4,6 +4,7 @@ import { stateFromOfferCard } from "../integration/pickerAdapter";
 import { CONFIG } from "../sim/config";
 import { generateFarm } from "../sim/generate";
 import { pointCampId, usesMetreCoords } from "../sim/metreFarm";
+import { campGateBetween } from "../sim/path";
 import { moveHerd } from "../sim/simulation";
 import { TILE_HOMESTEAD } from "../sim/types";
 import { trackKeys } from "./colour";
@@ -76,12 +77,16 @@ describe("organicTrekOffsets", () => {
   it("files a walking herd along the path and keeps them on camp or track tiles", () => {
     const card = generateFarmOffers(88001).find((offer) => offer.id === "otjozondjupa-ranch");
     const state = stateFromOfferCard(card!);
-    const moved = state.camps.some((camp) => moveHerd(state, camp.id).ok);
-    expect(moved).toBe(true);
+    const neighbour = state.camps.find(
+      (camp) => camp.id !== state.herd.campId && campGateBetween(state.camps.find((item) => item.id === state.herd.campId)!, camp),
+    );
+    expect(neighbour).toBeTruthy();
+    const moved = moveHerd(state, neighbour!.id);
+    expect(moved.ok).toBe(true);
     expect(state.herd.transit).toBeTruthy();
     state.herd.transit!.progress = 0.5;
-    const tileW = CONFIG.view.tileWidth;
-    const tileH = CONFIG.view.tileHeight;
+    const tileW = usesMetreCoords(state) ? PIXELS_PER_METRE : CONFIG.view.tileWidth;
+    const tileH = usesMetreCoords(state) ? PIXELS_PER_METRE / 2 : CONFIG.view.tileHeight;
     const layout = isoLayout(state.width, state.height, tileW, tileH, CONFIG.view.boundsPadPx);
     const here = tileCenter(
       state.herd.transit!.path[0].x,
@@ -112,7 +117,16 @@ describe("organicTrekOffsets", () => {
       const id = usesMetreCoords(state) ? pointCampId(state, tx, ty) : state.campIds[ty * state.width + tx];
       const key = `${tx},${ty}`;
       const path = state.herd.transit!.path;
-      const besideRoute = path.some((tile) => Math.max(Math.abs(tile.x - tx), Math.abs(tile.y - ty)) <= 3);
+      const besideRoute = path.some((step, index) => {
+        const next = path[Math.min(path.length - 1, index + 1)];
+        const dx = next.x - step.x;
+        const dy = next.y - step.y;
+        const len2 = dx * dx + dy * dy;
+        const t = len2 <= 0 ? 0 : Math.max(0, Math.min(1, ((tx - step.x) * dx + (ty - step.y) * dy) / len2));
+        const px = step.x + dx * t - tx;
+        const py = step.y + dy * t - ty;
+        return px * px + py * py <= 80 * 80;
+      });
       const allowed = id === fromId || id === destId || track.has(key) || (besideRoute && id !== TILE_HOMESTEAD);
       expect(allowed).toBe(true);
       expect(id).not.toBe(TILE_HOMESTEAD);

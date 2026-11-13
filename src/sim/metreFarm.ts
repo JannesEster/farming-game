@@ -18,6 +18,34 @@ export function farmSideMetres(hectares: number): number {
   return Math.max(1, Math.round(Math.sqrt(hectares * 10000)));
 }
 
+/** Reference rectangle for 29,700 ha. Other listings use the same shape, scaled by area. */
+const OUTLINE_REF_HA = 29_700;
+const OUTLINE_REF_WIDTH_M = 20_000;
+
+/** Rough rectangle, longer east to west. 29,700 ha is 20 km by 14.85 km. */
+export function farmOutlineMetres(hectares: number): { width: number; height: number } {
+  const scale = Math.sqrt(Math.max(1, hectares) / OUTLINE_REF_HA);
+  const width = Math.max(1, Math.round(OUTLINE_REF_WIDTH_M * scale));
+  const height = Math.max(1, Math.round((hectares * 10000) / width));
+  return { width, height };
+}
+
+/**
+ * 8, 9, or 10 camps. A short mix of the seed, not a row count.
+ * Seed 3300 is 9. The Omaheke map seeds used by the picker land on the other two.
+ */
+export function campCountForSeed(seed: number): 8 | 9 | 10 {
+  const text = `${Math.abs(Math.trunc(seed))}:1`;
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = Math.imul(hash ^ text.charCodeAt(i), 16777619) >>> 0;
+  }
+  const pick = hash % 3;
+  if (pick === 0) return 9;
+  if (pick === 1) return 10;
+  return 8;
+}
+
 export function usesMetreCoords(state: {
   camps: { rect?: CampRect }[];
   campIds: readonly number[];
@@ -71,77 +99,56 @@ export function metreSharedGate(
   return null;
 }
 
-function spread(total: number, parts: number): number[] {
-  const base = Math.floor(total / parts);
-  let extra = total - base * parts;
-  return Array.from({ length: parts }, () => {
-    const add = extra > 0 ? 1 : 0;
-    extra -= add;
-    return base + add;
-  });
-}
+type BandFractions = { y0: number; y1: number; xs: number[] };
 
-function rectAspect(w: number, h: number): number {
-  const short = Math.min(w, h);
-  if (short <= 0) return Number.POSITIVE_INFINITY;
-  return Math.max(w, h) / short;
-}
+/**
+ * Three bands. Cuts do not line up, so the fences are not a noughts-and-crosses grid.
+ * Fractions are the 20 km by 14.85 km plan. Smaller camps sit in the south, nearer the house.
+ */
+const CAMP_BANDS: Record<8 | 9 | 10, BandFractions[]> = {
+  9: [
+    { y0: 0, y1: 6400 / 14850, xs: [0, 8500 / 20000, 1] },
+    { y0: 6400 / 14850, y1: 10800 / 14850, xs: [0, 4200 / 20000, 11500 / 20000, 1] },
+    { y0: 10800 / 14850, y1: 1, xs: [0, 3600 / 20000, 7000 / 20000, 12500 / 20000, 1] },
+  ],
+  8: [
+    { y0: 0, y1: 6400 / 14850, xs: [0, 8500 / 20000, 1] },
+    { y0: 6400 / 14850, y1: 10800 / 14850, xs: [0, 4200 / 20000, 11500 / 20000, 1] },
+    { y0: 10800 / 14850, y1: 1, xs: [0, 7000 / 20000, 12500 / 20000, 1] },
+  ],
+  10: [
+    { y0: 0, y1: 6400 / 14850, xs: [0, 8500 / 20000, 0.7, 1] },
+    { y0: 6400 / 14850, y1: 10800 / 14850, xs: [0, 4200 / 20000, 11500 / 20000, 1] },
+    { y0: 10800 / 14850, y1: 1, xs: [0, 3600 / 20000, 7000 / 20000, 12500 / 20000, 1] },
+  ],
+};
 
-/** Square-ish rectangles that tile `side` by `side` without gaps or overlaps. */
-export function metreCampRects(count: number, side: number): CampRect[] {
-  const cell = Math.sqrt((side * side) / Math.max(1, count));
-  const guess = Math.max(1, Math.min(count, Math.round(side / cell)));
-  let bestCounts: number[] | null = null;
-  let bestAspect = Number.POSITIVE_INFINITY;
-  let transpose = false;
-  for (let rows = Math.max(1, guess - 3); rows <= Math.min(count, guess + 3); rows += 1) {
-    const base = Math.floor(count / rows);
-    const extra = count - base * rows;
-    const counts = Array.from({ length: rows }, (_, index) => base + (index < extra ? 1 : 0));
-    if (counts.some((cols) => cols < 1)) continue;
-    const rowHeights = spread(side, rows);
-    let worst = 1;
-    for (let row = 0; row < rows; row += 1) worst = Math.max(worst, rectAspect(side / counts[row], rowHeights[row]));
-    if (worst < bestAspect) {
-      bestAspect = worst;
-      bestCounts = counts;
-      transpose = false;
-    }
-    const colWidths = spread(side, rows);
-    let worstAcross = 1;
-    for (let col = 0; col < rows; col += 1) worstAcross = Math.max(worstAcross, rectAspect(colWidths[col], side / counts[col]));
-    if (worstAcross < bestAspect) {
-      bestAspect = worstAcross;
-      bestCounts = counts;
-      transpose = true;
-    }
+function snapEdges(fractions: number[], total: number): number[] {
+  const edges = fractions.map((fraction, index) =>
+    index === 0 ? 0 : index === fractions.length - 1 ? total : Math.round(fraction * total),
+  );
+  for (let i = 1; i < edges.length; i += 1) {
+    if (edges[i] <= edges[i - 1]) edges[i] = edges[i - 1] + 1;
   }
-  const counts = bestCounts ?? [count];
+  edges[edges.length - 1] = total;
+  return edges;
+}
+
+/** Mixed squares and rectangles. Straight axis-aligned fences. No gaps. */
+export function metreCampRects(count: number, width: number, height = width): CampRect[] {
+  const plan = count === 8 || count === 10 || count === 9 ? CAMP_BANDS[count] : CAMP_BANDS[9];
+  const yEdges = snapEdges(
+    plan.map((band) => band.y0).concat(1),
+    height,
+  );
   const rects: CampRect[] = [];
-  if (!transpose) {
-    const rowHeights = spread(side, counts.length);
-    let y = 0;
-    for (let row = 0; row < counts.length; row += 1) {
-      const widths = spread(side, counts[row]);
-      let x = 0;
-      for (const w of widths) {
-        rects.push({ x, y, w, h: rowHeights[row] });
-        x += w;
-      }
-      y += rowHeights[row];
+  for (let row = 0; row < plan.length; row += 1) {
+    const y = yEdges[row];
+    const h = yEdges[row + 1] - y;
+    const xEdges = snapEdges(plan[row].xs, width);
+    for (let col = 0; col < xEdges.length - 1; col += 1) {
+      rects.push({ x: xEdges[col], y, w: xEdges[col + 1] - xEdges[col], h });
     }
-    return rects;
-  }
-  const colWidths = spread(side, counts.length);
-  let x = 0;
-  for (let col = 0; col < counts.length; col += 1) {
-    const heights = spread(side, counts[col]);
-    let y = 0;
-    for (const h of heights) {
-      rects.push({ x, y, w: colWidths[col], h });
-      y += h;
-    }
-    x += colWidths[col];
   }
   return rects;
 }
@@ -151,11 +158,6 @@ function inside(rect: CampRect, point: TilePoint, inset = 2): TilePoint {
     x: Math.round(clamp(point.x, rect.x + inset, rect.x + rect.w - inset - 1)),
     y: Math.round(clamp(point.y, rect.y + inset, rect.y + rect.h - inset - 1)),
   };
-}
-
-function nearAny(x: number, y: number, points: TilePoint[], gap: number): boolean {
-  const gap2 = gap * gap;
-  return points.some((point) => (point.x - x) ** 2 + (point.y - y) ** 2 < gap2);
 }
 
 function polyline(from: TilePoint, to: TilePoint, step: number): TilePoint[] {
@@ -172,11 +174,52 @@ function polyline(from: TilePoint, to: TilePoint, step: number): TilePoint[] {
   return points;
 }
 
-export function buildMetreFarm(rng: Rng, config: GameConfig = CONFIG): GameState {
-  const side = farmSideMetres(config.farm.hectares);
-  const span = config.map.campCountMax - config.map.campCountMin;
-  const campCount = config.map.campCountMin + Math.floor(rng.next() * (span + 1));
-  const rects = metreCampRects(campCount, side);
+/** One trough on a shared fence for every camp. A trough can water the camp on each side. */
+function placeSharedWater(camps: CampState[]): FarmWaterPoint[] {
+  const edges: { a: number; b: number; x: number; y: number }[] = [];
+  for (let i = 0; i < camps.length; i += 1) {
+    for (let j = i + 1; j < camps.length; j += 1) {
+      const left = camps[i].rect;
+      const right = camps[j].rect;
+      if (!left || !right) continue;
+      const gate = metreSharedGate(left, right);
+      if (!gate) continue;
+      const vertical = Math.abs(left.x + left.w - right.x) < 0.5 || Math.abs(right.x + right.w - left.x) < 0.5;
+      const overlap = vertical
+        ? Math.min(left.y + left.h, right.y + right.h) - Math.max(left.y, right.y)
+        : Math.min(left.x + left.w, right.x + right.w) - Math.max(left.x, right.x);
+      const shift = Math.min(90, Math.max(8, overlap / 4));
+      const x = vertical ? gate.from.x : Math.round(gate.from.x + shift);
+      const y = vertical ? Math.round(gate.from.y + shift) : gate.from.y;
+      edges.push({ a: camps[i].id, b: camps[j].id, x, y });
+    }
+  }
+  const served = new Set<number>();
+  const points: FarmWaterPoint[] = [];
+  const remaining = edges.slice();
+  while (served.size < camps.length && remaining.length > 0) {
+    const index = remaining.findIndex((edge) => !served.has(edge.a) || !served.has(edge.b));
+    if (index < 0) break;
+    const edge = remaining.splice(index, 1)[0];
+    served.add(edge.a);
+    served.add(edge.b);
+    points.push({
+      id: `water-${points.length + 1}`,
+      tile: { x: edge.x, y: edge.y },
+      trough: { x: edge.x, y: edge.y },
+      pump: points.length % 2 === 0 ? "windmill" : "solar",
+      reservoir: points.length % 3 === 0,
+      servedCampIds: [edge.a, edge.b],
+      lick: false,
+    });
+  }
+  return points;
+}
+
+export function buildMetreFarm(rng: Rng, config: GameConfig = CONFIG, seed = config.worldSeed): GameState {
+  const outline = farmOutlineMetres(config.farm.hectares);
+  const campCount = campCountForSeed(seed);
+  const rects = metreCampRects(campCount, outline.width, outline.height);
   const camps: CampState[] = rects.map((rect, id) => {
     const openness = rng.next();
     const peak = clamp(
@@ -201,13 +244,13 @@ export function buildMetreFarm(rng: Rng, config: GameConfig = CONFIG): GameState
   });
 
   let host = camps[0];
-  let hostDist = Number.POSITIVE_INFINITY;
   for (const camp of camps) {
-    const dist = (camp.anchor.x - side / 2) ** 2 + (camp.anchor.y - side / 2) ** 2;
-    if (dist < hostDist) {
-      hostDist = dist;
-      host = camp;
-    }
+    const best = host.rect!;
+    const rect = camp.rect!;
+    const bestSouth = best.y + best.h;
+    const south = rect.y + rect.h;
+    if (south > bestSouth + 1) host = camp;
+    else if (Math.abs(south - bestSouth) <= 1 && rect.x < best.x) host = camp;
   }
   const rect = host.rect!;
   const house = inside(rect, { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 }, 40);
@@ -252,58 +295,9 @@ export function buildMetreFarm(rng: Rng, config: GameConfig = CONFIG): GameState
   for (let i = 0; i <= 24; i += 1) road.push({ x: roadX - i, y: yardY });
   for (const point of road) features.push({ kind: "track", x: point.x, y: point.y, scale: 1 });
 
-  const corners = new Map<string, { x: number; y: number; camps: number[] }>();
-  for (const camp of camps) {
-    const r = camp.rect!;
-    for (const [x, y] of [
-      [r.x, r.y],
-      [r.x + r.w, r.y],
-      [r.x, r.y + r.h],
-      [r.x + r.w, r.y + r.h],
-    ] as const) {
-      const key = `${x},${y}`;
-      const found = corners.get(key);
-      if (found) found.camps.push(camp.id);
-      else corners.set(key, { x, y, camps: [camp.id] });
-    }
-  }
-  const shared = [...corners.values()].filter((corner) => corner.camps.length >= 2);
-  shared.sort((a, b) => {
-    const hostA = a.camps.includes(host.id) ? 0 : 1;
-    const hostB = b.camps.includes(host.id) ? 0 : 1;
-    return hostA - hostB || b.camps.length - a.camps.length || a.y - b.y || a.x - b.x;
-  });
-  const waterPoints: FarmWaterPoint[] = [];
-  const buildings = features.filter((feature) => feature.kind !== "track");
-  for (const corner of shared) {
-    if (waterPoints.length >= camps.length - 1) break;
-    if (waterPoints.some((point) => Math.hypot(point.tile.x - corner.x, point.tile.y - corner.y) < 400)) continue;
-    if (nearAny(corner.x, corner.y, buildings, 30)) continue;
-    const id = `water-${waterPoints.length + 1}`;
-    waterPoints.push({
-      id,
-      tile: { x: corner.x, y: corner.y },
-      trough: { x: corner.x, y: corner.y },
-      pump: waterPoints.length % 2 === 0 ? "windmill" : "solar",
-      reservoir: waterPoints.length % 3 === 0,
-      servedCampIds: [...corner.camps],
-      lick: false,
-    });
-    features.push({ kind: "trough", x: corner.x, y: corner.y, scale: 1 });
-  }
-  const watered = (id: number) => waterPoints.some((point) => point.servedCampIds.includes(id));
-  if (camps.every((camp) => watered(camp.id)) && waterPoints.length > 0) {
-    const dry = camps.find((camp) => camp.id !== host.id);
-    if (dry) {
-      for (const point of waterPoints) {
-        if (!point.servedCampIds.includes(dry.id)) continue;
-        point.servedCampIds = point.servedCampIds.filter((id) => id !== dry.id);
-        if (point.servedCampIds.length < 2) {
-          const extra = camps.find((camp) => camp.id !== dry.id && !point.servedCampIds.includes(camp.id));
-          if (extra) point.servedCampIds.push(extra.id);
-        }
-      }
-    }
+  const waterPoints = placeSharedWater(camps);
+  for (const point of waterPoints) {
+    features.push({ kind: "trough", x: point.trough.x, y: point.trough.y, scale: 1 });
   }
 
   const start = inside(rect, { x: house.x + 6, y: house.y + 28 }, 8);
@@ -355,8 +349,8 @@ export function buildMetreFarm(rng: Rng, config: GameConfig = CONFIG): GameState
     seasonRainMm: 0,
     todayRainMm: 0,
     cashNad: config.economy.startingCashNad,
-    width: side,
-    height: side,
+    width: outline.width,
+    height: outline.height,
     campIds: [],
     camps,
     herd: {

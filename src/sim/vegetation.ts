@@ -104,8 +104,8 @@ function nearRoad(x: number, y: number, road: TilePoint[], gap: number): boolean
   return false;
 }
 
-function blocked(x: number, y: number, side: number, obstacles: Obstacles, clear: number): boolean {
-  if (x < 2 || y < 2 || x >= side - 2 || y >= side - 2) return true;
+function blocked(x: number, y: number, width: number, height: number, obstacles: Obstacles, clear: number): boolean {
+  if (x < 2 || y < 2 || x >= width - 2 || y >= height - 2) return true;
   if (nearPoints(x, y, obstacles.buildings, clear)) return true;
   if (nearPoints(x, y, obstacles.water, WATER_CLEAR_M)) return true;
   if (nearRoad(x, y, obstacles.road, ROAD_CLEAR_M)) return true;
@@ -132,7 +132,8 @@ function cellPoint(
  * so the million-point veld is not stored on the save.
  */
 export function treesInRect(state: GameState, x0: number, y0: number, x1: number, y1: number): VegPoint[] {
-  const side = state.width;
+  const width = state.width;
+  const height = state.height;
   const blocks = obstacles(state);
   const out: VegPoint[] = [];
   const reach = 12;
@@ -149,7 +150,7 @@ export function treesInRect(state: GameState, x0: number, y0: number, x1: number
     for (let i = i0; i <= i1; i += 1) {
       if (unit(state.seed, i, j, 1) >= TREE_KEEP) continue;
       const tree = cellPoint(state.seed, i, j, TREE_CELL_M, 4, 4);
-      if (!blocked(tree.x, tree.y, side, blocks, TREE_CLEAR_M) && inside(tree)) out.push(tree);
+      if (!blocked(tree.x, tree.y, width, height, blocks, TREE_CLEAR_M) && inside(tree)) out.push(tree);
       if (unit(state.seed, i, j, 2) >= CLUMP_FRACTION) continue;
       const angle = unit(state.seed, i, j, 6) * Math.PI * 2;
       const dist = 4.5 + unit(state.seed, i, j, 7) * 6.5;
@@ -158,7 +159,7 @@ export function treesInRect(state: GameState, x0: number, y0: number, x1: number
         y: tree.y + Math.sin(angle) * dist,
         scale: 0.85 + unit(state.seed, i, j, 8) * 0.3,
       };
-      if (!blocked(partner.x, partner.y, side, blocks, TREE_CLEAR_M) && inside(partner)) out.push(partner);
+      if (!blocked(partner.x, partner.y, width, height, blocks, TREE_CLEAR_M) && inside(partner)) out.push(partner);
     }
   }
   return out;
@@ -166,7 +167,8 @@ export function treesInRect(state: GameState, x0: number, y0: number, x1: number
 
 /** Bushes in the metre rectangle. Same on-screen spacing as the screenshot farm. */
 export function bushesInRect(state: GameState, x0: number, y0: number, x1: number, y1: number): VegPoint[] {
-  const side = state.width;
+  const width = state.width;
+  const height = state.height;
   const blocks = obstacles(state);
   const out: VegPoint[] = [];
   const i0 = Math.floor(Math.min(x0, x1) / BUSH_CELL_M);
@@ -181,7 +183,7 @@ export function bushesInRect(state: GameState, x0: number, y0: number, x1: numbe
     for (let i = i0; i <= i1; i += 1) {
       const bush = cellPoint(state.seed, i, j, BUSH_CELL_M, 1.6, 20);
       if (bush.x < minX || bush.x >= maxX || bush.y < minY || bush.y >= maxY) continue;
-      if (blocked(bush.x, bush.y, side, blocks, BUSH_CLEAR_M)) continue;
+      if (blocked(bush.x, bush.y, width, height, blocks, BUSH_CLEAR_M)) continue;
       out.push(bush);
     }
   }
