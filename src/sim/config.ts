@@ -5,6 +5,42 @@
  * Simulation code reads these fields. It does not keep its own copies.
  */
 
+/** Side length, in tiles, of the ranch before the property area was tripled. */
+export const PREVIOUS_MAP_TILES = 76;
+/** Property area is 3 times that ranch. Each side grows by about 1.73. */
+export const FARM_AREA_SCALE = 3;
+/** 76 * sqrt(3), rounded. (132 / 76) squared is about 3.02, close to 3. */
+export const FARM_MAP_TILES = Math.round(PREVIOUS_MAP_TILES * Math.sqrt(FARM_AREA_SCALE));
+/**
+ * Multiply an old per-tile chance by this to keep about the same count
+ * on the larger map. 76 squared over 132 squared.
+ */
+export const VEGETATION_COUNT_SCALE =
+  (PREVIOUS_MAP_TILES * PREVIOUS_MAP_TILES) / (FARM_MAP_TILES * FARM_MAP_TILES);
+/**
+ * Bushes share the tree random stream, so a pure area scale left too many bushes.
+ * 0.62 was tuned with the tree chances below. Assumption.
+ */
+export const BUSH_COUNT_TRIM = 0.62;
+
+function tilesFromPrevious(previous: number): number {
+  return Math.max(1, Math.round((previous * FARM_MAP_TILES) / PREVIOUS_MAP_TILES));
+}
+
+/**
+ * Kilometres per hour for each way of getting around.
+ * This build only walks. Cattle are 3.5. The farmer and a hired worker are 5.
+ * Horse and bakkie figures are reserved for later upgrades. Nothing reads them yet.
+ * Assumption: a stock horse at 12 km/h, a farm bakkie on a two-track at 40 km/h.
+ */
+export const MOVEMENT_KMH = {
+  footCattle: 3.5,
+  footHerder: 5,
+  worker: 5,
+  horse: 12,
+  bakkie: 40,
+} as const;
+
 export type GameConfig = {
   worldSeed: number;
   farm: {
@@ -286,8 +322,9 @@ export const CONFIG: GameConfig = {
 
   farm: {
     name: "Otjozondjupa",
-    // S: Otjozondjupa average commercial farm is 3,327 ha. Lesson 8.1 rounds the cattle ranch template to 3,300.
-    hectares: 3300,
+    // S: Otjozondjupa census average is 3,327 ha. The playable ranch is 3,300 ha.
+    // The outline is about 5.7 km by 5.7 km, in the same metres as the cow.
+    hectares: 3_300,
     // A. The yard, windmill and kraal are not grazing land.
     homesteadHectares: 8,
     // S: savanna farms are often quoted at 8 to 10 ha per LSU. A: this prototype uses 10, the lighter end of that quote.
@@ -308,7 +345,6 @@ export const CONFIG: GameConfig = {
     // A: typical litter left after a graze, as a fraction of that camp's own peak. Tuned for this map, not a measured litter curve.
     residualFractionOfPeak: 0.125,
     // A: share of camp hectares actively defoliated before you move the herd. NAU warns that use concentrates near water.
-    // Tuned so 120 head on a typical camp needs a move within about two weeks in the dry season.
     activeGrazingFractionOfCamp: 0.22,
     // S: NAU growing season rule, one to two weeks grazing. This build uses fourteen days.
     maxGrazingDaysRainySeason: 14,
@@ -519,8 +555,8 @@ export const CONFIG: GameConfig = {
   },
 
   transit: {
-    // A. One tile is about 75 m. 3300 ha is about 5.7 km across, not 10+ km.
-    kmPerTile: 0.075,
+    // One coordinate unit is one metre, the same metre as the cow. 0.001 km per unit.
+    kmPerTile: 0.001,
     maxSpanKm: 5.7,
     playMsMin: 6000,
     playMsMax: 15000,
@@ -531,11 +567,11 @@ export const CONFIG: GameConfig = {
      * Cattle walking a drive. Assumption: Jannes said cattle walk about 3 to 4 km/h.
      * 3.5 is the middle of that band.
      */
-    cattleWalkKmH: 3.5,
+    cattleWalkKmH: MOVEMENT_KMH.footCattle,
     /** Kept for older call sites. Same figure as cattleWalkKmH. */
-    walkSpeedKmH: 3.5,
-    /** Herder walking to the herd, and home again. A normal walking pace. */
-    herderWalkKmH: 5,
+    walkSpeedKmH: MOVEMENT_KMH.footCattle,
+    /** Herder on foot. A hired worker uses the same pace until that number is raised. */
+    herderWalkKmH: MOVEMENT_KMH.footHerder,
     /**
      * Tuning value for Jannes. While a drive or the walk out to the herd is on,
      * the ranch clock runs at this fraction of its usual speed. 0.5 makes a
@@ -550,21 +586,22 @@ export const CONFIG: GameConfig = {
   },
 
   map: {
-    // A. Large ranch layout, many fenced camps.
-    tilesX: 76,
-    tilesY: 76,
-    borderTiles: 3,
-    campCountMin: 12,
-    campCountMax: 18,
-    centerInset: 4,
-    campCenterMinDistance: 7,
-    minCampTiles: 70,
+    // A. Eight to ten camps. The metre map picks 8, 9, or 10 from the seed, not this range.
+    tilesX: FARM_MAP_TILES,
+    tilesY: FARM_MAP_TILES,
+    borderTiles: tilesFromPrevious(3),
+    campCountMin: 8,
+    campCountMax: 10,
+    centerInset: tilesFromPrevious(4),
+    campCenterMinDistance: tilesFromPrevious(7),
+    minCampTiles: Math.round(70 * (FARM_MAP_TILES / PREVIOUS_MAP_TILES) ** 2),
     placementAttempts: 48,
     homesteadTilesX: 7,
     homesteadTilesY: 6,
-    treeChance: 0.065,
-    bushChanceOpen: 0.12,
-    bushChanceBushy: 0.3,
+    // Tuned so seed 3300 still plants about 162 trees (the shipped default farm).
+    treeChance: 0.0106,
+    bushChanceOpen: 0.12 * VEGETATION_COUNT_SCALE * BUSH_COUNT_TRIM,
+    bushChanceBushy: 0.3 * VEGETATION_COUNT_SCALE * BUSH_COUNT_TRIM,
     outsidePlantFactor: 0.4,
     treeScaleMin: 0.85,
     treeScaleMax: 1.15,

@@ -6,6 +6,7 @@ import { buildPriceLines, defaultWeanerHerd } from "./pricing";
 import { REGIONS } from "./regionData";
 import type { FarmOfferCard, FenceCondition, WaterInventory } from "./types";
 import type { FarmMeta } from "../sim/types";
+import { campCountForSeed } from "../sim/metreFarm";
 import { createRng } from "../sim/rng";
 
 function infraForRegion(
@@ -28,11 +29,8 @@ function infraForRegion(
   return { water, fence };
 }
 
-function campCountFor(regionKey: keyof typeof REGIONS, seed: number): number {
-  const region = REGIONS[regionKey];
-  const rng = createRng(seed + 17);
-  const span = region.terrain.campCountMax - region.terrain.campCountMin;
-  return region.terrain.campCountMin + Math.floor(rng.next() * (span + 1));
+function campCountFor(mapSeed: number): number {
+  return campCountForSeed(mapSeed);
 }
 
 export function attachFarmMeta(state: ReturnType<typeof createGame>, meta: FarmMeta): void {
@@ -78,7 +76,7 @@ function buildOffer(
   herdStartNearYard = false,
 ): FarmOfferCard {
   const region = REGIONS[regionKey];
-  const campCount = campCountFor(regionKey, bundleSeed);
+  const campCount = campCountFor(mapSeed);
   const { water, fence } = infraForRegion(regionKey, campCount, bundleSeed);
   const workerHouses = regionKey === "khomas" ? 2 : 1;
 

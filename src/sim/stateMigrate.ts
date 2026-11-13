@@ -15,8 +15,16 @@ import { STEP3B } from "./step3bConfig";
 import { ensureAnimals } from "./animals";
 import { defaultDrinkingTrip } from "./water";
 import { defaultBakkieRun } from "./bakkie";
+import { generateFarm } from "./generate";
+import { usesMetreCoords } from "./metreFarm";
 
-export const GAME_STATE_VERSION = 8;
+export const GAME_STATE_VERSION = 9;
+
+function isOldTileSave(state: GameState): boolean {
+  if (usesMetreCoords(state)) return false;
+  if (!state.width || !state.height || !Array.isArray(state.campIds)) return false;
+  return state.campIds.length === state.width * state.height && state.width <= 400;
+}
 
 function deriveWaterPointsFromFeatures(state: GameState): FarmWaterPoint[] {
   const points: FarmWaterPoint[] = [];
@@ -27,11 +35,8 @@ function deriveWaterPointsFromFeatures(state: GameState): FarmWaterPoint[] {
         (f) => f.kind === "trough" && Math.hypot(f.x - pump.x, f.y - pump.y) <= 2,
       ) ?? pump;
     const servedCampIds = state.camps
-      .filter((camp) => {
-        const inCamp = camp.tiles.some((t) => t.x === trough.x && t.y === trough.y);
-        if (inCamp) return true;
-        return Math.hypot(camp.anchor.x - trough.x, camp.anchor.y - trough.y) < 8;
-      })
+      .filter((camp) => camp.tiles.some((t) => Math.hypot(t.x - trough.x, t.y - trough.y) <= 1.5))
+      .slice(0, 4)
       .map((c) => c.id);
     points.push({
       id: `wp-${pump.x}-${pump.y}`,
@@ -51,6 +56,7 @@ function deriveWaterPointsFromFeatures(state: GameState): FarmWaterPoint[] {
 }
 
 function snapWorkerCottagesOntoYard(state: GameState): void {
+  if (usesMetreCoords(state)) return;
   const houses = state.features.filter((f) => f.kind === "worker_house");
   if (houses.length === 0) {
     state.features.push({ kind: "worker_house", x: 17, y: 15, scale: 1 });
@@ -115,6 +121,11 @@ function needsCattleClassMigration(composition: HerdComposition & { weaner?: num
 }
 
 export function migrateState(state: GameState): GameState {
+  if (isOldTileSave(state)) {
+    const fresh = generateFarm(state.seed || CONFIG.worldSeed);
+    fresh.scaleReset = true;
+    return fresh;
+  }
   if (!state.story) {
     state.story = createStoryState(state.herd.headCount, CONFIG);
     state.story.composition = defaultComposition(state.herd.headCount, CONFIG);
@@ -214,6 +225,10 @@ export function parseLegacySaved(raw: string): GameState | null {
     }
     const state = data.state;
     if (!Array.isArray(state.camps) || !state.herd || !state.date) return null;
+    if (!Array.isArray(state.features) || !Array.isArray(state.campIds)) return null;
+    const fullGrid = state.campIds.length === state.width * state.height;
+    const metre = state.camps.some((camp) => camp.rect);
+    if (!state.width || !state.height || (!fullGrid && !metre)) return null;
     return migrateState(state);
   } catch {
     return null;

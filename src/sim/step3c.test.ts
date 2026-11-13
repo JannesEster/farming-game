@@ -27,8 +27,8 @@ describe("step 3c animals, escapes, and cut-out", () => {
     delete legacy.story?.animals;
     delete legacy.stateVersion;
     const loaded = parseLegacySaved(JSON.stringify({ version: 2, savedAt: "2026-08-01", state: legacy }));
-    expect(GAME_STATE_VERSION).toBe(8);
-    expect(loaded?.stateVersion).toBe(8);
+    expect(GAME_STATE_VERSION).toBe(9);
+    expect(loaded?.stateVersion).toBe(9);
     expect(loaded?.story?.animals?.length).toBe(loaded?.herd.headCount);
     const copy = animalDetailCopy(loaded!.story!.animals![0]);
     expect(copy.title.startsWith("Tag ")).toBe(true);

@@ -1,12 +1,21 @@
 /**
  * Regional facts for farm picker cards (sourced in farm-life-lesson §4.1, §7.1, §8.1).
  * Assumption fields are marked in comments.
+ * Listing hectares are the original playable sizes. Live trees use the screenshot
+ * spacing in metres, so the count follows the true area. The tile chances below
+ * are only for the old tile generator.
  */
+
+import { BUSH_COUNT_TRIM, VEGETATION_COUNT_SCALE } from "../sim/config";
+
+function keepBushCount(previousChance: number): number {
+  return previousChance * VEGETATION_COUNT_SCALE * BUSH_COUNT_TRIM;
+}
 
 export type RegionTemplate = {
   key: "karas" | "khomas" | "otjozondjupa" | "omaheke";
   label: string;
-  /** Listing hectares (may be below regional average so the map stays playable). */
+  /** Listing hectares. The original playable size for this region. */
   listingHectares: number;
   /** S: NSA commercial census average ha where used for flavour text. */
   censusAvgHectares: number;
@@ -46,11 +55,11 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
     hectaresPerLsuSource: "Karas land use plan 24 to 30 ha/LSU (eastern/north-eastern band)",
     biome: "Nama Karoo dwarf shrubland",
     terrain: {
-      campCountMin: 14,
-      campCountMax: 20,
-      treeChance: 0.015,
-      bushChanceOpen: 0.045,
-      bushChanceBushy: 0.12,
+      campCountMin: 8,
+      campCountMax: 10,
+      treeChance: 0.0009,
+      bushChanceOpen: keepBushCount(0.045),
+      bushChanceBushy: keepBushCount(0.12),
       peakDmKgPerHa: 900,
       bushyPeakFraction: 0.55,
     },
@@ -67,11 +76,11 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
     hectaresPerLsuSource: "Savanna farms often quoted 8 to 10 ha/LSU (indicative)",
     biome: "Acacia savanna, hilly highlands",
     terrain: {
-      campCountMin: 10,
-      campCountMax: 14,
-      treeChance: 0.085,
-      bushChanceOpen: 0.09,
-      bushChanceBushy: 0.2,
+      campCountMin: 8,
+      campCountMax: 10,
+      treeChance: 0.0079,
+      bushChanceOpen: keepBushCount(0.09),
+      bushChanceBushy: keepBushCount(0.2),
       peakDmKgPerHa: 1_500,
       bushyPeakFraction: 0.65,
     },
@@ -88,11 +97,11 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
     hectaresPerLsuSource: "Savanna 8 to 10 ha/LSU (prototype uses 10)",
     biome: "Thornbush savanna",
     terrain: {
-      campCountMin: 12,
-      campCountMax: 18,
-      treeChance: 0.065,
-      bushChanceOpen: 0.1,
-      bushChanceBushy: 0.24,
+      campCountMin: 8,
+      campCountMax: 10,
+      treeChance: 0.00348,
+      bushChanceOpen: keepBushCount(0.1),
+      bushChanceBushy: keepBushCount(0.24),
       peakDmKgPerHa: 1_600,
       bushyPeakFraction: 0.6,
     },
@@ -109,11 +118,11 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
     hectaresPerLsuSource: "A: Kalahari sandveld, slightly lower capacity than central savanna",
     biome: "Kalahari sandveld savanna",
     terrain: {
-      campCountMin: 11,
-      campCountMax: 16,
-      treeChance: 0.04,
-      bushChanceOpen: 0.07,
-      bushChanceBushy: 0.16,
+      campCountMin: 8,
+      campCountMax: 10,
+      treeChance: 0.0035,
+      bushChanceOpen: keepBushCount(0.07),
+      bushChanceBushy: keepBushCount(0.16),
       peakDmKgPerHa: 1_350,
       bushyPeakFraction: 0.62,
     },

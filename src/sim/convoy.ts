@@ -44,10 +44,14 @@ export function columnMetrics(
   const abreast = safe <= 6 ? Math.min(2, safe) : MOB_ABREAST;
   const spacingTiles = 0.92;
   const centerTiles = progress * total;
-  const span = Math.min(MOB_LENGTH_TILES, Math.max(0, centerTiles * 0.5));
+  // A path longer than 80 units is in metres. The filed mob is about 45 m, not 12 m.
+  const long = total > 80;
+  const mobLength = long ? 42 : MOB_LENGTH_TILES;
+  const span = Math.min(mobLength, Math.max(0, centerTiles * 0.5));
   const rearTiles = Math.max(0, centerTiles - span);
-  // Stay close at the first steps so he keeps walking, then open to 3.2 tiles behind the tail.
-  const gap = Math.min(3, 0.6 + Math.max(0, centerTiles - 1.2) * 0.28);
+  // Stay close at the first steps so he keeps walking, then sit 3.5 m behind the tail.
+  const gapCap = long ? 3.5 : 3;
+  const gap = Math.min(gapCap, (long ? 3.5 : 0.6) + Math.max(0, centerTiles - (long ? 6 : 1.2)) * (long ? 0.4 : 0.28));
   const herderTiles = Math.max(0, rearTiles - gap);
   return {
     total,
@@ -94,6 +98,7 @@ export function herderStandTile(path: TilePoint[], progress: number, count: numb
   }
   dx /= len;
   dy /= len;
-  const back = metrics.centerTiles < 2.4 ? Math.max(0.45, metrics.centerTiles * 0.4) : 3.2;
+  const long = metrics.total > 80;
+  const back = metrics.centerTiles < (long ? 8 : 2.4) ? Math.max(long ? 2 : 0.45, metrics.centerTiles * 0.4) : long ? 3.5 : 3.2;
   return { x: rear.x - dx * back, y: rear.y - dy * back };
 }

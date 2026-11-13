@@ -17,6 +17,22 @@ export function saleFeatureTile(state: GameState, kind: FeatureKind): TilePoint 
 
 /** Walk `steps` tiles out from the yard along the farm road (track features). */
 export function tileAlongRoad(state: GameState, steps: number): TilePoint {
+  if (state.road && state.road.length > 1) {
+    const metres = Math.max(0, steps) * 4;
+    const road = [...state.road].reverse();
+    let walked = 0;
+    for (let i = 1; i < road.length; i += 1) {
+      const a = road[i - 1];
+      const b = road[i];
+      const leg = Math.hypot(b.x - a.x, b.y - a.y);
+      if (walked + leg >= metres || i === road.length - 1) {
+        const t = leg === 0 ? 0 : Math.min(1, (metres - walked) / leg);
+        return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+      }
+      walked += leg;
+    }
+    return road[road.length - 1];
+  }
   const house = state.features.find((f) => f.kind === "house") ?? { x: 12, y: 12 };
   const tracks: TilePoint[] = state.features
     .filter((f) => f.kind === "track")

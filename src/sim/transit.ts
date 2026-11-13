@@ -18,12 +18,22 @@ export function herdInTransit(herd: HerdState): boolean {
   const transit = herd.transit;
   if (!transit) return false;
   if (transit.phase === "approach") return false;
+  if (transit.phase === "night") return true;
   return transit.progress < 1;
 }
 
 export function herdMoveActive(herd: HerdState): boolean {
   const transit = herd.transit;
   if (!transit) return false;
+  if (transit.phase === "night") return true;
+  if (transit.phase === "approach") return (transit.approachProgress ?? 0) < 1;
+  return transit.progress < 1;
+}
+
+/** Night hold does not slow the ranch clock. The herd waits, the day still turns. */
+export function driveSlowsClock(herd: HerdState): boolean {
+  const transit = herd.transit;
+  if (!transit || transit.phase === "night") return false;
   if (transit.phase === "approach") return (transit.approachProgress ?? 0) < 1;
   return transit.progress < 1;
 }
@@ -68,7 +78,7 @@ export function tickTransitRealtime(
   config: GameConfig = CONFIG,
 ): void {
   const transit = state.herd.transit;
-  if (!transit || transit.phase === "approach" || mode === "pause") return;
+  if (!transit || transit.phase === "approach" || transit.phase === "night" || mode === "pause") return;
   const hours = gameHoursElapsed(state.date.hour, deltaMs, mode, config.transit.driveClockFactor, config);
   const km = hours * config.transit.cattleWalkKmH;
   const distance = Math.max(transit.distanceKm, config.transit.minDistanceKm);
@@ -124,6 +134,7 @@ export function repairStuckTransit(state: GameState): void {
   }
   const transit = state.herd.transit;
   if (!transit) return;
+  if (transit.phase === "night") return;
   const hour = ((state.date.hour % 24) + 24) % 24;
   if (hour >= 6 && hour < 18) return;
   finishTransit(state);

@@ -95,6 +95,38 @@ export function ensureV2GroundFillTexture(scene: Phaser.Scene, layout: IsoLayout
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
   fillPattern(ctx, dry, layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight, 0, 0, 1, 1);
+  for (let i = 0; i < 14; i += 1) {
+    const roll = tuftHash(i, 3, i + 1);
+    if (roll < 0.35) continue;
+    paintGrassTuft(ctx, 12 + roll * 230, 18 + tuftHash(i, 9, 2) * 96, i);
+  }
+  scene.textures.addCanvas(key, canvas);
+  return key;
+}
+
+/**
+ * Kalahari sand for the metre farm. Baked with a zero translation so the
+ * repeat covers this cell. The shared gap-fill texture is anchored at the
+ * map origin, which leaves this small cell empty on a multi-kilometre farm.
+ */
+export function ensureMetreSandTexture(scene: Phaser.Scene, layout: IsoLayout): string | null {
+  const key = "metre-sand-fill";
+  if (scene.textures.exists(key)) return key;
+  const dry = sourceOf(scene, V2_GROUND_KEYS.dry);
+  if (!dry) return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.fillStyle = "#c4682c";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  fillPattern(ctx, dry, layout, CONFIG.view.tileWidth, CONFIG.view.tileHeight, layout.originX, layout.originY, 1, 1);
+  for (let i = 0; i < 22; i += 1) {
+    const roll = tuftHash(i, 5, i + 3);
+    if (roll < 0.2) continue;
+    paintGrassTuft(ctx, 6 + tuftHash(i, 4, i) * 244, 8 + tuftHash(i, 11, 4) * 108, i);
+  }
   scene.textures.addCanvas(key, canvas);
   return key;
 }

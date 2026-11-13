@@ -33,26 +33,29 @@ describe("step 3b water, sales, bakkie", () => {
   it("default farm: some camps lack in-camp trough but retain shared water", () => {
     const state = loadDefault();
     expect(state.farmWaterPoints?.length).toBeGreaterThan(3);
-    const dry = findCamp(state, 16);
-    expect(dry).toBeTruthy();
-    if (!dry) return;
-    expect(campHasTroughInPolygon(state, dry)).toBe(false);
-    expect(campHasWaterAccess(state, dry)).toBe(true);
+    const shared = state.camps.find(
+      (camp) => camp.id >= 0 && !campHasTroughInPolygon(state, camp) && campHasWaterAccess(state, camp),
+    );
+    expect(shared).toBeTruthy();
+    if (!shared) return;
+    expect(campHasTroughInPolygon(state, shared)).toBe(false);
+    expect(campHasWaterAccess(state, shared)).toBe(true);
   });
 
   it("camp without water access loses condition over days", () => {
     const state = loadDefault();
-    state.herd.campId = 16;
+    const campId = state.camps.find((camp) => camp.id >= 0)?.id ?? 0;
+    state.herd.campId = campId;
     state.story!.farmhand.hired = false;
     if (state.story?.costLevers) state.story.costLevers.lick = "winter_protein_urea";
-    state.farmWaterPoints = (state.farmWaterPoints ?? []).filter((w) => !w.servedCampIds.includes(16));
+    state.farmWaterPoints = (state.farmWaterPoints ?? []).filter((w) => !w.servedCampIds.includes(campId));
     state.features = state.features.filter((f) => {
       if (f.kind !== "trough" && f.kind !== "windmill" && f.kind !== "solar_pump" && f.kind !== "reservoir") {
         return true;
       }
       return false;
     });
-    const camp = findCamp(state, 16)!;
+    const camp = findCamp(state, campId)!;
     expect(campHasWaterAccess(state, camp)).toBe(false);
     const before = state.herd.condition;
     for (let i = 0; i < 4; i += 1) stepDay(state);

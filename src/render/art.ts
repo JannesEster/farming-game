@@ -1,3 +1,4 @@
+import { VEGETATION_COUNT_SCALE } from "../sim/config";
 import type { GroundTexture } from "./colour";
 import { diamondPath, highlightStroke, isoShade, scatterNoise, softShadow } from "./paint";
 
@@ -732,7 +733,8 @@ function drawGarden(): HTMLCanvasElement {
 }
 
 export function maybeTermiteAt(x: number, y: number): boolean {
-  return hash(x, y) > 0.992;
+  // Was about 0.8% of tiles. Scaled with the map so the mound count stays about the same.
+  return hash(x, y) > 1 - 0.008 * VEGETATION_COUNT_SCALE;
 }
 
 export function treeDeadAt(x: number, y: number): boolean {

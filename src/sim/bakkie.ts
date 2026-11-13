@@ -30,7 +30,9 @@ export function maybeStartBakkieRun(state: GameState, job: WorkJobId | null): vo
 export function tickBakkieRealtime(state: GameState, deltaMs: number, speed: number, _config: GameConfig = CONFIG): void {
   const run = state.story?.bakkieRun;
   if (!run?.active || !run.fromTile || !run.toTile) return;
-  const legMs = 5200;
+  // A. 5.2 s covered about 70 m. Longer roads take longer, capped so a trip still finishes.
+  const metres = Math.hypot(run.toTile.x - run.fromTile.x, run.toTile.y - run.fromTile.y);
+  const legMs = Math.min(14000, Math.max(5200, 5200 * (metres / 70)));
   run.progress += (deltaMs * speed) / legMs;
   if (run.progress < 1) return;
   if (run.dieselLitres <= 0) {

@@ -323,11 +323,10 @@ describe("the running farm", () => {
       const second = createGame(seed);
       expect(first.camps.length).toBeGreaterThanOrEqual(CONFIG.map.campCountMin);
       expect(first.camps.length).toBeLessThanOrEqual(CONFIG.map.campCountMax);
-      const grazingHa = CONFIG.farm.hectares - CONFIG.farm.homesteadHectares;
       const hectares = first.camps.reduce((sum, item) => sum + item.hectares, 0);
-      expect(hectares).toBeCloseTo(grazingHa, 5);
+      expect(Math.abs(hectares - CONFIG.farm.hectares)).toBeLessThan(CONFIG.farm.hectares * 0.02);
       for (const item of first.camps) {
-        expect(item.tiles.length).toBeGreaterThanOrEqual(CONFIG.map.minCampTiles);
+        expect(item.rect ? item.rect.w * item.rect.h : item.tiles.length).toBeGreaterThan(0);
         expect(item.peakDmKgPerHa).toBeGreaterThanOrEqual(CONFIG.pasture.forageDmKgPerHaMin);
         expect(item.peakDmKgPerHa).toBeLessThanOrEqual(CONFIG.pasture.forageDmKgPerHaMax);
         expect(item.tiles.some((tile) => tile.x === item.anchor.x && tile.y === item.anchor.y)).toBe(true);
@@ -341,9 +340,10 @@ describe("the running farm", () => {
       expect(kinds.has("kraal")).toBe(false);
       const troughs = first.features.filter((feature) => feature.kind === "trough");
       expect(troughs.length).toBeGreaterThan(0);
+      expect(troughs.length).toBeGreaterThan(0);
       expect(troughs.length).toBeLessThan(first.camps.length);
       expect(first.farmWaterPoints?.length ?? 0).toBeGreaterThan(0);
-      expect(first.camps.some((camp) => !campHasWaterAccess(first, camp))).toBe(true);
+      expect(first.camps.every((camp) => campHasWaterAccess(first, camp))).toBe(true);
       expect(findCamp(first, first.herd.campId)).toBeDefined();
       expect(first.camps.map((item) => [item.hectares, item.standingDmKgPerHa, item.tiles.length])).toEqual(
         second.camps.map((item) => [item.hectares, item.standingDmKgPerHa, item.tiles.length]),

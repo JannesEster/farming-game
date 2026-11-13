@@ -1,4 +1,5 @@
 import { CONFIG, type GameConfig } from "./config";
+import { metreSharedGate, pointCampId, usesMetreCoords } from "./metreFarm";
 import { TILE_OUTSIDE, type CampState, type GameState, type TilePoint } from "./types";
 
 function idx(x: number, y: number, width: number): number {
@@ -14,6 +15,7 @@ export function trackTileSet(state: GameState): Set<string> {
 }
 
 function campAt(state: GameState, x: number, y: number): number {
+  if (usesMetreCoords(state)) return pointCampId(state, x, y);
   if (x < 0 || y < 0 || x >= state.width || y >= state.height) return TILE_OUTSIDE;
   return state.campIds[idx(x, y, state.width)];
 }
@@ -29,6 +31,10 @@ const campTileKeys = new WeakMap<CampState, { tiles: readonly TilePoint[]; keys:
 
 /** Membership follows the current tiles array. A replaced array rebuilds the set. */
 function tileInCamp(camp: CampState, x: number, y: number): boolean {
+  if (camp.rect) {
+    const rect = camp.rect;
+    return x >= rect.x && y >= rect.y && x < rect.x + rect.w && y < rect.y + rect.h;
+  }
   let cached = campTileKeys.get(camp);
   if (!cached || cached.tiles !== camp.tiles) {
     const keys = new Set<string>();
@@ -41,6 +47,13 @@ function tileInCamp(camp: CampState, x: number, y: number): boolean {
 
 /** Nearest camp edge tile toward another point (exit gate). */
 export function campGateToward(camp: CampState, toward: TilePoint): TilePoint {
+  if (camp.rect) {
+    const rect = camp.rect;
+    return {
+      x: Math.round(Math.min(rect.x + rect.w - 1, Math.max(rect.x, toward.x))),
+      y: Math.round(Math.min(rect.y + rect.h - 1, Math.max(rect.y, toward.y))),
+    };
+  }
   let best = camp.anchor;
   let bestScore = Number.POSITIVE_INFINITY;
   for (const tile of camp.tiles) {
@@ -68,6 +81,10 @@ export function campGateBetween(
   from: CampState,
   to: CampState,
 ): { fromGate: TilePoint; toGate: TilePoint } | null {
+  if (from.rect && to.rect) {
+    const gate = metreSharedGate(from.rect, to.rect);
+    return gate ? { fromGate: gate.from, toGate: gate.to } : null;
+  }
   let best: { fromGate: TilePoint; toGate: TilePoint; score: number } | null = null;
   const toCenter = centroid(to.tiles);
   for (const tile of from.tiles) {
@@ -299,6 +316,53 @@ class CostHeap {
  * Walk the tile grid. Camp interiors and tracks are fine. A fence costs a lot
  * unless the step is the shared gate between those two camps.
  */
+function stepInsideRect(camp: CampState, gate: TilePoint, metres: number): TilePoint {
+  const rect = camp.rect;
+  if (!rect) return { ...camp.anchor };
+  const dx = camp.anchor.x - gate.x;
+  const dy = camp.anchor.y - gate.y;
+  const len = Math.hypot(dx, dy) || 1;
+  return {
+    x: Math.round(Math.min(rect.x + rect.w - 2, Math.max(rect.x + 1, gate.x + (dx / len) * metres))),
+    y: Math.round(Math.min(rect.y + rect.h - 2, Math.max(rect.y + 1, gate.y + (dy / len) * metres))),
+  };
+}
+
+/** A few waypoints through the gates. No cell array, so a 10 km farm stays cheap. */
+function planMetreWalk(state: GameState, from: TilePoint, to: TilePoint): TilePoint[] {
+  const startId = pointCampId(state, from.x, from.y);
+  const goalId = pointCampId(state, to.x, to.y);
+  if (startId < 0 || goalId < 0 || startId === goalId) return dedupe([from, to]);
+  const route = bfsCampRoute(state, startId, goalId);
+  if (!route) return dedupe([from, to]);
+  const points: TilePoint[] = [from];
+  for (let i = 0; i < route.length - 1; i += 1) {
+    const left = state.camps.find((camp) => camp.id === route[i]);
+    const right = state.camps.find((camp) => camp.id === route[i + 1]);
+    if (!left?.rect || !right?.rect) continue;
+    const gate = metreSharedGate(left.rect, right.rect);
+    if (!gate) continue;
+    points.push(gate.from, gate.to);
+  }
+  points.push(to);
+  return dedupe(points);
+}
+
+function planMetreHerd(state: GameState, from: CampState, to: CampState): TilePoint[] {
+  const route = bfsCampRoute(state, from.id, to.id) ?? [from.id, to.id];
+  const points: TilePoint[] = [{ ...from.anchor }];
+  for (let i = 0; i < route.length - 1; i += 1) {
+    const left = state.camps.find((camp) => camp.id === route[i]);
+    const right = state.camps.find((camp) => camp.id === route[i + 1]);
+    if (!left?.rect || !right?.rect) continue;
+    const gate = metreSharedGate(left.rect, right.rect);
+    if (!gate) continue;
+    points.push(gate.from, gate.to);
+  }
+  points.push(stepInsideRect(to, points[points.length - 1], 40));
+  return dedupe(points);
+}
+
 export function planPersonPath(
   state: GameState,
   from: TilePoint,
@@ -306,6 +370,7 @@ export function planPersonPath(
   gates = gateEdgeSet(state),
   allowCamps?: ReadonlySet<number>,
 ): TilePoint[] {
+  if (usesMetreCoords(state)) return planMetreWalk(state, from, to);
   const width = state.width;
   const height = state.height;
   const tracks = trackTileSet(state);
@@ -627,6 +692,10 @@ export function planHerdPath(state: GameState, fromCampId: number, toCampId: num
   const from = state.camps.find((c) => c.id === fromCampId);
   const to = state.camps.find((c) => c.id === toCampId);
   if (!from || !to) return [];
+  if (from.rect && to.rect) {
+    if (fromCampId === toCampId) return [{ ...from.anchor }];
+    return planMetreHerd(state, from, to);
+  }
   if (fromCampId === toCampId) return [snapToCamp(from, from.anchor)];
 
   const shared = campGateBetween(from, to);

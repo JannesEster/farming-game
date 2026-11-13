@@ -1,4 +1,4 @@
-import type { GameConfig } from "./config";
+import { PREVIOUS_MAP_TILES, type GameConfig } from "./config";
 import { TILE_HOMESTEAD, TILE_OUTSIDE, type CampState, type Feature, type GameState, type TilePoint } from "./types";
 import type { FarmWaterPoint } from "./storyTypes";
 
@@ -121,6 +121,12 @@ function nearestOpen(
   return fallback;
 }
 
+/** Old 4 and 6 tile gaps, stretched with the map so points stay apart on the bigger camps. */
+function waterSeparationTiles(config: GameConfig, previousTiles: number): number {
+  const scale = config.map.tilesX / PREVIOUS_MAP_TILES;
+  return Math.max(previousTiles, Math.round(previousTiles * scale));
+}
+
 function tooClose(x: number, y: number, points: FarmWaterPoint[], minDist: number): boolean {
   for (const point of points) {
     if (Math.hypot(point.trough.x - x, point.trough.y - y) < minDist) return true;
@@ -219,7 +225,7 @@ export function placeSharedWaterPoints(input: {
       : fresh.slice(0, 4);
     if (usable.length < 2) return false;
     if (!allowAlreadyServed && fresh.length < 2) return false;
-    if (tooClose(corner.x, corner.y, points, allowAlreadyServed ? 4 : 6)) return false;
+    if (tooClose(corner.x, corner.y, points, waterSeparationTiles(config, allowAlreadyServed ? 4 : 6))) return false;
     const prefer = new Set(usable);
     const pumpTile = nearestOpen(corner.x, corner.y, occupied, grid, width, height, prefer) ?? {
       x: corner.x,
@@ -270,7 +276,7 @@ export function placeSharedWaterPoints(input: {
       if (!allowAlreadyServed && fresh.length < 2) continue;
       if (allowAlreadyServed && fresh.length < 1) continue;
       if (allowAlreadyServed && corner.camps.filter((id) => id !== dryId).length < 2) continue;
-      if (tooClose(corner.x, corner.y, points, allowAlreadyServed ? 4 : 6)) continue;
+      if (tooClose(corner.x, corner.y, points, waterSeparationTiles(config, allowAlreadyServed ? 4 : 6))) continue;
       const score = fresh.length * 10 - Math.hypot(corner.x - house.x, corner.y - house.y) * 0.01;
       if (score > bestScore || (score === bestScore && best && (corner.y < best.y || (corner.y === best.y && corner.x < best.x)))) {
         bestScore = score;

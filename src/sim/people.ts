@@ -43,7 +43,7 @@ export function tickPeopleSchedule(state: GameState, _config: GameConfig = CONFI
       farmer.atHome = true;
       farmer.activityLabel = "At the main house";
     } else if (farmer.atHome) {
-      farmer.activityLabel = "At the main house";
+      farmer.activityLabel = hour < 8 ? "Up at first light" : "At the main house";
     }
   }
   const piet = story.farmhandPresence;
@@ -62,6 +62,7 @@ export function tickPeopleSchedule(state: GameState, _config: GameConfig = CONFI
       piet.activityLabel = `At ${STEP3A.farmhandName}'s house`;
     } else if (daylight && !onDuty) {
       piet.atHome = false;
+      if (hour < 8) piet.activityLabel = "Up at first light";
     }
   }
 }

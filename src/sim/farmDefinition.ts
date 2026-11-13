@@ -1,4 +1,5 @@
 import { ensureAnimals } from "./animals";
+import { metreSharedGate } from "./metreFarm";
 import { CONFIG, type GameConfig } from "./config";
 import { generateFarm } from "./generate";
 import { initStoryPeople } from "./story";
@@ -98,6 +99,12 @@ export function farmDefinitionFromState(state: GameState, config: GameConfig = C
     gates,
     laneKeys,
     features,
+    waterPoints: state.farmWaterPoints?.map((point) => ({
+      ...point,
+      tile: { ...point.tile },
+      trough: { ...point.trough },
+      servedCampIds: [...point.servedCampIds],
+    })),
     regionKey: state.farmMeta?.regionKey,
   };
 }
@@ -106,6 +113,10 @@ function gateBetweenCamps(
   from: CampState,
   to: CampState,
 ): { fromGate: TilePoint; toGate: TilePoint } | null {
+  if (from.rect && to.rect) {
+    const shared = metreSharedGate(from.rect, to.rect);
+    if (shared) return { fromGate: shared.from, toGate: shared.to };
+  }
   let best: { fromGate: TilePoint; toGate: TilePoint; score: number } | null = null;
   const toCenter = centroid(to.tiles);
   for (const tile of from.tiles) {
@@ -162,6 +173,11 @@ export function isFarmDefinition(value: unknown): value is FarmDefinition {
 
 /** Build runtime state from compact farm JSON. Pasture stats come from the same seed via generateFarm. */
 export function gameStateFromFarmDefinition(def: FarmDefinition, config: GameConfig = CONFIG): GameState {
+  // Tile-grid definitions (the 75 m map) are not loaded. A fresh metre farm is started.
+  const fullGrid = def.width > 0 && def.campIds.length === def.width * def.height;
+  if (def.width < 500 || fullGrid || def.campIds.length === 0) {
+    return generateFarm(def.seed, config);
+  }
   const generated = generateFarm(def.seed, config);
   const camps: CampState[] = def.camps.map((dc) => {
     const prior = generated.camps.find((c) => c.id === dc.id);
@@ -194,7 +210,14 @@ export function gameStateFromFarmDefinition(def: FarmDefinition, config: GameCon
     campIds: [...def.campIds],
     camps,
     features: [...def.features, ...laneFeatures],
-    farmWaterPoints: def.waterPoints ? [...def.waterPoints] : undefined,
+    farmWaterPoints: def.waterPoints?.length
+      ? def.waterPoints.map((point) => ({
+          ...point,
+          tile: { ...point.tile },
+          trough: { ...point.trough },
+          servedCampIds: [...point.servedCampIds],
+        }))
+      : generated.farmWaterPoints,
     herd: { ...generated.herd, campId: herdCamp },
     farmMeta: generated.farmMeta
       ? { ...generated.farmMeta, offerId: def.id, regionKey: def.regionKey ?? generated.farmMeta.regionKey }
@@ -205,7 +228,7 @@ export function gameStateFromFarmDefinition(def: FarmDefinition, config: GameCon
   for (const animal of state.story?.animals ?? []) {
     if (!animal.split && animal.whereabouts === "in_camp") animal.campId = state.herd.campId;
   }
-  state.stateVersion = 8;
+  state.stateVersion = 9;
   return state;
 }
 

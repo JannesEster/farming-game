@@ -8,6 +8,7 @@ import {
   loadDefaultFarmDefinition,
 } from "./farmDefinition";
 import { generateFarm } from "./generate";
+import { pointCampId, usesMetreCoords } from "./metreFarm";
 import {
   dailyDemandKg,
   grazeStanding,
@@ -23,7 +24,7 @@ import { afterFeedDay } from "./story";
 import { requestHerdMove, tryDispatchHerdQueue } from "./herding";
 import { herdInTransit } from "./transit";
 import { waterGrazeMultiplier } from "./water";
-import type { CampState, GameState, MoveResult } from "./types";
+import { TILE_OUTSIDE, type CampState, type GameState, type MoveResult } from "./types";
 
 function isDefaultRuntimeConfig(config: GameConfig): boolean {
   return (
@@ -77,6 +78,10 @@ export function findCamp(state: GameState, campId: number): CampState | undefine
 }
 
 export function campIdAt(state: GameState, x: number, y: number): number | null {
+  if (usesMetreCoords(state)) {
+    const id = pointCampId(state, x, y);
+    return id === TILE_OUTSIDE ? null : id;
+  }
   if (x < 0 || y < 0 || x >= state.width || y >= state.height) return null;
   return state.campIds[y * state.width + x];
 }

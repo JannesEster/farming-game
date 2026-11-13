@@ -7,6 +7,8 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 
 export const COPY = {
   hintStart: "Tap the herd, then tap a camp to move it.",
+  hintOldFarm:
+    "This save used the old map scale, so a new farm was started. Distances now match the ground. Tap the herd, then tap a camp to move it.",
   hintSelected: "Tap a camp to move the herd.",
   hintMoved: (name: string) => `Moved to ${name}. Tap another camp to move again.`,
   hintSame: "The herd is already in this camp.",

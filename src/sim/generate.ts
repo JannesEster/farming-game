@@ -12,6 +12,7 @@ import { campGateBetween, campGateToward } from "./path";
 import { PIXELS_PER_METRE } from "../render/worldScale";
 import { placeCattleHandlingYard } from "./cattleYard";
 import { homesteadYardPieces, placeSharedWaterPoints } from "./waterLayout";
+import { buildMetreFarm } from "./metreFarm";
 import { createRng, type Rng } from "./rng";
 import {
   TILE_HOMESTEAD,
@@ -129,17 +130,108 @@ function placeCenters(
   return centers.length === count ? centers : null;
 }
 
-function nearestCenter(x: number, y: number, centers: TilePoint[]): number {
-  let best = 0;
-  let bestD = Number.POSITIVE_INFINITY;
-  for (let i = 0; i < centers.length; i += 1) {
-    const d = (centers[i].x - x) ** 2 + (centers[i].y - y) ** 2;
-    if (d < bestD) {
-      bestD = d;
-      best = i;
+/** Hand out `total` tiles across `parts` so neighbours differ by at most one tile. */
+function spreadTiles(total: number, parts: number): number[] {
+  const safeParts = Math.max(1, parts);
+  const base = Math.floor(total / safeParts);
+  const extra = total - base * safeParts;
+  const sizes = new Array<number>(safeParts).fill(base);
+  for (let i = 0; i < extra; i += 1) {
+    const index = Math.floor((i * safeParts) / extra);
+    sizes[index] += 1;
+  }
+  return sizes;
+}
+
+type CampRect = { x: number; y: number; w: number; h: number };
+
+function rectAspect(width: number, height: number): number {
+  const w = Math.max(1, width);
+  const h = Math.max(1, height);
+  return Math.max(w, h) / Math.min(w, h);
+}
+
+/**
+ * Split a rectangle into `count` blocks that sit near 1:1.
+ * Rows can hold one more camp than the row beside them, so 17 or 18 camps
+ * do not have to become long strips. Fence lines stay axis aligned.
+ */
+function squareCampRects(count: number, originX: number, originY: number, width: number, height: number): CampRect[] {
+  const side = Math.sqrt((width * height) / Math.max(1, count));
+  const guess = Math.max(1, Math.min(count, Math.round(height / side)));
+  let bestCounts: number[] | null = null;
+  let bestAspect = Number.POSITIVE_INFINITY;
+  let bestTranspose = false;
+  for (let rows = Math.max(1, guess - 3); rows <= Math.min(count, guess + 3); rows += 1) {
+    const base = Math.floor(count / rows);
+    const extra = count - base * rows;
+    const counts = Array.from({ length: rows }, (_, index) => base + (index < extra ? 1 : 0));
+    if (counts.some((cols) => cols < 1)) continue;
+    const rowHeights = spreadTiles(height, rows);
+    let worst = 1;
+    for (let row = 0; row < rows; row += 1) {
+      const cellW = width / counts[row];
+      worst = Math.max(worst, rectAspect(cellW, rowHeights[row]));
+    }
+    if (worst < bestAspect) {
+      bestAspect = worst;
+      bestCounts = counts;
+      bestTranspose = false;
+    }
+    const colWidths = spreadTiles(width, rows);
+    let worstAcross = 1;
+    for (let col = 0; col < rows; col += 1) {
+      const cellH = height / counts[col];
+      worstAcross = Math.max(worstAcross, rectAspect(colWidths[col], cellH));
+    }
+    if (worstAcross < bestAspect) {
+      bestAspect = worstAcross;
+      bestCounts = counts;
+      bestTranspose = true;
     }
   }
-  return best;
+  const counts = bestCounts ?? [count];
+  const rects: CampRect[] = [];
+  if (!bestTranspose) {
+    const rowHeights = spreadTiles(height, counts.length);
+    let y = originY;
+    for (let row = 0; row < counts.length; row += 1) {
+      const widths = spreadTiles(width, counts[row]);
+      let x = originX;
+      for (const w of widths) {
+        rects.push({ x, y, w, h: rowHeights[row] });
+        x += w;
+      }
+      y += rowHeights[row];
+    }
+    return rects;
+  }
+  const colWidths = spreadTiles(width, counts.length);
+  let x = originX;
+  for (let col = 0; col < counts.length; col += 1) {
+    const heights = spreadTiles(height, counts[col]);
+    let y = originY;
+    for (const h of heights) {
+      rects.push({ x, y, w: colWidths[col], h });
+      y += h;
+    }
+    x += colWidths[col];
+  }
+  return rects;
+}
+
+function tileBounds(tiles: TilePoint[]): CampRect {
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = 0;
+  let maxY = 0;
+  for (const tile of tiles) {
+    minX = Math.min(minX, tile.x);
+    minY = Math.min(minY, tile.y);
+    maxX = Math.max(maxX, tile.x);
+    maxY = Math.max(maxY, tile.y);
+  }
+  return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
 }
 
 function centroid(tiles: TilePoint[]): TilePoint {
@@ -207,7 +299,8 @@ function isEdge(grid: number[], width: number, height: number, x: number, y: num
   return false;
 }
 
-function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: number } | null {
+/** Previous tile-grid builder. Unused by the metre farm. Kept so the square splitter stays readable in history. */
+export function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: number } | null {
   const width = config.map.tilesX;
   const height = config.map.tilesY;
   const span = config.map.campCountMax - config.map.campCountMin;
@@ -218,32 +311,45 @@ function tryBuild(rng: Rng, config: GameConfig): { state: GameState; score: numb
   const openness = centers.map(() => rng.next());
   const grid = new Array<number>(width * height).fill(TILE_OUTSIDE);
   const border = config.map.borderTiles;
-  for (let y = border; y < height - border; y += 1) {
-    for (let x = border; x < width - border; x += 1) {
-      grid[idx(x, y, width)] = nearestCenter(x, y, centers);
+  const rects = squareCampRects(centers.length, border, border, width - border * 2, height - border * 2);
+  for (let i = 0; i < rects.length; i += 1) {
+    const rect = rects[i];
+    for (let y = rect.y; y < rect.y + rect.h; y += 1) {
+      for (let x = rect.x; x < rect.x + rect.w; x += 1) grid[idx(x, y, width)] = i;
     }
   }
 
   const drafts: Draft[] = openness.map((value) => ({ openness: value, tiles: [] }));
   for (let i = 0; i < drafts.length; i += 1) drafts[i].tiles = collect(grid, width, height, i);
-  let largest = 0;
-  for (let i = 1; i < drafts.length; i += 1) {
-    if (drafts[i].tiles.length > drafts[largest].tiles.length) largest = i;
+  let host = 0;
+  let hostDist = Number.POSITIVE_INFINITY;
+  const mapCx = (width - 1) / 2;
+  const mapCy = (height - 1) / 2;
+  for (let i = 0; i < drafts.length; i += 1) {
+    if (drafts[i].tiles.length === 0) continue;
+    const mid = centroid(drafts[i].tiles);
+    const dist = (mid.x - mapCx) ** 2 + (mid.y - mapCy) ** 2;
+    if (dist < hostDist) {
+      hostDist = dist;
+      host = i;
+    }
   }
-  if (drafts[largest].tiles.length === 0) return null;
+  if (drafts[host].tiles.length === 0) return null;
 
-  const mid = centroid(drafts[largest].tiles);
+  const box = tileBounds(drafts[host].tiles);
   const blockW = config.map.homesteadTilesX;
   const blockH = config.map.homesteadTilesY;
+  const insetX = box.w > blockW + 1 ? 1 : 0;
+  const insetY = box.h > blockH + 1 ? 1 : 0;
   const hx = clamp(
-    Math.round(mid.x - blockW / 2),
-    border,
-    width - border - blockW,
+    Math.round(box.x + (box.w - blockW) / 2),
+    box.x + insetX,
+    Math.max(box.x + insetX, box.x + box.w - blockW - insetX),
   );
   const hy = clamp(
-    Math.round(mid.y - blockH / 2),
-    border,
-    height - border - blockH,
+    Math.round(box.y + (box.h - blockH) / 2),
+    box.y + insetY,
+    Math.max(box.y + insetY, box.y + box.h - blockH - insetY),
   );
   for (let y = hy; y < hy + blockH; y += 1) {
     for (let x = hx; x < hx + blockW; x += 1) grid[idx(x, y, width)] = TILE_HOMESTEAD;
@@ -520,18 +626,8 @@ function ensureOpeningCamp(camp: CampState, features: Feature[], config: GameCon
 
 export function generateFarm(seed: number, config: GameConfig = CONFIG): GameState {
   const rng = createRng(seed);
-  let best: { state: GameState; score: number } | null = null;
-  for (let attempt = 0; attempt < config.map.placementAttempts; attempt += 1) {
-    const built = tryBuild(rng, config);
-    if (!built || built.state.camps.length === 0) continue;
-    if (!best || built.score > best.score) best = built;
-    if (built.score >= config.map.minCampTiles) break;
-  }
-  if (!best || best.state.camps.length < config.map.campCountMin) {
-    throw new Error("Could not place a farm with enough camps.");
-  }
-  best.state.seed = seed;
-  best.state.rngState = rng.getState();
-  initStoryPeople(best.state, config);
-  return best.state;
+  const state = buildMetreFarm(rng, config, seed);
+  state.seed = seed;
+  state.rngState = rng.getState();
+  return state;
 }

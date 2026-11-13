@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { generateFarmOffers } from "../picker/generateOffers";
 import { generateFarm } from "./generate";
+import { pointCampId, usesMetreCoords } from "./metreFarm";
 import type { GameState } from "./types";
 import { campHasWaterAccess } from "./water";
 import { homesteadYardPieces, rampTouchesTrack } from "./waterLayout";
@@ -25,15 +26,25 @@ function assertGeneratedInfrastructure(state: GameState): void {
   expect(state.features.some((feature) => feature.kind === "kraal")).toBe(false);
   expect(cottage).toBeTruthy();
   expect(rampTouchesTrack(state)).toBe(true);
-  const idAt = (x: number, y: number) => state.campIds[y * state.width + x];
+  const idAt = (x: number, y: number) =>
+    usesMetreCoords(state) ? pointCampId(state, x, y) : state.campIds[y * state.width + x];
   expect(idAt(ramp!.x, ramp!.y)).toBeGreaterThanOrEqual(0);
   expect(idAt(pens[0].x, pens[0].y)).toBe(idAt(ramp!.x, ramp!.y));
-  expect(idAt(cottage!.x, cottage!.y)).toBe(-1);
+  if (usesMetreCoords(state)) {
+    expect(idAt(cottage!.x, cottage!.y)).toBe(idAt(house!.x, house!.y));
+    expect(Math.hypot(cottage!.x - house!.x, cottage!.y - house!.y)).toBeLessThan(20);
+    expect(Math.hypot(ramp!.x - house!.x, ramp!.y - house!.y)).toBeGreaterThan(200);
+    expect(Math.hypot(ramp!.x - house!.x, ramp!.y - house!.y)).toBeLessThan(800);
+    const herd = state.camps.find((camp) => camp.id === state.herd.campId);
+    expect(Math.hypot(herd!.anchor.x - house!.x, herd!.anchor.y - house!.y)).toBeGreaterThan(40);
+  } else {
+    expect(idAt(cottage!.x, cottage!.y)).toBe(-1);
+    expect(Math.hypot(ramp!.x - house!.x, ramp!.y - house!.y)).toBeGreaterThan(8);
+  }
   expect(house).toBeTruthy();
-  expect(Math.hypot(ramp!.x - house!.x, ramp!.y - house!.y)).toBeGreaterThan(8);
   const farPen = Math.max(...pens.map((pen) => Math.hypot(pen.x - ramp!.x, pen.y - ramp!.y)));
   expect(farPen).toBeGreaterThanOrEqual(5);
-  expect(state.camps.some((camp) => !campHasWaterAccess(state, camp))).toBe(true);
+  expect(state.camps.every((camp) => campHasWaterAccess(state, camp))).toBe(true);
   expect(state.features.some((feature) => feature.kind === "lick_feeder")).toBe(true);
   const start = state.camps.find((camp) => camp.id === state.herd.campId);
   expect(start && campHasWaterAccess(state, start)).toBe(true);
@@ -50,7 +61,7 @@ describe("generated farm water and yard", () => {
     }
   });
 
-  it("gives every generated offer shared water, a dry camp, and a road-side cattle yard", () => {
+  it("gives every generated offer shared water and a road-side cattle yard", () => {
     for (const seed of [88001, 42]) {
       for (const card of generateFarmOffers(seed)) {
         assertGeneratedInfrastructure(card.previewState);

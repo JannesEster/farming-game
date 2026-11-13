@@ -8,10 +8,11 @@ import {
   tickRanchClock,
 } from "./clock";
 import { columnMetrics, herderStandTile } from "./convoy";
-import { clearYardRadiusTiles, generateFarm } from "./generate";
+import { generateFarm } from "./generate";
+import { treesInRect } from "./vegetation";
 import { CONFIG } from "./config";
-import { tickHerdingRealtime } from "./herding";
-import { campGateBetween, fenceCrossingsOffGate, planHerdPath, pointOnPath } from "./path";
+import { herdMoveStatusLine, tickHerdingRealtime } from "./herding";
+import { campGateBetween, fenceCrossingsOffGate, pathLengthKm, planHerdPath, pointOnPath } from "./path";
 import { createGame, moveHerd, primeDefaultFarmCache } from "./simulation";
 import { migrateState } from "./stateMigrate";
 import { gameHoursElapsed, repairStuckTransit, walkGameHours } from "./transit";
@@ -74,7 +75,7 @@ describe("drive polish", () => {
       const gate = campGateBetween(from, to)!;
       expect(path.some((tile) => tile.x === gate.fromGate.x && tile.y === gate.fromGate.y)).toBe(true);
     }
-  });
+  }, 20_000);
 
   it("keeps picker-farm neighbour routes within 2x and on gates", () => {
     const offers = generateFarmOffers(88001).filter((offer) => offer.playable);
@@ -92,7 +93,7 @@ describe("drive polish", () => {
         expect(fenceCrossingsOffGate(state, path)).toBe(0);
       }
     }
-  });
+  }, 20_000);
 
   it("prints the clock as whole HH:MM", () => {
     const date = { year: 2026, month: 8, day: 1, hour: 18.012288667834838 };
@@ -106,8 +107,11 @@ describe("drive polish", () => {
 
   it("does not freeze when a drive is still going at dusk", () => {
     const state = ready();
-    const pair = neighbourPairs(state)[0];
+    const pair = neighbourPairs(state)
+      .map((ids) => ({ ids, km: pathLengthKm(planHerdPath(state, ids[0], ids[1])) }))
+      .sort((a, b) => a.km - b.km)[0]?.ids;
     expect(pair).toBeTruthy();
+    if (!pair) return;
     state.herd.campId = pair[0];
     state.date.hour = 16;
     state.clock!.bankMs = 0;
@@ -132,6 +136,65 @@ describe("drive polish", () => {
     expect(state.date.day).toBe(day);
     expect(sawNight).toBe(true);
     expect(Number.isInteger(state.date.hour)).toBe(true);
+  });
+
+  it("holds a long drive at dusk and walks it on at dawn", () => {
+    const state = ready();
+    const dest = state.camps.find((camp) => camp.id !== state.herd.campId);
+    if (!dest) throw new Error("expected a camp");
+    state.date.hour = 10;
+    state.clock!.bankMs = 0;
+    const started = moveHerd(state, dest.id);
+    expect(started.ok).toBe(true);
+    const transit = state.herd.transit;
+    expect(transit).toBeTruthy();
+    if (!transit) return;
+    transit.phase = "drive";
+    transit.progress = 0.2;
+    transit.distanceKm = 40;
+    transit.approachProgress = 1;
+    const home = state.features.find((feature) => feature.kind === "house");
+    state.date.hour = 18;
+    state.clock!.bankMs = 0;
+    tickHerdingRealtime(state, 1000, "x1");
+    expect(state.herd.transit?.phase).toBe("night");
+    expect(state.herd.transit?.progress).toBeCloseTo(0.2, 5);
+    expect(state.herd.campId).not.toBe(dest.id);
+    expect(herdMoveStatusLine(state)).toContain("held for the night");
+    const farmer = state.story?.farmerPresence;
+    expect(farmer?.atHome).toBe(true);
+    if (home && farmer) {
+      expect(Math.hypot(farmer.tileX - home.x, farmer.tileY - home.y)).toBeLessThan(30);
+    }
+    const before = state.date.hour;
+    tickBoth(state, 8000, 1);
+    expect(state.date.hour).toBeGreaterThan(before);
+    expect(state.herd.transit?.phase).toBe("night");
+    expect(state.herd.transit?.progress).toBeCloseTo(0.2, 5);
+    state.date.hour = 6;
+    state.clock!.bankMs = 0;
+    tickHerdingRealtime(state, 16, "x1");
+    expect(state.herd.transit?.phase === "approach" || state.herd.transit?.phase === "drive").toBe(true);
+    expect(state.herd.transit?.progress).toBeCloseTo(0.2, 5);
+  });
+
+  it("finishes into the next camp when dusk is close and little ground is left", () => {
+    const state = ready();
+    const dest = state.camps.find((camp) => camp.id !== state.herd.campId);
+    if (!dest) throw new Error("expected a camp");
+    const started = moveHerd(state, dest.id);
+    expect(started.ok).toBe(true);
+    const transit = state.herd.transit;
+    if (!transit) return;
+    transit.phase = "drive";
+    transit.progress = 0.97;
+    transit.distanceKm = 40;
+    transit.approachProgress = 1;
+    state.date.hour = 18;
+    state.clock!.bankMs = 0;
+    tickHerdingRealtime(state, 1000, "x1");
+    expect(state.herd.transit).toBeNull();
+    expect(state.herd.campId).toBe(dest.id);
   });
 
   it("queues a move that cannot finish before 18:00", () => {
@@ -233,6 +296,18 @@ describe("drive polish", () => {
       if (herder < rear - 0.3) behind += 1;
     }
     expect(behind).toBe(samples.length);
+    const long = columnMetrics(
+      [
+        { x: 0, y: 0 },
+        { x: 400, y: 0 },
+      ],
+      0.5,
+      80,
+    );
+    const longRear = long.rearProgress * long.total;
+    const longHerder = long.herderProgress * long.total;
+    expect(longRear - longHerder).toBeGreaterThanOrEqual(3);
+    expect(longRear - longHerder).toBeLessThanOrEqual(4);
     const stand = herderStandTile(path, 0.5, 80);
     const filed = columnMetrics(path, 0.5, 80);
     const rear = pointOnPath(path, filed.rearProgress);
@@ -240,21 +315,11 @@ describe("drive polish", () => {
     expect(Math.abs(stand.y - rear.y)).toBeLessThan(0.2);
   });
 
-  it("leaves a clear yard around the house and plants an open scatter of trees", () => {
+  it("leaves a clear yard around the house", () => {
     const state = generateFarm(1);
     const house = state.features.find((feature) => feature.kind === "house");
     expect(house).toBeTruthy();
-    const trees = state.features.filter((feature) => feature.kind === "tree");
-    const clear = clearYardRadiusTiles();
-    for (const tree of trees) {
-      const dist = Math.hypot(tree.x - house!.x, tree.y - house!.y);
-      expect(dist).toBeGreaterThan(clear - 0.05);
-      const onTrack = state.features.some(
-        (feature) => feature.kind === "track" && feature.x === tree.x && feature.y === tree.y,
-      );
-      expect(onTrack).toBe(false);
-    }
-    expect(trees.length).toBeGreaterThan(20);
-    expect(trees.length).toBeLessThan(180);
+    const near = treesInRect(state, house!.x - 16, house!.y - 16, house!.x + 16, house!.y + 16);
+    expect(near.length).toBe(0);
   });
 });

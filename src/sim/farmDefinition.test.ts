@@ -14,9 +14,10 @@ describe("FarmDefinition", () => {
     expect(def.schemaVersion).toBe(2);
     expect(def.hectares).toBe(3300);
     expect(def.metresPerTile).toBeCloseTo(metresPerTileFromConfig(), 3);
-    expect(def.camps.length).toBeGreaterThan(10);
+    expect(def.metresPerTile).toBeCloseTo(1, 3);
+    expect(def.camps.length).toBe(9);
     expect(def.gates.length).toBeGreaterThan(0);
-    expect(def.campIds.length).toBe(state.width * state.height);
+    expect(def.campIds).toEqual([]);
   });
 
   it("rebuilds camp tiles from compact campIds grid", () => {
