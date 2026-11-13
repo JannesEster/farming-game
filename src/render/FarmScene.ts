@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { CONFIG } from "../sim/config";
+import { CONFIG, PREVIOUS_MAP_TILES } from "../sim/config";
 import { COPY } from "../sim/format";
 import { clamp } from "../sim/math";
 import { getGameFlow } from "../integration/GameFlowService";
@@ -482,7 +482,10 @@ export class FarmScene extends Phaser.Scene {
       .setDepth(26000);
     flow.attachFarmHud(this.hud);
     this.hud.setSpeed(this.mode);
-    if (!flow.getTutorialStep()) this.hud.setHint(COPY.hintStart);
+    if (!flow.getTutorialStep()) {
+      const oldMap = this.state.width > 0 && this.state.width <= PREVIOUS_MAP_TILES && this.state.width < CONFIG.map.tilesX;
+      this.hud.setHint(oldMap ? COPY.hintOldFarm : COPY.hintStart);
+    }
     this.syncHud();
     const onResize = () => {
       if (!this.sys?.isActive()) return;
@@ -928,10 +931,15 @@ export class FarmScene extends Phaser.Scene {
       setTransitProgress: (progress: number) => {
         const transit = this.state.herd.transit;
         if (!transit) return false;
+        if (transit.phase === "approach") {
+          transit.phase = "drive";
+          transit.approachProgress = 1;
+        }
         transit.progress = Math.max(0, Math.min(0.99, progress));
         this.syncHerdFromSim();
         this.placeHerd(performance.now());
         this.redrawFences();
+        if (transit.phase === "drive") this.hud.setHint(COPY.hintMoving);
         return true;
       },
       transitDestCampId: () => this.state.herd.transit?.toCampId ?? null,

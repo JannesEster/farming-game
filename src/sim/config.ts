@@ -5,6 +5,28 @@
  * Simulation code reads these fields. It does not keep its own copies.
  */
 
+/** Side length, in tiles, of the ranch before the property area was tripled. */
+export const PREVIOUS_MAP_TILES = 76;
+/** Property area is 3 times that ranch. Each side grows by about 1.73. */
+export const FARM_AREA_SCALE = 3;
+/** 76 * sqrt(3), rounded. (132 / 76) squared is about 3.02, close to 3. */
+export const FARM_MAP_TILES = Math.round(PREVIOUS_MAP_TILES * Math.sqrt(FARM_AREA_SCALE));
+/**
+ * Multiply an old per-tile chance by this to keep about the same count
+ * on the larger map. 76 squared over 132 squared.
+ */
+export const VEGETATION_COUNT_SCALE =
+  (PREVIOUS_MAP_TILES * PREVIOUS_MAP_TILES) / (FARM_MAP_TILES * FARM_MAP_TILES);
+/**
+ * Bushes share the tree random stream, so a pure area scale left too many bushes.
+ * 0.62 was tuned with the tree chances below. Assumption.
+ */
+export const BUSH_COUNT_TRIM = 0.62;
+
+function tilesFromPrevious(previous: number): number {
+  return Math.max(1, Math.round((previous * FARM_MAP_TILES) / PREVIOUS_MAP_TILES));
+}
+
 export type GameConfig = {
   worldSeed: number;
   farm: {
@@ -286,8 +308,11 @@ export const CONFIG: GameConfig = {
 
   farm: {
     name: "Otjozondjupa",
-    // S: Otjozondjupa average commercial farm is 3,327 ha. Lesson 8.1 rounds the cattle ranch template to 3,300.
-    hectares: 3300,
+    // S: Otjozondjupa census average is 3,327 ha. The previous playable ranch was 3,300 ha.
+    // A: the property area is 3 times that, 9,900 ha. The map is 132 tiles on a side.
+    // One tile stays 75 m, so the side is 9.9 km. That square is 9,801 ha.
+    // The listing uses 9,900 so it is exactly 3 times 3,300.
+    hectares: 3300 * FARM_AREA_SCALE,
     // A. The yard, windmill and kraal are not grazing land.
     homesteadHectares: 8,
     // S: savanna farms are often quoted at 8 to 10 ha per LSU. A: this prototype uses 10, the lighter end of that quote.
@@ -308,7 +333,8 @@ export const CONFIG: GameConfig = {
     // A: typical litter left after a graze, as a fraction of that camp's own peak. Tuned for this map, not a measured litter curve.
     residualFractionOfPeak: 0.125,
     // A: share of camp hectares actively defoliated before you move the herd. NAU warns that use concentrates near water.
-    // Tuned so 120 head on a typical camp needs a move within about two weeks in the dry season.
+    // The same 120 head on a camp about 3 times the area remove about a third as much dry matter per hectare,
+    // so a camp lasts longer. The 14 and 28 day move limits still apply.
     activeGrazingFractionOfCamp: 0.22,
     // S: NAU growing season rule, one to two weeks grazing. This build uses fourteen days.
     maxGrazingDaysRainySeason: 14,
@@ -346,7 +372,9 @@ export const CONFIG: GameConfig = {
 
   herd: {
     name: "Cattle herd",
-    // A. 120 head is under the farm carrying capacity (3,300 ha / 10 ha per LSU = 330 LSU).
+    // A. Herd stays 120 head. Capacity is 9,900 ha / 10 ha per LSU = 990 LSU.
+    // Stocking is lighter than before: about 82 ha per head, against the guide of 10 ha per LSU.
+    // Assumption: the herd was not tripled when the land was.
     headCount: 120,
     // S: the 450 kg LSU weight. A: every head in this prototype is treated as one LSU.
     averageLiveweightKg: 450,
@@ -519,9 +547,9 @@ export const CONFIG: GameConfig = {
   },
 
   transit: {
-    // A. One tile is about 75 m. 3300 ha is about 5.7 km across, not 10+ km.
+    // A. One tile is about 75 m. 9,900 ha is about 9.9 km on a side (132 tiles).
     kmPerTile: 0.075,
-    maxSpanKm: 5.7,
+    maxSpanKm: 9.9,
     playMsMin: 6000,
     playMsMax: 15000,
     fastMsMin: 1500,
@@ -550,21 +578,23 @@ export const CONFIG: GameConfig = {
   },
 
   map: {
-    // A. Large ranch layout, many fenced camps.
-    tilesX: 76,
-    tilesY: 76,
-    borderTiles: 3,
+    // A. Large ranch layout, many fenced camps. Same camp count as the 76 tile ranch.
+    // Border, inset, and centre spacing scale with the side so camps stay spread out.
+    tilesX: FARM_MAP_TILES,
+    tilesY: FARM_MAP_TILES,
+    borderTiles: tilesFromPrevious(3),
     campCountMin: 12,
     campCountMax: 18,
-    centerInset: 4,
-    campCenterMinDistance: 7,
-    minCampTiles: 70,
+    centerInset: tilesFromPrevious(4),
+    campCenterMinDistance: tilesFromPrevious(7),
+    minCampTiles: Math.round(70 * (FARM_MAP_TILES / PREVIOUS_MAP_TILES) ** 2),
     placementAttempts: 48,
     homesteadTilesX: 7,
     homesteadTilesY: 6,
-    treeChance: 0.065,
-    bushChanceOpen: 0.12,
-    bushChanceBushy: 0.3,
+    // Tuned so seed 3300 still plants about 162 trees (the shipped default farm).
+    treeChance: 0.0106,
+    bushChanceOpen: 0.12 * VEGETATION_COUNT_SCALE * BUSH_COUNT_TRIM,
+    bushChanceBushy: 0.3 * VEGETATION_COUNT_SCALE * BUSH_COUNT_TRIM,
     outsidePlantFactor: 0.4,
     treeScaleMin: 0.85,
     treeScaleMax: 1.15,

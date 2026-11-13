@@ -186,6 +186,32 @@ describe("zoom limits for map size", () => {
     expect(left).toBeLessThanOrEqual(0);
     expect(left + viewW).toBeGreaterThanOrEqual(ranch.width);
   });
+
+  it("still frames the whole ranch on the 132 by 132 map", () => {
+    const ranch = isoLayout(132, 132, TILE_W, TILE_H, PAD);
+    const full = fullMapZoom(ranch.width, ranch.height, viewport.w, viewport.h, fitMargin);
+    const limits = computeZoomLimits({
+      layoutWidth: ranch.width,
+      layoutHeight: ranch.height,
+      mapWidth: 132,
+      mapHeight: 132,
+      viewportWidth: viewport.w,
+      viewportHeight: viewport.h,
+      tileWidth: TILE_W,
+      tileHeight: TILE_H,
+      fitMargin,
+      maxTilePx: 96,
+      maxOnScreenTiles: 900,
+      terrainChunkTiles: 16,
+      campCount: 18,
+    });
+    expect(limits.minZoom).toBeCloseTo(full * 0.92, 4);
+    const scroll = clampCameraScroll(0, 0, ranch.width, ranch.height, viewport.w, viewport.h, limits.minZoom);
+    const left = visibleWorldLeft(scroll.scrollX, viewport.w, limits.minZoom);
+    const viewW = viewport.w / limits.minZoom;
+    expect(left).toBeLessThanOrEqual(0);
+    expect(left + viewW).toBeGreaterThanOrEqual(ranch.width);
+  });
 });
 
 describe("minimap tile pick", () => {

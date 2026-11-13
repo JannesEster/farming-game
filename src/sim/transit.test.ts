@@ -57,13 +57,6 @@ describe("herd transit", () => {
   it("reaches the correct clock after many 16 ms ticks", () => {
     const state = createGame(3300);
     const fromId = state.herd.campId;
-  let longestKm = 0;
-    for (const camp of state.camps) {
-      if (camp.id === fromId) continue;
-      moveHerd(state, camp.id);
-      longestKm = Math.max(longestKm, state.herd.transit!.distanceKm);
-      state.herd.transit = null;
-    }
     const dest = state.camps.find((c) => c.id !== fromId);
     if (!dest) throw new Error("expected destination");
     moveHerd(state, dest.id);

@@ -6,7 +6,7 @@ import { CONFIG } from "./config";
  */
 
 export const STEP2 = {
-  /** A. TODO: bakkie runs per month at full service level on a 3,300 ha ranch. */
+  /** A. TODO: bakkie runs per month at full service level. Tuned on the old 3,300 ha ranch and left as-is. */
   bakkieRunsDefault: 8,
   bakkieRunsMin: 2,
   bakkieRunsMax: 12,

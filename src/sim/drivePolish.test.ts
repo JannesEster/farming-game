@@ -11,7 +11,7 @@ import { columnMetrics, herderStandTile } from "./convoy";
 import { clearYardRadiusTiles, generateFarm } from "./generate";
 import { CONFIG } from "./config";
 import { tickHerdingRealtime } from "./herding";
-import { campGateBetween, fenceCrossingsOffGate, planHerdPath, pointOnPath } from "./path";
+import { campGateBetween, fenceCrossingsOffGate, pathLengthKm, planHerdPath, pointOnPath } from "./path";
 import { createGame, moveHerd, primeDefaultFarmCache } from "./simulation";
 import { migrateState } from "./stateMigrate";
 import { gameHoursElapsed, repairStuckTransit, walkGameHours } from "./transit";
@@ -106,8 +106,11 @@ describe("drive polish", () => {
 
   it("does not freeze when a drive is still going at dusk", () => {
     const state = ready();
-    const pair = neighbourPairs(state)[0];
+    const pair = neighbourPairs(state)
+      .map((ids) => ({ ids, km: pathLengthKm(planHerdPath(state, ids[0], ids[1])) }))
+      .sort((a, b) => a.km - b.km)[0]?.ids;
     expect(pair).toBeTruthy();
+    if (!pair) return;
     state.herd.campId = pair[0];
     state.date.hour = 16;
     state.clock!.bankMs = 0;

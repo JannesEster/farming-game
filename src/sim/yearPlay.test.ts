@@ -107,7 +107,7 @@ describe("year of play", () => {
     expect(state.herd.headCount).toBeLessThan(10);
   });
 
-  it("stays roughly break-even to modestly profitable with rotation and young steer sales", () => {
+  it("keeps the herd fed on the larger ranch while running costs spend cash", () => {
     const state = otjozondu();
     const startCash = state.cashNad;
     const startHead = state.herd.headCount;
@@ -119,8 +119,9 @@ describe("year of play", () => {
     expect(state.date.day).toBe(1);
     expect(state.herd.headCount).toBeGreaterThanOrEqual(startHead - 12);
     expect(state.herd.condition).toBeGreaterThan(50);
-    expect(state.cashNad).toBeGreaterThan(startCash * 0.9);
-    expect(state.cashNad).toBeLessThan(startCash * 1.2);
+    // Same 120 head on a farm three times the area. Running costs follow hectares, so a careful year spends cash.
+    expect(state.cashNad).toBeGreaterThan(startCash * 0.4);
+    expect(state.cashNad).toBeLessThan(startCash * 0.7);
   });
 
   it("warns a careless herd before deaths and leaves them worse off at year end", () => {

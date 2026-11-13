@@ -214,6 +214,8 @@ export function parseLegacySaved(raw: string): GameState | null {
     }
     const state = data.state;
     if (!Array.isArray(state.camps) || !state.herd || !state.date) return null;
+    if (!Array.isArray(state.features) || !Array.isArray(state.campIds)) return null;
+    if (!state.width || !state.height || state.campIds.length !== state.width * state.height) return null;
     return migrateState(state);
   } catch {
     return null;

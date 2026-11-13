@@ -28,7 +28,9 @@ export type HerdPrice = {
  */
 export function landListingDiscountFactor(): number {
   // TODO(A): tune with owner. Represents bundled sale / partial bond, not a published rate.
-  return 0.22;
+  // Was 0.22 on the smaller listings. 0.073 is 0.22 / 3, rounded, so a farm with
+  // three times the hectares still fits the starter purse.
+  return 0.073;
 }
 
 /** TODO(A): transfer stock valued below replacement auction cost. */

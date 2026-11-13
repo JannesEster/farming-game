@@ -23,11 +23,11 @@ describe("herd paths", () => {
     const state = createGame(3300);
     expect(state.camps.length).toBe(18);
     const ha = state.camps.map((c) => c.hectares);
-    expect(Math.min(...ha)).toBeGreaterThanOrEqual(80);
-    expect(Math.max(...ha)).toBeLessThanOrEqual(400);
+    expect(Math.min(...ha)).toBeGreaterThanOrEqual(250);
+    expect(Math.max(...ha)).toBeLessThanOrEqual(1300);
     const avg = ha.reduce((a, b) => a + b, 0) / ha.length;
-    expect(avg).toBeGreaterThan(150);
-    expect(avg).toBeLessThan(210);
+    expect(avg).toBeGreaterThan(480);
+    expect(avg).toBeLessThan(620);
   });
 
   it("picks the near gate, not the far side of the camp", () => {

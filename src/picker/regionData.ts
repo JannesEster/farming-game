@@ -1,12 +1,21 @@
 /**
  * Regional facts for farm picker cards (sourced in farm-life-lesson §4.1, §7.1, §8.1).
  * Assumption fields are marked in comments.
+ * Listing hectares are 3 times the previous playable size. Tree chances are tuned
+ * so each region keeps about the same tree count. Bush chances are the old values
+ * times the area scale and a 0.62 trim, because bushes share the tree random stream.
  */
+
+import { BUSH_COUNT_TRIM, VEGETATION_COUNT_SCALE } from "../sim/config";
+
+function keepBushCount(previousChance: number): number {
+  return previousChance * VEGETATION_COUNT_SCALE * BUSH_COUNT_TRIM;
+}
 
 export type RegionTemplate = {
   key: "karas" | "khomas" | "otjozondjupa" | "omaheke";
   label: string;
-  /** Listing hectares (may be below regional average so the map stays playable). */
+  /** Listing hectares. Three times the previous playable size. */
   listingHectares: number;
   /** S: NSA commercial census average ha where used for flavour text. */
   censusAvgHectares: number;
@@ -38,7 +47,7 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
   karas: {
     key: "karas",
     label: "//Karas",
-    listingHectares: 4_800,
+    listingHectares: 4_800 * 3,
     censusAvgHectares: 6_091,
     rainThreeSeasonMm: Math.round((130 + 91 + 100) / 3),
     landRateNadPerHa: 804,
@@ -48,9 +57,9 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
     terrain: {
       campCountMin: 14,
       campCountMax: 20,
-      treeChance: 0.015,
-      bushChanceOpen: 0.045,
-      bushChanceBushy: 0.12,
+      treeChance: 0.00114,
+      bushChanceOpen: keepBushCount(0.045),
+      bushChanceBushy: keepBushCount(0.12),
       peakDmKgPerHa: 900,
       bushyPeakFraction: 0.55,
     },
@@ -59,7 +68,7 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
   khomas: {
     key: "khomas",
     label: "Khomas",
-    listingHectares: 2_600,
+    listingHectares: 2_600 * 3,
     censusAvgHectares: 3_829,
     rainThreeSeasonMm: Math.round((375 + 170 + 325) / 3),
     landRateNadPerHa: 1_857,
@@ -69,9 +78,9 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
     terrain: {
       campCountMin: 10,
       campCountMax: 14,
-      treeChance: 0.085,
-      bushChanceOpen: 0.09,
-      bushChanceBushy: 0.2,
+      treeChance: 0.0071,
+      bushChanceOpen: keepBushCount(0.09),
+      bushChanceBushy: keepBushCount(0.2),
       peakDmKgPerHa: 1_500,
       bushyPeakFraction: 0.65,
     },
@@ -80,7 +89,7 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
   otjozondjupa: {
     key: "otjozondjupa",
     label: "Otjozondjupa",
-    listingHectares: 3_300,
+    listingHectares: 3_300 * 3,
     censusAvgHectares: 3_327,
     rainThreeSeasonMm: OTJO_RAIN,
     landRateNadPerHa: 1_951,
@@ -90,9 +99,9 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
     terrain: {
       campCountMin: 12,
       campCountMax: 18,
-      treeChance: 0.065,
-      bushChanceOpen: 0.1,
-      bushChanceBushy: 0.24,
+      treeChance: 0.00348,
+      bushChanceOpen: keepBushCount(0.1),
+      bushChanceBushy: keepBushCount(0.24),
       peakDmKgPerHa: 1_600,
       bushyPeakFraction: 0.6,
     },
@@ -101,7 +110,7 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
   omaheke: {
     key: "omaheke",
     label: "Omaheke",
-    listingHectares: 3_200,
+    listingHectares: 3_200 * 3,
     censusAvgHectares: 3_531,
     rainThreeSeasonMm: Math.round((408 + 267 + 491) / 3),
     landRateNadPerHa: 2_213,
@@ -111,9 +120,9 @@ export const REGIONS: Record<RegionTemplate["key"], RegionTemplate> = {
     terrain: {
       campCountMin: 11,
       campCountMax: 16,
-      treeChance: 0.04,
-      bushChanceOpen: 0.07,
-      bushChanceBushy: 0.16,
+      treeChance: 0.0035,
+      bushChanceOpen: keepBushCount(0.07),
+      bushChanceBushy: keepBushCount(0.16),
       peakDmKgPerHa: 1_350,
       bushyPeakFraction: 0.62,
     },
