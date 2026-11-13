@@ -6,7 +6,8 @@ import { tileCenter } from "./iso";
 import { cowOctantFromScreen, spritesBaseUrl } from "./sprites";
 import { V2_SPRITES, type V2SpriteMeta } from "./v2Manifest";
 import { renderPenFloor } from "./v2Ground";
-import { displayScaleForFile } from "./worldScale";
+import { FENCE_POST_SPACING_METRES } from "./fences";
+import { displayScaleForFile, PIXELS_PER_METRE } from "./worldScale";
 import { yardGeometry } from "./yardDraw";
 
 const byFile = new Map(V2_SPRITES.map((sprite) => [sprite.file, sprite]));
@@ -545,52 +546,68 @@ export type FenceArt = { wires: Phaser.GameObjects.Image[]; posts: Phaser.GameOb
 
 type FenceSeg = { x1: number; y1: number; x2: number; y2: number; kind: "boundary" | "selected" | "inner"; gate: boolean };
 
-/** One wire sprite per straight run, on the diagonal that matches the camp edge. */
+/**
+ * Posts every few metres along each straight run, plus a gate in the opening.
+ * The wire itself is the straight line drawn by drawFences, so a run does not
+ * stair-step from one tile-edge sprite to the next.
+ */
 export function placeV2Fences(scene: Phaser.Scene, segments: FenceSeg[]): Phaser.GameObjects.Image[] {
   const images: Phaser.GameObjects.Image[] = [];
-  const tileEdge = Math.hypot(CONFIG.view.tileWidth / 2, CONFIG.view.tileHeight / 2);
-  for (const segment of segments) {
-    const dx = segment.x2 - segment.x1;
-    const dy = segment.y2 - segment.y1;
-    const nw = nwSeDiagonal(dx, dy);
-    const file = segment.gate
-      ? nw
-        ? "fence-gate-nw-se.png"
-        : "fence-gate.png"
-      : nw
-        ? "fence-wire-nw.png"
-        : "fence-wire-ne.png";
-    const sprite = meta(file);
-    if (!sprite || !scene.textures.exists(sprite.key)) continue;
-    const jitter = (Math.abs(Math.sin(segment.x1 * 12.9898 + segment.y1 * 78.233) * 43758.5453) % 1) * 2 - 1;
-    const scaleY = worldScaleOf(file);
-    const scaleX = tileEdge / sprite.width;
-    const along = Math.hypot(dx, dy) || 1;
-    const shift = jitter * tileEdge * 0.08;
-    const midX = (segment.x1 + segment.x2) / 2 + (dx / along) * shift;
-    const midY = (segment.y1 + segment.y2) / 2 + (dy / along) * shift;
-    const depth = 5 + midY * 0.01;
-    const image = scene.add
-      .image(midX + (sprite.anchorX - 0.5) * sprite.width * scaleX, midY, sprite.key)
-      .setOrigin(sprite.anchorX, sprite.anchorY)
-      .setScale(scaleX, scaleY)
-      .setDepth(depth);
-    if (segment.kind === "selected") image.setTint(0xffe3a3);
-    else if (segment.kind === "inner") image.setAlpha(0.92);
-    images.push(image);
-    images.push(placeShadow(scene, midX, midY, 16, 5, 0.16, depth - 0.02));
-  }
+  const spacing = FENCE_POST_SPACING_METRES * PIXELS_PER_METRE;
   const seen = new Set<string>();
   for (const segment of segments) {
-    if (segment.kind === "inner") continue;
-    const key = `${Math.round(segment.x1)}:${Math.round(segment.y1)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const postRoll = Math.abs(Math.sin(segment.x1 * 0.17 + segment.y1 * 0.31) * 91.7) % 1;
-    if (postRoll > 0.34) continue;
-    const post = segment.x1 < segment.x2 ? "fence-strainer-post.png" : "fence-strainer-post-flip.png";
-    const image = addSprite(scene, post, segment.x1, segment.y1, 5.2 + segment.y1 * 0.01, worldScaleOf(post));
-    if (image) images.push(image);
+    if (segment.gate) continue;
+    const dx = segment.x2 - segment.x1;
+    const dy = segment.y2 - segment.y1;
+    const length = Math.hypot(dx, dy);
+    if (length < 1) continue;
+    const count = Math.max(1, Math.round(length / spacing));
+    const file = dx >= 0 ? "fence-strainer-post-flip.png" : "fence-strainer-post.png";
+    for (let i = 0; i <= count; i += 1) {
+      const t = i / count;
+      const x = segment.x1 + dx * t;
+      const y = segment.y1 + dy * t;
+      if (coveredByGate(x, y, segments)) continue;
+      const key = `${Math.round(x)}:${Math.round(y)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const image = addSprite(scene, file, x, y, 5 + y * 0.01);
+      if (image) images.push(image);
+    }
+  }
+  for (const segment of segments) {
+    if (!segment.gate) continue;
+    const dx = segment.x2 - segment.x1;
+    const dy = segment.y2 - segment.y1;
+    const file = nwSeDiagonal(dx, dy) ? "fence-gate-nw-se.png" : "fence-gate.png";
+    const sprite = meta(file);
+    if (!sprite || !scene.textures.exists(sprite.key)) continue;
+    const length = Math.hypot(dx, dy) || 1;
+    const scale = length / sprite.width;
+    const midX = (segment.x1 + segment.x2) / 2;
+    const midY = (segment.y1 + segment.y2) / 2;
+    const depth = 5.4 + midY * 0.01;
+    const image = scene.add
+      .image(midX + (sprite.anchorX - 0.5) * sprite.width * scale, midY, sprite.key)
+      .setOrigin(sprite.anchorX, sprite.anchorY)
+      .setScale(scale)
+      .setDepth(depth);
+    images.push(image);
   }
   return images;
+}
+
+function coveredByGate(x: number, y: number, segments: FenceSeg[]): boolean {
+  for (const gate of segments) {
+    if (!gate.gate) continue;
+    const dx = gate.x2 - gate.x1;
+    const dy = gate.y2 - gate.y1;
+    const len2 = dx * dx + dy * dy || 1;
+    const t = ((x - gate.x1) * dx + (y - gate.y1) * dy) / len2;
+    if (t < -0.08 || t > 1.08) continue;
+    const px = gate.x1 + dx * t;
+    const py = gate.y1 + dy * t;
+    if (Math.hypot(x - px, y - py) < 10) return true;
+  }
+  return false;
 }

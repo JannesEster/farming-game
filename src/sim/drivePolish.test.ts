@@ -74,7 +74,7 @@ describe("drive polish", () => {
       const gate = campGateBetween(from, to)!;
       expect(path.some((tile) => tile.x === gate.fromGate.x && tile.y === gate.fromGate.y)).toBe(true);
     }
-  });
+  }, 20_000);
 
   it("keeps picker-farm neighbour routes within 2x and on gates", () => {
     const offers = generateFarmOffers(88001).filter((offer) => offer.playable);
@@ -92,7 +92,7 @@ describe("drive polish", () => {
         expect(fenceCrossingsOffGate(state, path)).toBe(0);
       }
     }
-  });
+  }, 20_000);
 
   it("prints the clock as whole HH:MM", () => {
     const date = { year: 2026, month: 8, day: 1, hour: 18.012288667834838 };

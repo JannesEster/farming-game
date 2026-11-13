@@ -78,12 +78,18 @@ async function main() {
     report.shots.push("handling-yard-road.png");
     report.roadOk = roadOk;
 
+    const fenceOk = await desk.evaluate(() => window.__farmCapture.prepareFenceLineCapture());
+    await desk.waitForTimeout(400);
+    await desk.screenshot({ path: path.join(outDir, "fence-line-gate.png") });
+    report.shots.push("fence-line-gate.png");
+    report.fenceOk = fenceOk;
+
     await desk.close();
 
     if (process.env.SHOTS_ONLY === "1") {
       await writeFile(path.join(outDir, "self-play.json"), JSON.stringify(report, null, 2));
       await browser.close();
-      console.log(JSON.stringify({ shots: report.shots, homesteadInView: report.homesteadInView, drive: report.drive, roadOk: report.roadOk }, null, 2));
+      console.log(JSON.stringify({ shots: report.shots, homesteadInView: report.homesteadInView, drive: report.drive, roadOk: report.roadOk, fenceOk: report.fenceOk }, null, 2));
       return;
     }
 

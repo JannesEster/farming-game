@@ -72,7 +72,7 @@ import {
   type HerdOffset,
 } from "./art";
 import { groundTexture, terrainVariant, tileTint, trackKeys } from "./colour";
-import { collectFenceSegments, drawFences } from "./fences";
+import { closestPointOnFence, collectFenceSegments, drawFences } from "./fences";
 import {
   measureChipWidths,
   measureHudHeights,
@@ -136,6 +136,7 @@ import {
   GARDEN_WIDTH_METRES,
   KRAAL_WIDTH_METRES,
   personDisplayPx,
+  PIXELS_PER_METRE,
   RESERVOIR_DIAMETER_METRES,
   ROCK_CLUSTER_METRES,
   SHED_WIDTH_METRES,
@@ -356,7 +357,7 @@ export class FarmScene extends Phaser.Scene {
     }
     this.paintProps();
     this.paintLabels();
-    this.fences = this.add.graphics().setDepth(2);
+    this.fences = this.add.graphics().setDepth(4);
     this.redrawFences();
     this.ring = this.add.graphics().setDepth(9);
     this.rain = this.add.graphics().setScrollFactor(0).setDepth(30000);
@@ -815,6 +816,64 @@ export class FarmScene extends Phaser.Scene {
     this.clampScroll();
     this.cullProps();
     this.fadeCoveringTrees();
+    return true;
+  }
+
+  /** Close view of one straight fence run and the gate in that line. */
+  private prepareFenceLineCapture(): boolean {
+    this.capturePin = null;
+    const segments = collectFenceSegments(this.state, this.layout, this.state.herd.campId, false);
+    const gates = segments.filter((segment) => segment.gate);
+    const wires = segments.filter((segment) => !segment.gate);
+    let best: { gate: (typeof gates)[number]; wire: (typeof wires)[number]; length: number } | null = null;
+    for (const gate of gates) {
+      for (const wire of wires) {
+        const touch =
+          Math.hypot(wire.x1 - gate.x1, wire.y1 - gate.y1) < 1.5 ||
+          Math.hypot(wire.x1 - gate.x2, wire.y1 - gate.y2) < 1.5 ||
+          Math.hypot(wire.x2 - gate.x1, wire.y2 - gate.y1) < 1.5 ||
+          Math.hypot(wire.x2 - gate.x2, wire.y2 - gate.y2) < 1.5;
+        if (!touch) continue;
+        const length = Math.hypot(wire.x2 - wire.x1, wire.y2 - wire.y1);
+        if (!best || length > best.length) best = { gate, wire, length };
+      }
+    }
+    if (!best || best.length < 80) return false;
+    const gx = (best.gate.x1 + best.gate.x2) / 2;
+    const gy = (best.gate.y1 + best.gate.y2) / 2;
+    const dx = best.wire.x2 - best.wire.x1;
+    const dy = best.wire.y2 - best.wire.y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const along = (32 * PIXELS_PER_METRE) / 2;
+    const across = 14 * PIXELS_PER_METRE;
+    const ux = dx / len;
+    const uy = dy / len;
+    const points = [
+      { x: gx - ux * along, y: gy - uy * along },
+      { x: gx + ux * along, y: gy + uy * along },
+      { x: gx - uy * across, y: gy + ux * across },
+      { x: gx + uy * across, y: gy - ux * across },
+    ];
+    const bounds = boundsFromPoints(points, 24);
+    if (!bounds) return false;
+    const camera = this.cameras.main;
+    this.refreshZoomLimits();
+    const framed = frameWorldRectInClearBand(
+      bounds,
+      camera.width,
+      camera.height,
+      viewportCameraInsets(),
+      this.minZoom,
+      Math.min(this.maxZoom, 1.55),
+      16,
+    );
+    camera.setZoom(framed.zoom);
+    camera.scrollX = framed.scrollX;
+    camera.scrollY = framed.scrollY;
+    this.clampScroll();
+    this.cullProps();
+    this.fadeCoveringTrees();
+    this.redrawFences();
     return true;
   }
 
@@ -1410,6 +1469,7 @@ export class FarmScene extends Phaser.Scene {
       prepareHomesteadCapture: () => this.prepareHomesteadCapture(),
       prepareHomesteadAtDefaultZoom: () => this.prepareHomesteadAtDefaultZoom(),
       prepareRoadWideCapture: () => this.prepareRoadWideCapture(),
+      prepareFenceLineCapture: () => this.prepareFenceLineCapture(),
       prepareHomesteadCloseCapture: () => this.prepareHomesteadCloseCapture(),
       prepareScaleReferenceCapture: () => this.prepareScaleReferenceCapture(),
       v2ArtAudit: () => this.v2ArtAudit(),
@@ -2064,20 +2124,19 @@ export class FarmScene extends Phaser.Scene {
 
   private redrawFences(): void {
     const herdCamp = this.state.herd.campId;
+    const zoom = this.cameras.main.zoom;
+    const paintedFence = v2Ready(this.textures);
+    const sig = `${herdCamp}:${this.selected ? 1 : 0}:${paintedFence ? 1 : 0}:${Math.round(zoom * 50)}`;
+    if (sig === this.fenceSig) return;
+    this.fenceSig = sig;
     this.fenceGates.forEach((gate) => gate.destroy());
     this.fenceGates = [];
+    this.fenceArt.forEach((sprite) => sprite.destroy());
+    this.fenceArt = [];
     const segments = collectFenceSegments(this.state, this.layout, herdCamp, this.selected);
-    if (v2Ready(this.textures)) {
-      const sig = `${segments.length}:${herdCamp}:${this.selected ? 1 : 0}`;
-      if (sig === this.fenceSig) return;
-      this.fenceSig = sig;
-      this.fenceArt.forEach((sprite) => sprite.destroy());
-      this.fenceArt = placeV2Fences(this, segments);
-      this.fences.clear();
-      return;
-    }
-    drawFences(this.fences, segments, this.cameras.main.zoom);
-    this.fenceGates = placeGateSprites(this, segments, this.paintedSprites);
+    drawFences(this.fences, segments, zoom, { posts: !paintedFence });
+    if (paintedFence) this.fenceArt = placeV2Fences(this, segments);
+    else this.fenceGates = placeGateSprites(this, segments, this.paintedSprites);
   }
 
   private syncHerdFromSim(): void {
@@ -2885,7 +2944,7 @@ export class FarmScene extends Phaser.Scene {
     let nearFence: { x: number; y: number } | null = null;
     let nearDist = Number.POSITIVE_INFINITY;
     for (const segment of fence) {
-      const point = { x: (segment.x1 + segment.x2) / 2, y: (segment.y1 + segment.y2) / 2 };
+      const point = closestPointOnFence(cow.x, cow.y, segment);
       const dist = Math.hypot(point.x - cow.x, point.y - cow.y);
       if (dist < nearDist) {
         nearDist = dist;
