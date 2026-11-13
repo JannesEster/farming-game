@@ -80,6 +80,13 @@ async function main() {
 
     await desk.close();
 
+    if (process.env.SHOTS_ONLY === "1") {
+      await writeFile(path.join(outDir, "self-play.json"), JSON.stringify(report, null, 2));
+      await browser.close();
+      console.log(JSON.stringify({ shots: report.shots, homesteadInView: report.homesteadInView, drive: report.drive, roadOk: report.roadOk }, null, 2));
+      return;
+    }
+
     const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });
     phone.on("pageerror", (error) => pageErrors.push(String(error)));
     await ready(phone);

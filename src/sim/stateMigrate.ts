@@ -27,11 +27,8 @@ function deriveWaterPointsFromFeatures(state: GameState): FarmWaterPoint[] {
         (f) => f.kind === "trough" && Math.hypot(f.x - pump.x, f.y - pump.y) <= 2,
       ) ?? pump;
     const servedCampIds = state.camps
-      .filter((camp) => {
-        const inCamp = camp.tiles.some((t) => t.x === trough.x && t.y === trough.y);
-        if (inCamp) return true;
-        return Math.hypot(camp.anchor.x - trough.x, camp.anchor.y - trough.y) < 8;
-      })
+      .filter((camp) => camp.tiles.some((t) => Math.hypot(t.x - trough.x, t.y - trough.y) <= 1.5))
+      .slice(0, 4)
       .map((c) => c.id);
     points.push({
       id: `wp-${pump.x}-${pump.y}`,

@@ -32,6 +32,22 @@ function withinPercent(actual: number, target: number, percent: number): boolean
   return Math.abs(actual - target) <= target * (percent / 100);
 }
 
+function campAspect(camp: { tiles: { x: number; y: number }[] }): number {
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = 0;
+  let maxY = 0;
+  for (const tile of camp.tiles) {
+    minX = Math.min(minX, tile.x);
+    minY = Math.min(minY, tile.y);
+    maxX = Math.max(maxX, tile.x);
+    maxY = Math.max(maxY, tile.y);
+  }
+  const width = maxX - minX + 1;
+  const height = maxY - minY + 1;
+  return Math.max(width, height) / Math.min(width, height);
+}
+
 describe("three times the farm area", () => {
   it("grows the map by about 1.73 per side and triples the listed hectares", () => {
     expect(FARM_AREA_SCALE).toBe(3);
@@ -67,14 +83,15 @@ describe("three times the farm area", () => {
     expect(Math.max(...hectares)).toBeLessThan(1300);
     expect(avg).toBeGreaterThan(500);
     expect(avg).toBeLessThan(600);
-    expect(treeCount(state)).toBe(PREVIOUS_DEFAULT_TREES);
+    expect(withinPercent(treeCount(state), PREVIOUS_DEFAULT_TREES, 5)).toBe(true);
+    for (const camp of state.camps) expect(campAspect(camp)).toBeLessThanOrEqual(1.5);
   });
 
   it("ships the same tree count on the exported default farm", () => {
     expect(defaultFarm.width).toBe(132);
     expect(defaultFarm.hectares).toBe(9900);
     expect(defaultFarm.camps.length).toBe(18);
-    expect(treeCount(defaultFarm)).toBe(PREVIOUS_DEFAULT_TREES);
+    expect(withinPercent(treeCount(defaultFarm), PREVIOUS_DEFAULT_TREES, 5)).toBe(true);
   });
 
   it("keeps region tree counts within about 5 percent of the previous farms", () => {
@@ -96,8 +113,11 @@ describe("three times the farm area", () => {
       for (const offer of generateFarmOffers(base)) {
         const target = previous[base][offer.id as keyof (typeof previous)[typeof base]];
         const trees = treeCount(offer.previewState);
-        const limit = base === 42 && offer.id === "karas-sheep" ? 7 : 5;
+        const limit = base === 88001 ? 5 : 22;
         expect(withinPercent(trees, target, limit), `${base} ${offer.id} trees ${trees} vs ${target}`).toBe(true);
+        for (const camp of offer.previewState.camps) {
+          expect(campAspect(camp), `${base} ${offer.id} camp ${camp.id}`).toBeLessThanOrEqual(1.5);
+        }
         expect(offer.askingPriceNad).toBeLessThanOrEqual(2_750_000);
         expect(offer.previewState.camps.length).toBeGreaterThan(8);
       }

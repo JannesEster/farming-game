@@ -133,6 +133,7 @@ describe("organicTrekOffsets", () => {
     state.herd.campId = camp.id;
     state.herd.headCount = 80;
     for (let i = 0; i < state.campIds.length; i += 1) state.campIds[i] = camp.id;
+    state.features = [];
     const path = [];
     for (let y = 18; y <= 58; y += 1) path.push({ x: 30, y });
     state.herd.transit = {

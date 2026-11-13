@@ -98,6 +98,12 @@ export function farmDefinitionFromState(state: GameState, config: GameConfig = C
     gates,
     laneKeys,
     features,
+    waterPoints: state.farmWaterPoints?.map((point) => ({
+      ...point,
+      tile: { ...point.tile },
+      trough: { ...point.trough },
+      servedCampIds: [...point.servedCampIds],
+    })),
     regionKey: state.farmMeta?.regionKey,
   };
 }
@@ -194,7 +200,14 @@ export function gameStateFromFarmDefinition(def: FarmDefinition, config: GameCon
     campIds: [...def.campIds],
     camps,
     features: [...def.features, ...laneFeatures],
-    farmWaterPoints: def.waterPoints ? [...def.waterPoints] : undefined,
+    farmWaterPoints: def.waterPoints?.length
+      ? def.waterPoints.map((point) => ({
+          ...point,
+          tile: { ...point.tile },
+          trough: { ...point.trough },
+          servedCampIds: [...point.servedCampIds],
+        }))
+      : generated.farmWaterPoints,
     herd: { ...generated.herd, campId: herdCamp },
     farmMeta: generated.farmMeta
       ? { ...generated.farmMeta, offerId: def.id, regionKey: def.regionKey ?? generated.farmMeta.regionKey }
