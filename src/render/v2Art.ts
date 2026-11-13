@@ -136,6 +136,14 @@ function hashFile(files: string[], x: number, y: number): string {
   return files[Math.floor(n * files.length) % files.length];
 }
 
+/** A tree or bush cut-out, with the same size jitter the veld used to use. */
+export function vegetationPose(kind: "tree" | "bush", x: number, y: number, jitter = 1): V2Pose | null {
+  const file = hashFile(kind === "tree" ? TREES : BUSHES, x, y);
+  const placed = pose(file);
+  if (!placed) return null;
+  return { ...placed, scale: placed.scale * jitter };
+}
+
 function near(features: Feature[], kind: Feature["kind"], x: number, y: number, tiles: number): boolean {
   return features.some((feature) => feature.kind === kind && Math.hypot(feature.x - x, feature.y - y) < tiles);
 }

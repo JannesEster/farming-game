@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { CONFIG, PREVIOUS_MAP_TILES } from "../sim/config";
 import { usesMetreCoords } from "../sim/metreFarm";
+import { bushesInRect, treesInRect, type VegPoint } from "../sim/vegetation";
 import { COPY } from "../sim/format";
 import { clamp } from "../sim/math";
 import { getGameFlow } from "../integration/GameFlowService";
@@ -164,7 +165,9 @@ import {
   referencePose,
   roadtrainEndOffsets,
   roadtrainFile,
+  v2Key,
   v2Ready,
+  vegetationPose,
   vehiclePose,
 } from "./v2Art";
 import { yardGeometry } from "./yardDraw";
@@ -231,6 +234,9 @@ export class FarmScene extends Phaser.Scene {
   private herdMarker?: Phaser.GameObjects.Text;
   private metreChunks = new Map<string, Phaser.GameObjects.Graphics>();
   private metreZoomBucket = -1;
+  private vegSprites: Phaser.GameObjects.Image[] = [];
+  private vegDots: Phaser.GameObjects.Graphics | null = null;
+  private vegKey = "";
   private hud!: Hud;
   private market!: MarketSheet;
   private ops!: OpsSheet;
@@ -1825,6 +1831,142 @@ export class FarmScene extends Phaser.Scene {
     this.syncMetreFrame();
   }
 
+  /** Full trees up close. Dots while a camp still fills the view. Nothing on the whole-farm map. */
+  private syncVegetation(zoom: number): void {
+    if (!this.metre) return;
+    if (zoom < 0.02) {
+      this.releaseVegetation();
+      return;
+    }
+    const bounds = this.viewMetres();
+    const band = zoom < 0.22 ? "d" : "s";
+    const key = `${band}:${Math.round(bounds.minX / 8)}:${Math.round(bounds.minY / 8)}:${Math.round(bounds.maxX / 8)}:${Math.round(bounds.maxY / 8)}:${Math.round(zoom * 40)}`;
+    if (key === this.vegKey) return;
+    this.vegKey = key;
+    if (zoom >= 0.22) {
+      const trees: Array<VegPoint & { kind: "tree" | "bush" }> = treesInRect(
+        this.state,
+        bounds.minX,
+        bounds.minY,
+        bounds.maxX,
+        bounds.maxY,
+      ).map((point) => ({ ...point, kind: "tree" }));
+      const bushes: Array<VegPoint & { kind: "tree" | "bush" }> = bushesInRect(
+        this.state,
+        bounds.minX,
+        bounds.minY,
+        bounds.maxX,
+        bounds.maxY,
+      ).map((point) => ({ ...point, kind: "bush" }));
+      const all = trees.concat(bushes);
+      if (all.length <= 700) {
+        this.vegDots?.clear();
+        this.vegDots?.setVisible(false);
+        this.syncVegSprites(all);
+        return;
+      }
+    }
+    this.hideVegSprites();
+    this.bakeVegDots(bounds, zoom);
+    this.vegDots?.setVisible(true);
+  }
+
+  /** Drop the close-up pool so the farm map is not still walking hundreds of hidden sprites. */
+  private releaseVegetation(): void {
+    if (this.vegKey === "off" && this.vegSprites.length === 0) return;
+    this.vegKey = "off";
+    for (const sprite of this.vegSprites) sprite.destroy();
+    this.vegSprites = [];
+    this.vegDots?.destroy();
+    this.vegDots = null;
+  }
+
+  private viewMetres(): { minX: number; minY: number; maxX: number; maxY: number } {
+    const view = this.cameras.main.worldView;
+    const pad = 48;
+    const corners = [
+      [view.x - pad, view.y - pad],
+      [view.right + pad, view.y - pad],
+      [view.right + pad, view.bottom + pad],
+      [view.x - pad, view.bottom + pad],
+    ];
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const [x, y] of corners) {
+      const tile = worldToTile(x, y, this.layout, this.groundTileW, this.groundTileH);
+      minX = Math.min(minX, tile.x);
+      minY = Math.min(minY, tile.y);
+      maxX = Math.max(maxX, tile.x + 1);
+      maxY = Math.max(maxY, tile.y + 1);
+    }
+    return { minX, minY, maxX, maxY };
+  }
+
+  private hideVegSprites(): void {
+    for (const sprite of this.vegSprites) sprite.setVisible(false);
+  }
+
+  private syncVegSprites(all: Array<VegPoint & { kind: "tree" | "bush" }>): void {
+    const starter = this.textures.exists(v2Key("tree-camelthorn-large.png"))
+      ? v2Key("tree-camelthorn-large.png")
+      : SPRITE_KEYS.camelthorn1;
+    while (this.vegSprites.length < all.length) {
+      this.vegSprites.push(this.add.image(0, 0, starter).setVisible(false));
+    }
+    for (let i = 0; i < this.vegSprites.length; i += 1) {
+      const sprite = this.vegSprites[i];
+      const item = all[i];
+      if (!item) {
+        sprite.setVisible(false);
+        continue;
+      }
+      const posed =
+        item.kind === "tree" || item.kind === "bush"
+          ? vegetationPose(item.kind, item.x, item.y, item.scale)
+          : null;
+      const def = posed ?? propSpriteForKind(item.kind, item.x, item.y, item.scale);
+      if (!this.textures.exists(def.key)) {
+        sprite.setVisible(false);
+        continue;
+      }
+      const at = tileCenter(item.x, item.y, this.layout, this.groundTileW, this.groundTileH);
+      sprite
+        .setTexture(def.key)
+        .setOrigin(def.originX, def.originY)
+        .setScale(def.scale)
+        .setPosition(at.x, at.y)
+        .setDepth(8 + at.y * 0.04)
+        .setData("featureKind", item.kind)
+        .setAlpha(1)
+        .setVisible(true);
+    }
+  }
+
+  private bakeVegDots(
+    bounds: { minX: number; minY: number; maxX: number; maxY: number },
+    zoom: number,
+  ): void {
+    if (!this.vegDots) this.vegDots = this.add.graphics().setDepth(0.55);
+    const graphics = this.vegDots;
+    graphics.clear();
+    const trees = treesInRect(this.state, bounds.minX, bounds.minY, bounds.maxX, bounds.maxY);
+    const bushes = zoom >= 0.1 ? bushesInRect(this.state, bounds.minX, bounds.minY, bounds.maxX, bounds.maxY) : [];
+    const stride = trees.length > 8000 ? Math.ceil(trees.length / 8000) : 1;
+    const radius = 2.4 / Math.max(zoom, 0.02);
+    const plot = (points: VegPoint[], colour: number, step: number) => {
+      graphics.fillStyle(colour, 0.9);
+      for (let i = 0; i < points.length; i += step) {
+        const at = tileCenter(points[i].x, points[i].y, this.layout, this.groundTileW, this.groundTileH);
+        graphics.fillCircle(at.x, at.y, radius);
+      }
+    };
+    plot(bushes, 0x6a5a32, 1);
+    plot(trees, 0x2f4a28, stride);
+    graphics.setVisible(true);
+  }
+
   private syncMetreFrame(): void {
     const camera = this.cameras.main;
     const zoom = camera.zoom;
@@ -1840,6 +1982,7 @@ export class FarmScene extends Phaser.Scene {
       else this.roadGraphics.clear();
     }
     syncMetreChunks(this, this.layout, this.groundTileW, this.groundTileH, this.metreChunks, zoom);
+    this.syncVegetation(zoom);
     const view = camera.worldView;
     const nameScale = 1 / Math.max(zoom, 0.002);
     for (const [id, label] of this.campLabels) {
@@ -2039,6 +2182,7 @@ export class FarmScene extends Phaser.Scene {
           continue;
         }
         if (feature.kind === "tree" || feature.kind === "bush") {
+          if (this.metre) continue;
           const def = propSpriteForKind(feature.kind, feature.x, feature.y, feature.scale);
           if (!this.textures.exists(def.key)) continue;
           const center = tileCenter(feature.x, feature.y, this.layout, this.groundTileW, this.groundTileH);
@@ -2078,6 +2222,7 @@ export class FarmScene extends Phaser.Scene {
 
     for (const feature of this.state.features) {
       if (feature.kind === "track") continue;
+      if (this.metre && (feature.kind === "tree" || feature.kind === "bush")) continue;
       const center = tileCenter(feature.x, feature.y, this.layout, this.groundTileW, this.groundTileH);
       const depth = 10 + feature.x + feature.y;
       if (feature.kind === "windmill") {
@@ -4285,8 +4430,9 @@ export class FarmScene extends Phaser.Scene {
       if (typeof kind !== "string" || kind === "tree" || kind === "bush") continue;
       add(prop, 0.46);
     }
-    for (const prop of this.propSprites) {
-      if (prop.getData("featureKind") !== "tree") continue;
+    const treeSprites = this.propSprites.concat(this.vegSprites);
+    for (const prop of treeSprites) {
+      if (prop.getData("featureKind") !== "tree" || !prop.visible) continue;
       const cx = prop.x;
       const cy = prop.y - prop.displayHeight * (1 - prop.originY) * 0.55;
       const cr = Math.max(20, prop.displayWidth * 0.4);

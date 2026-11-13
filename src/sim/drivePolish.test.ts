@@ -8,8 +8,8 @@ import {
   tickRanchClock,
 } from "./clock";
 import { columnMetrics, herderStandTile } from "./convoy";
-import { clearYardRadiusTiles, generateFarm } from "./generate";
-import { TREES_PER_HECTARE } from "./metreFarm";
+import { generateFarm } from "./generate";
+import { treesInRect } from "./vegetation";
 import { CONFIG } from "./config";
 import { tickHerdingRealtime } from "./herding";
 import { campGateBetween, fenceCrossingsOffGate, pathLengthKm, planHerdPath, pointOnPath } from "./path";
@@ -244,23 +244,11 @@ describe("drive polish", () => {
     expect(Math.abs(stand.y - rear.y)).toBeLessThan(0.2);
   });
 
-  it("leaves a clear yard around the house and plants an open scatter of trees", () => {
+  it("leaves a clear yard around the house", () => {
     const state = generateFarm(1);
     const house = state.features.find((feature) => feature.kind === "house");
     expect(house).toBeTruthy();
-    const trees = state.features.filter((feature) => feature.kind === "tree");
-    const clear = clearYardRadiusTiles();
-    for (const tree of trees) {
-      const dist = Math.hypot(tree.x - house!.x, tree.y - house!.y);
-      expect(dist).toBeGreaterThan(clear - 0.05);
-      const onTrack = state.features.some(
-        (feature) => feature.kind === "track" && feature.x === tree.x && feature.y === tree.y,
-      );
-      expect(onTrack).toBe(false);
-    }
-    const hectares = state.farmMeta?.hectares ?? 9900;
-    const target = Math.round(hectares * TREES_PER_HECTARE);
-    expect(trees.length).toBeGreaterThan(target * 0.85);
-    expect(trees.length).toBeLessThanOrEqual(target);
+    const near = treesInRect(state, house!.x - 16, house!.y - 16, house!.x + 16, house!.y + 16);
+    expect(near.length).toBe(0);
   });
 });

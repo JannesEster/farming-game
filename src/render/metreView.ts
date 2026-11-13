@@ -105,7 +105,8 @@ export function syncMetreChunks(
   zoom: number,
 ): void {
   if (zoom < 0.22) {
-    chunks.forEach((chunk) => chunk.setVisible(false));
+    chunks.forEach((chunk) => chunk.destroy());
+    chunks.clear();
     return;
   }
   const view = scene.cameras.main.worldView;

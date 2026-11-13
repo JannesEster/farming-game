@@ -3,7 +3,8 @@ import defaultFarm from "../../public/farms/default-farm.json";
 import { generateFarmOffers } from "../picker/generateOffers";
 import { isoLayout, tileCenter } from "../render/iso";
 import { PIXELS_PER_METRE, scaleBarMetres } from "../render/worldScale";
-import { TREES_PER_HECTARE, farmSideMetres } from "./metreFarm";
+import { farmSideMetres } from "./metreFarm";
+import { TREES_PER_M2, treesInRect } from "./vegetation";
 import { tickBakkieRealtime, maybeStartBakkieRun } from "./bakkie";
 import { tickRanchClock } from "./clock";
 import {
@@ -24,14 +25,6 @@ import { setWorkPriority } from "./workGrid";
 import type { GameState } from "./types";
 
 const PREVIOUS_LISTING_HA = 3300;
-
-function treeCount(state: { features: { kind: string }[] }): number {
-  return state.features.filter((feature) => feature.kind === "tree").length;
-}
-
-function withinPercent(actual: number, target: number, percent: number): boolean {
-  return Math.abs(actual - target) <= target * (percent / 100);
-}
 
 function campAspect(camp: { rect?: { w: number; h: number }; tiles: { x: number; y: number }[] }): number {
   if (camp.rect && camp.rect.w > 0 && camp.rect.h > 0) {
@@ -89,23 +82,37 @@ describe("three times the farm area", () => {
     expect(Math.max(...hectares)).toBeLessThan(1300);
     expect(avg).toBeGreaterThan(500);
     expect(avg).toBeLessThan(600);
-    expect(withinPercent(treeCount(state), Math.round(9900 * TREES_PER_HECTARE), 5)).toBe(true);
     for (const camp of state.camps) expect(campAspect(camp)).toBeLessThanOrEqual(1.5);
   });
 
-  it("ships the same tree count on the exported default farm", () => {
+  it("ships the exported default farm at the listed hectares", () => {
     expect(defaultFarm.hectares).toBe(9900);
     expect(defaultFarm.camps.length).toBe(18);
-    const fresh = generateFarm(3300);
-    expect(withinPercent(treeCount(fresh), Math.round(9900 * TREES_PER_HECTARE), 5)).toBe(true);
   });
 
-  it("keeps region tree counts at the old trees per hectare", () => {
+  it("keeps the screenshot tree spacing on every region", () => {
     for (const base of [88001, 42] as const) {
       for (const offer of generateFarmOffers(base)) {
-        const target = Math.round(offer.hectares * TREES_PER_HECTARE);
-        const trees = treeCount(offer.previewState);
-        expect(withinPercent(trees, target, 8), `${base} ${offer.id} trees ${trees} vs ${target}`).toBe(true);
+        const side = 400;
+        const spots = [
+          [800, 800],
+          [800, 3600],
+          [3600, 800],
+          [3600, 3600],
+        ];
+        let total = 0;
+        let windows = 0;
+        for (const [x, y] of spots) {
+          if (x + side >= offer.previewState.width || y + side >= offer.previewState.height) continue;
+          total += treesInRect(offer.previewState, x, y, x + side, y + side).length;
+          windows += 1;
+        }
+        const expected = TREES_PER_M2 * side * side;
+        const perWindow = total / windows;
+        expect(
+          Math.abs(perWindow - expected) / expected,
+          `${base} ${offer.id} trees ${perWindow.toFixed(0)} vs ${expected.toFixed(1)}`,
+        ).toBeLessThan(0.1);
         for (const camp of offer.previewState.camps) {
           expect(campAspect(camp), `${base} ${offer.id} camp ${camp.id}`).toBeLessThanOrEqual(1.5);
         }
@@ -113,6 +120,25 @@ describe("three times the farm area", () => {
         expect(offer.previewState.camps.length).toBeGreaterThan(8);
       }
     }
+  });
+
+  it("matches the screenshot tree count per start-zoom screen within 10 percent", () => {
+    const state = generateFarm(3300);
+    const zoom = CONFIG.view.desktopTilePx / CONFIG.view.tileWidth;
+    const widthM = 1280 / zoom / PIXELS_PER_METRE;
+    const heightM = 800 / zoom / PIXELS_PER_METRE;
+    const reference = TREES_PER_M2 * widthM * heightM;
+    let total = 0;
+    const windows = 9;
+    for (let row = 0; row < 3; row += 1) {
+      for (let col = 0; col < 3; col += 1) {
+        const x = 700 + col * (widthM + 80);
+        const y = 700 + row * (heightM + 80);
+        total += treesInRect(state, x, y, x + widthM, y + heightM).length;
+      }
+    }
+    const perScreen = total / windows;
+    expect(Math.abs(perScreen - reference) / reference).toBeLessThan(0.1);
   });
 
   it("still finishes a neighbour drive that starts at 07:00 before dusk", () => {

@@ -14,19 +14,6 @@ import {
 } from "./types";
 import type { FarmWaterPoint } from "./storyTypes";
 
-/**
- * Trees on the farm before the area was tripled: 162 trees on 3,300 ha.
- * Every property uses this density, so the veld stays open once distances are real.
- */
-export const TREES_PER_HECTARE = 162 / 3300;
-/** Bushes per tree. Assumption, so the veld stays sparse. */
-export const BUSHES_PER_TREE = 0.45;
-const TREE_GAP_M = 70;
-const BUSH_GAP_M = 40;
-const BUILDING_CLEAR_M = 18;
-const WATER_CLEAR_M = 16;
-const ROAD_CLEAR_M = 8;
-
 export function farmSideMetres(hectares: number): number {
   return Math.max(1, Math.round(Math.sqrt(hectares * 10000)));
 }
@@ -164,46 +151,6 @@ function inside(rect: CampRect, point: TilePoint, inset = 2): TilePoint {
     x: Math.round(clamp(point.x, rect.x + inset, rect.x + rect.w - inset - 1)),
     y: Math.round(clamp(point.y, rect.y + inset, rect.y + rect.h - inset - 1)),
   };
-}
-
-type Bucket = Map<string, TilePoint[]>;
-
-function bucketAdd(buckets: Bucket, point: TilePoint, cell: number): void {
-  const key = `${Math.floor(point.x / cell)},${Math.floor(point.y / cell)}`;
-  const list = buckets.get(key);
-  if (list) list.push(point);
-  else buckets.set(key, [point]);
-}
-
-function bucketNear(buckets: Bucket, x: number, y: number, gap: number, cell: number): boolean {
-  const cx = Math.floor(x / cell);
-  const cy = Math.floor(y / cell);
-  const gap2 = gap * gap;
-  for (let iy = cy - 1; iy <= cy + 1; iy += 1) {
-    for (let ix = cx - 1; ix <= cx + 1; ix += 1) {
-      const list = buckets.get(`${ix},${iy}`);
-      if (!list) continue;
-      for (const point of list) {
-        if ((point.x - x) ** 2 + (point.y - y) ** 2 < gap2) return true;
-      }
-    }
-  }
-  return false;
-}
-
-function pointSegmentDistance(x: number, y: number, a: TilePoint, b: TilePoint): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const len2 = dx * dx + dy * dy || 1;
-  const t = clamp(((x - a.x) * dx + (y - a.y) * dy) / len2, 0, 1);
-  return Math.hypot(x - (a.x + dx * t), y - (a.y + dy * t));
-}
-
-function nearPolyline(x: number, y: number, line: TilePoint[], gap: number): boolean {
-  for (let i = 1; i < line.length; i += 1) {
-    if (pointSegmentDistance(x, y, line[i - 1], line[i]) < gap) return true;
-  }
-  return false;
 }
 
 function nearAny(x: number, y: number, points: TilePoint[], gap: number): boolean {
@@ -367,62 +314,6 @@ export function buildMetreFarm(rng: Rng, config: GameConfig = CONFIG): GameState
     host.tiles.push({ x: hostWater.trough.x, y: hostWater.trough.y });
   }
 
-  const buildingPoints = buildings.map((feature) => ({ x: feature.x, y: feature.y }));
-  const waterClears = waterPoints.map((point) => point.trough);
-  const treeTarget = Math.max(1, Math.round(config.farm.hectares * TREES_PER_HECTARE));
-  const trees: TilePoint[] = [];
-  const treeBuckets: Bucket = new Map();
-  let guard = 0;
-  while (trees.length < treeTarget && guard < treeTarget * 80) {
-    guard += 1;
-    const x = Math.floor(rng.next() * side);
-    const y = Math.floor(rng.next() * side);
-    if (nearAny(x, y, buildingPoints, BUILDING_CLEAR_M)) continue;
-    if (nearAny(x, y, waterClears, WATER_CLEAR_M)) continue;
-    if (nearPolyline(x, y, road, ROAD_CLEAR_M)) continue;
-    if (bucketNear(treeBuckets, x, y, TREE_GAP_M, TREE_GAP_M)) continue;
-    const point = { x, y };
-    trees.push(point);
-    bucketAdd(treeBuckets, point, TREE_GAP_M);
-    features.push({ kind: "tree", x, y, scale: lerp(config.map.treeScaleMin, config.map.treeScaleMax, rng.next()) });
-    if (rng.next() < 0.18 && trees.length < treeTarget) {
-      const clump = { x: x + Math.round((rng.next() - 0.5) * 28), y: y + Math.round((rng.next() - 0.5) * 28) };
-      if (
-        clump.x > 0 &&
-        clump.y > 0 &&
-        clump.x < side &&
-        clump.y < side &&
-        !nearAny(clump.x, clump.y, buildingPoints, BUILDING_CLEAR_M) &&
-        !nearAny(clump.x, clump.y, waterClears, WATER_CLEAR_M) &&
-        !bucketNear(treeBuckets, clump.x, clump.y, 12, TREE_GAP_M)
-      ) {
-        trees.push(clump);
-        bucketAdd(treeBuckets, clump, TREE_GAP_M);
-        features.push({
-          kind: "tree",
-          x: clump.x,
-          y: clump.y,
-          scale: lerp(config.map.treeScaleMin, config.map.treeScaleMax, rng.next()),
-        });
-      }
-    }
-  }
-  const bushTarget = Math.round(trees.length * BUSHES_PER_TREE);
-  const bushBuckets: Bucket = new Map();
-  guard = 0;
-  let bushes = 0;
-  while (bushes < bushTarget && guard < bushTarget * 60) {
-    guard += 1;
-    const x = Math.floor(rng.next() * side);
-    const y = Math.floor(rng.next() * side);
-    if (nearAny(x, y, buildingPoints, 12)) continue;
-    if (nearAny(x, y, waterClears, WATER_CLEAR_M)) continue;
-    if (bucketNear(bushBuckets, x, y, BUSH_GAP_M, BUSH_GAP_M)) continue;
-    if (bucketNear(treeBuckets, x, y, 8, TREE_GAP_M)) continue;
-    bucketAdd(bushBuckets, { x, y }, BUSH_GAP_M);
-    features.push({ kind: "bush", x, y, scale: lerp(config.map.bushScaleMin, config.map.bushScaleMax, rng.next()) });
-    bushes += 1;
-  }
   const demand = dailyDemandKg(
     {
       name: config.herd.name,
