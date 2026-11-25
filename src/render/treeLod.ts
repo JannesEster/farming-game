@@ -63,8 +63,20 @@ const CROWN_WIDTH_M = {
 const CROWN_HEIGHT_OF_WIDTH = 0.58;
 
 const MIN_ZOOM = 0.0002;
-/** Below this on-screen width a mark is just a green tint. Big trees can still get a floor. */
+/** Below this on-screen width a bush is just a tint, so it stays off the map. */
 const MIN_MARK_SCREEN_PX = 1.15;
+/**
+ * Whole-farm specks. Big trees stay in the 1.5–2 px range on a desktop map.
+ * The cap is a fraction of the on-screen gap, so a phone's smaller map does
+ * not turn the same dots into a solid green sheet.
+ */
+const LARGE_SPECK_PX = 1.85;
+const SMALL_SPECK_PX = 1.05;
+const SPECK_STYLE: Record<"large" | "small" | "shepherd", { fill: number; alpha: number }> = {
+  large: { fill: 0x31401f, alpha: 0.94 },
+  small: { fill: 0x5a6048, alpha: 0.52 },
+  shepherd: { fill: 0x5c5e50, alpha: 0.48 },
+};
 
 export type TreeLodMode = "sprites" | "dots";
 export type TreeLodRect = { minX: number; minY: number; maxX: number; maxY: number };
@@ -81,6 +93,8 @@ export type CanopyMark = {
   /** Muted olive or grey-green. `shade` is the darker body, `fill` the lit top. */
   shade: number;
   fill: number;
+  /** A round dark speck. Used once a shaded crown would be only a couple of pixels. */
+  speck: boolean;
 };
 
 const STYLE: Record<VegSpecies, { shade: number; fill: number; alpha: number }> = {
@@ -127,26 +141,37 @@ function safeZoom(zoom: number): number {
   return Math.max(Number.isFinite(zoom) && zoom > 0 ? zoom : MIN_ZOOM, MIN_ZOOM);
 }
 
+/** On-screen gap between trunks, from the iso scale of one metre. */
+export function canopyScreenGap(zoom: number): number {
+  return TREE_SPACING_M * (PIXELS_PER_METRE / 2) * safeZoom(zoom);
+}
+
+/** Minimum on-screen width. Zero for bushes, which are not inflated. */
+export function speckFloorPx(species: VegSpecies, zoom: number): number {
+  const gap = canopyScreenGap(zoom);
+  if (species === "large") return Math.min(LARGE_SPECK_PX, gap * 0.58);
+  if (species === "small" || species === "shepherd") return Math.min(SMALL_SPECK_PX, gap * 0.34);
+  return 0;
+}
+
 /**
- * World-pixel width of one crown. Big trees keep a speck on the whole-farm
- * map. Small trees and bushes are not inflated, or the sand turns green.
+ * World-pixel width of one crown. Above a couple of pixels this is the
+ * painted crown. Below that, big trees hold at about 2 px and smaller trees
+ * at about 1 px, so the whole-farm map keeps a scatter instead of going bare.
  */
 export function canopyWidthPx(species: VegSpecies, scale: number, zoom: number): number {
   const jitter = Number.isFinite(scale) && scale > 0 ? scale : 1;
   const natural = CROWN_WIDTH_M[species] * jitter * PIXELS_PER_METRE;
-  if (species !== "large") return natural;
+  const floor = speckFloorPx(species, zoom) * jitter;
   const z = safeZoom(zoom);
-  const gap = TREE_SPACING_M * Math.sqrt(3) * PIXELS_PER_METRE * z;
-  const floor = Math.min(1.4, Math.max(0.85, gap * 0.36));
-  const screen = natural * z;
-  if (screen >= floor) return natural;
+  if (floor <= 0 || natural * z >= floor) return natural;
   return floor / z;
 }
 
 export function canopyDrawn(species: VegSpecies, scale: number, zoom: number): boolean {
-  const width = canopyWidthPx(species, scale, zoom);
-  if (species === "large") return width * safeZoom(zoom) >= 0.85;
-  return width * safeZoom(zoom) >= MIN_MARK_SCREEN_PX;
+  if (speckFloorPx(species, zoom) > 0.35) return true;
+  const jitter = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  return CROWN_WIDTH_M[species] * jitter * PIXELS_PER_METRE * safeZoom(zoom) >= MIN_MARK_SCREEN_PX;
 }
 
 function markFor(
@@ -160,16 +185,19 @@ function markFor(
   const drawn = canopyDrawn(species, scale, zoom);
   const width = drawn ? canopyWidthPx(species, scale, zoom) : 0;
   const screen = width * safeZoom(zoom);
-  const alpha = screen > 0 && screen < 2.4 ? style.alpha * 0.62 : style.alpha;
+  const dot = species === "large" || species === "small" || species === "shepherd" ? SPECK_STYLE[species] : null;
+  const speck = Boolean(dot) && screen < 2.55;
+  const ink = speck && dot ? dot : null;
   return {
     x,
     y,
     species,
     width,
-    height: width * CROWN_HEIGHT_OF_WIDTH,
-    alpha,
-    shade: style.shade,
-    fill: style.fill,
+    height: speck ? width : width * CROWN_HEIGHT_OF_WIDTH,
+    alpha: ink ? ink.alpha : style.alpha,
+    shade: ink ? ink.fill : style.shade,
+    fill: ink ? ink.fill : style.fill,
+    speck,
   };
 }
 
@@ -186,6 +214,16 @@ export function bushCanopyMarks(
   zoom: number,
 ): CanopyMark[] {
   return bushes.map((bush) => markFor(bushSpeciesAt(bush.x, bush.y), bush.x, bush.y, bush.scale, zoom));
+}
+
+/**
+ * Finer step once crowns are clamped to a screen size. The world size of
+ * that clamp depends on zoom, so a wide band would bake the wrong speck.
+ */
+export function canopySizeBucket(zoom: number): number {
+  const z = safeZoom(zoom);
+  if (z >= 0.018) return 0;
+  return Math.max(1, Math.round(-Math.log(z) / Math.log(1.12)));
 }
 
 /** Coarse zoom bucket. A baked texture is rebuilt when the bucket changes. */

@@ -100,6 +100,7 @@ import {
   TREE_SPRITE_ZOOM,
   bushCanopyMarks,
   canopyCss,
+  canopySizeBucket,
   canopyTextureSize,
   canopyZoomBand,
   clampTreeLodRect,
@@ -256,7 +257,7 @@ export class FarmScene extends Phaser.Scene {
   private vegDots: Phaser.GameObjects.Graphics | null = null;
   private vegLodImage: Phaser.GameObjects.Image | null = null;
   private vegLodSerial = 0;
-  private vegCover: (TreeLodRect & { radius: number; band: string }) | null = null;
+  private vegCover: (TreeLodRect & { band: string; bucket: number }) | null = null;
   private vegKey = "";
   private hud!: Hud;
   private market!: MarketSheet;
@@ -1964,7 +1965,8 @@ export class FarmScene extends Phaser.Scene {
       this.vegKey = "";
     }
     const band = canopyZoomBand(zoom);
-    if (this.vegCover && this.vegCover.band === band && treeLodRectCovers(this.vegCover, bounds)) {
+    const bucket = canopySizeBucket(zoom);
+    if (this.vegCover && this.vegCover.band === band && this.vegCover.bucket === bucket && treeLodRectCovers(this.vegCover, bounds)) {
       return;
     }
     const padded = clampTreeLodRect(padTreeLodRect(bounds), this.state.width, this.state.height);
@@ -1980,7 +1982,7 @@ export class FarmScene extends Phaser.Scene {
     this.releaseVegSprites();
     const drawn = marks.reduce((count, mark) => count + (mark.width > 0 ? 1 : 0), 0);
     const baked = drawn > TREE_DOT_GRAPHICS_MAX ? this.bakeCanopyTexture(padded, marks) : this.bakeCanopyGraphics(marks);
-    if (baked) this.vegCover = { ...padded, radius: 0, band };
+    if (baked) this.vegCover = { ...padded, band, bucket };
   }
 
   private hideCanopyLod(): void {
@@ -2073,6 +2075,11 @@ export class FarmScene extends Phaser.Scene {
     const graphics = this.vegDots;
     graphics.clear();
     for (const { mark, x, y } of this.placeCanopyMarks(marks)) {
+      if (mark.speck) {
+        graphics.fillStyle(mark.fill, mark.alpha);
+        graphics.fillCircle(x, y, mark.width / 2);
+        continue;
+      }
       const shadowW = mark.width * 1.05;
       const shadowH = Math.max(1.5, mark.height * 0.42);
       graphics.fillStyle(CANOPY_SHADOW, mark.alpha * 0.34);
@@ -2120,14 +2127,20 @@ export class FarmScene extends Phaser.Scene {
     const ellipse = (x: number, y: number, w: number, h: number, colour: number, alpha: number) => {
       const rx = (w * size.scale) / 2;
       const ry = (h * size.scale) / 2;
-      if (rx < 0.35 || ry < 0.22 || alpha <= 0) return;
+      if (rx < 0.45 || ry < 0.45 || alpha <= 0) return;
       ctx.fillStyle = canopyCss(colour);
       ctx.globalAlpha = alpha;
       ctx.beginPath();
       ctx.ellipse((x - minWX) * size.scale, (y - minWY) * size.scale, rx, ry, 0, 0, Math.PI * 2);
       ctx.fill();
     };
+    let speckCount = 0;
     for (const { mark, x, y } of placed) {
+      if (mark.speck) {
+        speckCount += 1;
+        ellipse(x, y, mark.width, mark.height, mark.fill, mark.alpha);
+        continue;
+      }
       const shadowW = mark.width * 1.05;
       const shadowH = Math.max(1.5, mark.height * 0.42);
       ellipse(x + mark.width * 0.08, y + shadowH * 0.2, shadowW, shadowH, CANOPY_SHADOW, mark.alpha * 0.34);
@@ -2139,7 +2152,8 @@ export class FarmScene extends Phaser.Scene {
     const key = `${CANOPY_TEXTURE_KEY}-${this.vegLodSerial}`;
     this.vegLodSerial += 1;
     this.textures.addCanvas(key, canvas);
-    this.textures.get(key).setFilter(Phaser.Textures.FilterMode.LINEAR);
+    const speckTexture = placed.length > 0 && speckCount > placed.length * 0.6;
+    this.textures.get(key).setFilter(speckTexture ? Phaser.Textures.FilterMode.NEAREST : Phaser.Textures.FilterMode.LINEAR);
     const previous = this.vegLodImage?.texture.key;
     const worldW = Math.max(1, maxWX - minWX);
     const worldH = Math.max(1, maxWY - minWY);
