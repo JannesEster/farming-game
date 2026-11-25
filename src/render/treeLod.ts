@@ -1,41 +1,97 @@
 import { TREE_SPACING_M } from "../sim/vegetation";
-import { BUSH_DENSE_METRES, CAMELTHORN_LARGE_METRES, PIXELS_PER_METRE } from "./worldScale";
+import {
+  BUSH_DENSE_METRES,
+  BUSH_SPARSE_METRES,
+  CAMELTHORN_LARGE_METRES,
+  CAMELTHORN_SMALL_METRES,
+  PIXELS_PER_METRE,
+  SHEPHERDS_TREE_METRES,
+} from "./worldScale";
 
 /**
- * Close zoom keeps the painted camelthorns. Further out, every tree is still
- * drawn, as a canopy mark at the same metre position. The old path deleted
- * the veld below zoom 0.02 and, above that, drew a 2.4px speck instead of
- * the 12 m crown, so the woodland vanished into the sand.
+ * Close zoom keeps the painted sprites. Further out, each trunk is still
+ * there, but the mark follows that sprite: a 12 m camelthorn gets a crown,
+ * a 6 m tree or a bush gets a smaller, fainter one. The first LOD used one
+ * saturated disk the size of the big tree for every trunk, so the open sand
+ * read as forest and the homestead disappeared into the crowns.
+ *
+ * The file lists and the hash match `vegetationPose`, so a mark is the same
+ * species as the sprite at that metre.
  */
 export const TREE_SPRITE_ZOOM = 0.22;
 /** Past this many trees and bushes in view, sprites give way to canopy marks. */
 export const TREE_SPRITE_BUDGET = 700;
-/** Vector circles are crisp. Above this count a baked texture is the cheap path. */
+/** Vector marks stay crisp. Above this count one baked texture is the cheap path. */
 export const TREE_DOT_GRAPHICS_MAX = 1800;
 
-/** Crown width of the large camelthorn. The close sprite is this tall. */
-export const TREE_CANOPY_METRES = CAMELTHORN_LARGE_METRES;
-/** Dark green that still reads on Kalahari sand (#c4682c). */
-export const TREE_CANOPY_COLOUR = 0x1f5c32;
-export const TREE_CANOPY_CSS = "#1f5c32";
-/** Above the sand and the two-track, under buildings and cattle. */
-export const TREE_CANOPY_DEPTH = 5;
+/** On the sand, under the road, fences, water, buildings and the herd. */
+export const TREE_CANOPY_DEPTH = 0.45;
 export const CANOPY_TEXTURE_KEY = "veg-canopy-lod";
-/** Bushes stay the old tan speck. They are not drawn on the whole-farm map. */
-export const BUSH_DOT_COLOUR = 0x6a5a32;
-export const BUSH_DOT_CSS = "#6a5a32";
+export const CANOPY_TEXTURE_MAX_PX = 1280;
 
-/** Below this on-screen crown, a mark disappears into the sand. */
-const TREE_DOT_MIN_SCREEN_PX = 1.75;
-/** Stay under this share of the gap so neighbouring crowns do not merge. */
-const TREE_DOT_GAP_FRACTION = 0.7;
+const TREE_FILES = [
+  "tree-camelthorn-large.png",
+  "tree-camelthorn-large-flip.png",
+  "tree-camelthorn-small.png",
+  "tree-camelthorn-small-flip.png",
+  "tree-shepherds.png",
+  "tree-shepherds-flip.png",
+] as const;
+
+const BUSH_FILES = [
+  "bush-thorn-sparse.png",
+  "bush-thorn-sparse.png",
+  "bush-thorn-sparse-flip.png",
+  "bush-thorn-sparse-flip.png",
+  "bush-thorn-dense.png",
+  "bush-thorn-dense-flip.png",
+] as const;
+
+/**
+ * Dense core of the painted crown, not the transparent sprite box.
+ * A solid disk the full height of a camelthorn covered the sand.
+ */
+const CROWN_WIDTH_M = {
+  large: CAMELTHORN_LARGE_METRES * 0.62,
+  small: CAMELTHORN_SMALL_METRES * 0.62,
+  shepherd: SHEPHERDS_TREE_METRES * 0.55,
+  bushDense: BUSH_DENSE_METRES * 0.85,
+  bushSparse: BUSH_SPARSE_METRES * 0.8,
+} as const;
+
+/** Flat canopy: the ellipse is wider than it is tall, like the cut-out. */
+const CROWN_HEIGHT_OF_WIDTH = 0.58;
+
 const MIN_ZOOM = 0.0002;
+/** Below this on-screen width a mark is just a green tint. Big trees can still get a floor. */
+const MIN_MARK_SCREEN_PX = 1.15;
 
 export type TreeLodMode = "sprites" | "dots";
-
 export type TreeLodRect = { minX: number; minY: number; maxX: number; maxY: number };
+export type VegSpecies = "large" | "small" | "shepherd" | "bushDense" | "bushSparse";
 
-export type CanopyMark = { x: number; y: number; radius: number };
+export type CanopyMark = {
+  x: number;
+  y: number;
+  species: VegSpecies;
+  /** Ellipse size in world pixels. Zero when the mark would only tint the sand. */
+  width: number;
+  height: number;
+  alpha: number;
+  /** Muted olive or grey-green. `shade` is the darker body, `fill` the lit top. */
+  shade: number;
+  fill: number;
+};
+
+const STYLE: Record<VegSpecies, { shade: number; fill: number; alpha: number }> = {
+  large: { shade: 0x555e3c, fill: 0x6e7549, alpha: 0.78 },
+  small: { shade: 0x515a38, fill: 0x667044, alpha: 0.66 },
+  shepherd: { shade: 0x646656, fill: 0x7c7e6a, alpha: 0.62 },
+  bushDense: { shade: 0x6e6248, fill: 0x8a7b58, alpha: 0.48 },
+  bushSparse: { shade: 0x7a6c50, fill: 0x978664, alpha: 0.36 },
+};
+
+export const CANOPY_SHADOW = 0x2a1c10;
 
 export function treeLodMode(zoom: number, spriteCount: number): TreeLodMode {
   const safe = Number.isFinite(zoom) && zoom > 0 ? zoom : 0;
@@ -43,47 +99,103 @@ export function treeLodMode(zoom: number, spriteCount: number): TreeLodMode {
   return "dots";
 }
 
-/** On-screen crown diameter. Real metres while that is readable, then a small mark. */
-export function treeCanopyScreenPx(zoom: number): number {
-  const safe = Math.max(Number.isFinite(zoom) && zoom > 0 ? zoom : MIN_ZOOM, MIN_ZOOM);
-  const canopy = TREE_CANOPY_METRES * PIXELS_PER_METRE * safe;
-  const spacing = TREE_SPACING_M * PIXELS_PER_METRE * safe;
-  const limit = Math.max(1.15, spacing * TREE_DOT_GAP_FRACTION);
-  return Math.min(Math.max(canopy, TREE_DOT_MIN_SCREEN_PX), limit);
+function hashIndex(count: number, x: number, y: number): number {
+  const n = Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
+  return Math.floor(n * count) % count;
 }
 
-/** World-pixel radius of one canopy mark. Positions stay in metres. */
-export function treeCanopyRadiusPx(zoom: number): number {
-  const safe = Math.max(Number.isFinite(zoom) && zoom > 0 ? zoom : MIN_ZOOM, MIN_ZOOM);
-  return treeCanopyScreenPx(zoom) / safe / 2;
+export function treeFileAt(x: number, y: number): string {
+  return TREE_FILES[hashIndex(TREE_FILES.length, x, y)];
 }
 
-/** A 2.2 m bush, in world pixels. Bushes already drop out below zoom 0.1. */
-export function bushCanopyRadiusPx(): number {
-  return (BUSH_DENSE_METRES * PIXELS_PER_METRE) / 2;
+export function bushFileAt(x: number, y: number): string {
+  return BUSH_FILES[hashIndex(BUSH_FILES.length, x, y)];
 }
 
-export function treeCanopyRadiusStable(previous: number, next: number): boolean {
-  if (!(previous > 0) || !(next > 0)) return false;
-  return Math.abs(next - previous) / previous < 0.15;
+export function treeSpeciesAt(x: number, y: number): VegSpecies {
+  const file = treeFileAt(x, y);
+  if (file.includes("large")) return "large";
+  if (file.includes("shepherd")) return "shepherd";
+  return "small";
+}
+
+export function bushSpeciesAt(x: number, y: number): "bushDense" | "bushSparse" {
+  return bushFileAt(x, y).includes("dense") ? "bushDense" : "bushSparse";
+}
+
+function safeZoom(zoom: number): number {
+  return Math.max(Number.isFinite(zoom) && zoom > 0 ? zoom : MIN_ZOOM, MIN_ZOOM);
 }
 
 /**
- * One mark per tree. Zoom does not thin the list: a far view shows the same
- * trunks as the close view, only cheaper.
+ * World-pixel width of one crown. Big trees keep a speck on the whole-farm
+ * map. Small trees and bushes are not inflated, or the sand turns green.
  */
-export function treeCanopyMarks(trees: readonly { x: number; y: number }[], zoom: number): CanopyMark[] {
-  const radius = treeCanopyRadiusPx(zoom);
-  return trees.map((tree) => ({ x: tree.x, y: tree.y, radius }));
+export function canopyWidthPx(species: VegSpecies, scale: number, zoom: number): number {
+  const jitter = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  const natural = CROWN_WIDTH_M[species] * jitter * PIXELS_PER_METRE;
+  if (species !== "large") return natural;
+  const z = safeZoom(zoom);
+  const gap = TREE_SPACING_M * Math.sqrt(3) * PIXELS_PER_METRE * z;
+  const floor = Math.min(1.4, Math.max(0.85, gap * 0.36));
+  const screen = natural * z;
+  if (screen >= floor) return natural;
+  return floor / z;
+}
+
+export function canopyDrawn(species: VegSpecies, scale: number, zoom: number): boolean {
+  const width = canopyWidthPx(species, scale, zoom);
+  if (species === "large") return width * safeZoom(zoom) >= 0.85;
+  return width * safeZoom(zoom) >= MIN_MARK_SCREEN_PX;
+}
+
+function markFor(
+  species: VegSpecies,
+  x: number,
+  y: number,
+  scale: number,
+  zoom: number,
+): CanopyMark {
+  const style = STYLE[species];
+  const drawn = canopyDrawn(species, scale, zoom);
+  const width = drawn ? canopyWidthPx(species, scale, zoom) : 0;
+  const screen = width * safeZoom(zoom);
+  const alpha = screen > 0 && screen < 2.4 ? style.alpha * 0.62 : style.alpha;
+  return {
+    x,
+    y,
+    species,
+    width,
+    height: width * CROWN_HEIGHT_OF_WIDTH,
+    alpha,
+    shade: style.shade,
+    fill: style.fill,
+  };
+}
+
+/** One record per tree, at that tree's position. Undrawn marks have width 0. */
+export function treeCanopyMarks(
+  trees: readonly { x: number; y: number; scale: number }[],
+  zoom: number,
+): CanopyMark[] {
+  return trees.map((tree) => markFor(treeSpeciesAt(tree.x, tree.y), tree.x, tree.y, tree.scale, zoom));
+}
+
+export function bushCanopyMarks(
+  bushes: readonly { x: number; y: number; scale: number }[],
+  zoom: number,
+): CanopyMark[] {
+  return bushes.map((bush) => markFor(bushSpeciesAt(bush.x, bush.y), bush.x, bush.y, bush.scale, zoom));
 }
 
 /** Coarse zoom bucket. A baked texture is rebuilt when the bucket changes. */
-export function canopyZoomBand(zoom: number): "near" | "mid" | "wide" | "far" {
+export function canopyZoomBand(zoom: number): "near" | "mid" | "wide" | "far" | "tiny" {
   const safe = Number.isFinite(zoom) && zoom > 0 ? zoom : 0;
   if (safe >= 0.12) return "near";
   if (safe >= 0.05) return "mid";
-  if (safe >= 0.02) return "wide";
-  return "far";
+  if (safe >= 0.017) return "wide";
+  if (safe >= 0.01) return "far";
+  return "tiny";
 }
 
 export function padTreeLodRect(rect: TreeLodRect, fraction = 0.42): TreeLodRect {
@@ -113,8 +225,6 @@ export function treeLodRectCovers(cover: TreeLodRect, view: TreeLodRect): boolea
   return view.minX >= cover.minX - 1 && view.minY >= cover.minY - 1 && view.maxX <= cover.maxX + 1 && view.maxY <= cover.maxY + 1;
 }
 
-export const CANOPY_TEXTURE_MAX_PX = 1280;
-
 /** Fit a world-pixel rectangle into one texture. `scale` is texture pixels per world pixel. */
 export function canopyTextureSize(
   worldW: number,
@@ -129,4 +239,8 @@ export function canopyTextureSize(
     height: Math.max(2, Math.ceil(h * scale)),
     scale,
   };
+}
+
+export function canopyCss(colour: number): string {
+  return `#${colour.toString(16).padStart(6, "0")}`;
 }
