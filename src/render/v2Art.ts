@@ -8,6 +8,7 @@ import { cowOctantFromScreen, spritesBaseUrl } from "./sprites";
 import { V2_SPRITES, type V2SpriteMeta } from "./v2Manifest";
 import { renderPenFloor } from "./v2Ground";
 import { FENCE_POST_SPACING_METRES } from "./fences";
+import { bushFileAt, treeFileAt } from "./treeLod";
 import { displayScaleForFile, PIXELS_PER_METRE } from "./worldScale";
 import { yardGeometry } from "./yardDraw";
 
@@ -16,22 +17,6 @@ const byFile = new Map(V2_SPRITES.map((sprite) => [sprite.file, sprite]));
 const BREEDS = ["brahman", "bonsmara", "angus", "nguni", "brown", "simmentaler"] as const;
 const OCTANT_FACING = ["e", "se", "s", "sw", "w", "nw", "n", "ne"] as const;
 
-const TREES = [
-  "tree-camelthorn-large.png",
-  "tree-camelthorn-large-flip.png",
-  "tree-camelthorn-small.png",
-  "tree-camelthorn-small-flip.png",
-  "tree-shepherds.png",
-  "tree-shepherds-flip.png",
-];
-const BUSHES = [
-  "bush-thorn-sparse.png",
-  "bush-thorn-sparse.png",
-  "bush-thorn-sparse-flip.png",
-  "bush-thorn-sparse-flip.png",
-  "bush-thorn-dense.png",
-  "bush-thorn-dense-flip.png",
-];
 const ROCKS = ["rocks-cluster.png", "rocks-cluster-flip.png", "rock-flat.png", "rock-flat-flip.png"];
 const LICKS = ["prop-lick-trough-roofed.png", "prop-lick-drum.png", "prop-lick-roofed-alt.png"];
 
@@ -138,7 +123,7 @@ function hashFile(files: string[], x: number, y: number): string {
 
 /** A tree or bush cut-out, with the same size jitter the veld used to use. */
 export function vegetationPose(kind: "tree" | "bush", x: number, y: number, jitter = 1): V2Pose | null {
-  const file = hashFile(kind === "tree" ? TREES : BUSHES, x, y);
+  const file = kind === "tree" ? treeFileAt(x, y) : bushFileAt(x, y);
   const placed = pose(file);
   if (!placed) return null;
   return { ...placed, scale: placed.scale * jitter };
@@ -220,9 +205,9 @@ function propFile(kind: string, x: number, y: number): string | null {
     case "lick_feeder":
       return hashFile(LICKS, x, y);
     case "tree":
-      return hashFile(TREES, x, y);
+      return treeFileAt(x, y);
     case "bush":
-      return hashFile(BUSHES, x, y);
+      return bushFileAt(x, y);
     default:
       return null;
   }

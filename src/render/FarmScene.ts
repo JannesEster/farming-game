@@ -92,6 +92,25 @@ import { doubleTapGoesHome } from "./tap";
 import { resolveGroundTap, resolveHerdTap } from "./selection";
 import { isoLayout, tileCenter, tileTop, worldToTile, type IsoLayout } from "./iso";
 import { farmMapView, liveCameraView, paintCampShapes, paintMidWater, paintTwoTrack, syncMetreChunks } from "./metreView";
+import {
+  CANOPY_SHADOW,
+  CANOPY_TEXTURE_KEY,
+  TREE_CANOPY_DEPTH,
+  TREE_DOT_GRAPHICS_MAX,
+  TREE_SPRITE_ZOOM,
+  bushCanopyMarks,
+  canopyCss,
+  canopySizeBucket,
+  canopyTextureSize,
+  canopyZoomBand,
+  clampTreeLodRect,
+  padTreeLodRect,
+  treeCanopyMarks,
+  treeLodMode,
+  treeLodRectCovers,
+  type CanopyMark,
+  type TreeLodRect,
+} from "./treeLod";
 import { palette } from "./palette";
 import { campLabelTile, offsetsForHerd } from "./herdLayout";
 import { layoutAnimals } from "./animalLayout";
@@ -236,6 +255,9 @@ export class FarmScene extends Phaser.Scene {
   private metreChunks = new Map<string, Phaser.GameObjects.Graphics>();
   private vegSprites: Phaser.GameObjects.Image[] = [];
   private vegDots: Phaser.GameObjects.Graphics | null = null;
+  private vegLodImage: Phaser.GameObjects.Image | null = null;
+  private vegLodSerial = 0;
+  private vegCover: (TreeLodRect & { band: string; bucket: number }) | null = null;
   private vegKey = "";
   private hud!: Hud;
   private market!: MarketSheet;
@@ -1174,6 +1196,18 @@ export class FarmScene extends Phaser.Scene {
           herdInView: herdInView || boundsContainsPoint(view, this.herdVisual.x, this.herdVisual.y, herdPad),
         };
       },
+      frameHomesteadAtZoom: (zoom: number) => {
+        this.panVel = null;
+        const house = this.state.features.find((f) => f.kind === "house");
+        const housePt = house
+          ? tileCenter(house.x + 0.5, house.y + 0.5, this.layout, this.groundTileW, this.groundTileH)
+          : { x: this.herdVisual.x, y: this.herdVisual.y };
+        this.pinCapture(housePt.x, housePt.y, zoom);
+        this.placeHerd(performance.now());
+        this.cullProps();
+        this.fadeCoveringTrees();
+        return this.captureDiagnostics();
+      },
       prepareForScreenshot: () => {
         this.captureFreezeClock = true;
         this.captureLightingHour = null;
@@ -1203,6 +1237,8 @@ export class FarmScene extends Phaser.Scene {
         };
       },
       zoomFar: () => {
+        this.capturePin = null;
+        this.captureFollow = null;
         const camera = this.cameras.main;
         camera.setZoom(clampZoom(this.minZoom, this.minZoom, this.maxZoom));
         this.layoutCamera(false);
@@ -1890,58 +1926,81 @@ export class FarmScene extends Phaser.Scene {
     this.syncMetreFrame();
   }
 
-  /** Full trees up close. Dots while a camp still fills the view. Nothing on the whole-farm map. */
+  /**
+   * Painted trees up close. Further out, the same trunks are canopy marks:
+   * vector circles while the view is small, one baked texture when it is not.
+   * Nothing is dropped as the camera pulls back, including the whole-farm map.
+   */
   private syncVegetation(zoom: number): void {
     if (!this.metre) return;
-    if (zoom < 0.02) {
-      this.releaseVegetation();
+    // Screen corners past the property would otherwise miss the cached rect and rebake every frame.
+    const bounds = clampTreeLodRect(this.viewMetres(), this.state.width, this.state.height, 8);
+    if (zoom >= TREE_SPRITE_ZOOM) {
+      const key = `s:${Math.round(bounds.minX / 8)}:${Math.round(bounds.minY / 8)}:${Math.round(bounds.maxX / 8)}:${Math.round(bounds.maxY / 8)}:${Math.round(zoom * 40)}`;
+      if (key === this.vegKey && this.vegCover === null) return;
+      if (key !== this.vegKey) {
+        const trees: Array<VegPoint & { kind: "tree" | "bush" }> = treesInRect(
+          this.state,
+          bounds.minX,
+          bounds.minY,
+          bounds.maxX,
+          bounds.maxY,
+        ).map((point) => ({ ...point, kind: "tree" as const }));
+        const bushes: Array<VegPoint & { kind: "tree" | "bush" }> = bushesInRect(
+          this.state,
+          bounds.minX,
+          bounds.minY,
+          bounds.maxX,
+          bounds.maxY,
+        ).map((point) => ({ ...point, kind: "bush" as const }));
+        const all = trees.concat(bushes);
+        this.vegKey = key;
+        if (treeLodMode(zoom, all.length) === "sprites") {
+          this.hideCanopyLod();
+          this.syncVegSprites(all);
+          return;
+        }
+      }
+    } else {
+      this.vegKey = "";
+    }
+    const band = canopyZoomBand(zoom);
+    const bucket = canopySizeBucket(zoom);
+    if (this.vegCover && this.vegCover.band === band && this.vegCover.bucket === bucket && treeLodRectCovers(this.vegCover, bounds)) {
       return;
     }
-    const bounds = this.viewMetres();
-    const band = zoom < 0.22 ? "d" : "s";
-    const key = `${band}:${Math.round(bounds.minX / 8)}:${Math.round(bounds.minY / 8)}:${Math.round(bounds.maxX / 8)}:${Math.round(bounds.maxY / 8)}:${Math.round(zoom * 40)}`;
-    if (key === this.vegKey) return;
-    this.vegKey = key;
-    if (zoom >= 0.22) {
-      const trees: Array<VegPoint & { kind: "tree" | "bush" }> = treesInRect(
-        this.state,
-        bounds.minX,
-        bounds.minY,
-        bounds.maxX,
-        bounds.maxY,
-      ).map((point) => ({ ...point, kind: "tree" }));
-      const bushes: Array<VegPoint & { kind: "tree" | "bush" }> = bushesInRect(
-        this.state,
-        bounds.minX,
-        bounds.minY,
-        bounds.maxX,
-        bounds.maxY,
-      ).map((point) => ({ ...point, kind: "bush" }));
-      const all = trees.concat(bushes);
-      if (all.length <= 700) {
-        this.vegDots?.clear();
-        this.vegDots?.setVisible(false);
-        this.syncVegSprites(all);
-        return;
-      }
+    const padded = clampTreeLodRect(padTreeLodRect(bounds), this.state.width, this.state.height);
+    const marks = treeCanopyMarks(
+      treesInRect(this.state, padded.minX, padded.minY, padded.maxX, padded.maxY),
+      zoom,
+    );
+    if (zoom >= 0.1) {
+      marks.push(
+        ...bushCanopyMarks(bushesInRect(this.state, padded.minX, padded.minY, padded.maxX, padded.maxY), zoom),
+      );
     }
-    this.hideVegSprites();
-    this.bakeVegDots(bounds, zoom);
-    this.vegDots?.setVisible(true);
+    this.releaseVegSprites();
+    const drawn = marks.reduce((count, mark) => count + (mark.width > 0 ? 1 : 0), 0);
+    const baked = drawn > TREE_DOT_GRAPHICS_MAX ? this.bakeCanopyTexture(padded, marks) : this.bakeCanopyGraphics(marks);
+    if (baked) this.vegCover = { ...padded, band, bucket };
   }
 
-  /** Drop the close-up pool so the farm map is not still walking hundreds of hidden sprites. */
-  private releaseVegetation(): void {
-    if (this.vegKey === "off" && this.vegSprites.length === 0) return;
-    this.vegKey = "off";
+  private hideCanopyLod(): void {
+    this.vegDots?.clear();
+    this.vegDots?.setVisible(false);
+    this.vegLodImage?.setVisible(false);
+    this.vegCover = null;
+  }
+
+  /** Drop the close-up pool so a zoomed-out frame is not still walking hidden sprites. */
+  private releaseVegSprites(): void {
+    if (this.vegSprites.length === 0) return;
     for (const sprite of this.vegSprites) sprite.destroy();
     this.vegSprites = [];
-    this.vegDots?.destroy();
-    this.vegDots = null;
   }
 
-  private viewMetres(): { minX: number; minY: number; maxX: number; maxY: number } {
-    const view = this.cameras.main.worldView;
+  private viewMetres(): TreeLodRect {
+    const view = liveCameraView(this);
     const pad = 48;
     const corners = [
       [view.x - pad, view.y - pad],
@@ -1961,10 +2020,6 @@ export class FarmScene extends Phaser.Scene {
       maxY = Math.max(maxY, tile.y + 1);
     }
     return { minX, minY, maxX, maxY };
-  }
-
-  private hideVegSprites(): void {
-    for (const sprite of this.vegSprites) sprite.setVisible(false);
   }
 
   private syncVegSprites(all: Array<VegPoint & { kind: "tree" | "bush" }>): void {
@@ -2003,27 +2058,115 @@ export class FarmScene extends Phaser.Scene {
     }
   }
 
-  private bakeVegDots(
-    bounds: { minX: number; minY: number; maxX: number; maxY: number },
-    zoom: number,
-  ): void {
-    if (!this.vegDots) this.vegDots = this.add.graphics().setDepth(0.55);
+  private placeCanopyMarks(marks: readonly CanopyMark[]): Array<{ mark: CanopyMark; x: number; y: number }> {
+    const placed = [];
+    for (const mark of marks) {
+      if (mark.width <= 0) continue;
+      const at = tileCenter(mark.x, mark.y, this.layout, this.groundTileW, this.groundTileH);
+      placed.push({ mark, x: at.x, y: at.y });
+    }
+    placed.sort((a, b) => a.y - b.y);
+    return placed;
+  }
+
+  private bakeCanopyGraphics(marks: readonly CanopyMark[]): boolean {
+    this.vegLodImage?.setVisible(false);
+    if (!this.vegDots) this.vegDots = this.add.graphics().setDepth(TREE_CANOPY_DEPTH);
     const graphics = this.vegDots;
     graphics.clear();
-    const trees = treesInRect(this.state, bounds.minX, bounds.minY, bounds.maxX, bounds.maxY);
-    const bushes = zoom >= 0.1 ? bushesInRect(this.state, bounds.minX, bounds.minY, bounds.maxX, bounds.maxY) : [];
-    const stride = trees.length > 8000 ? Math.ceil(trees.length / 8000) : 1;
-    const radius = 2.4 / Math.max(zoom, 0.02);
-    const plot = (points: VegPoint[], colour: number, step: number) => {
-      graphics.fillStyle(colour, 0.9);
-      for (let i = 0; i < points.length; i += step) {
-        const at = tileCenter(points[i].x, points[i].y, this.layout, this.groundTileW, this.groundTileH);
-        graphics.fillCircle(at.x, at.y, radius);
+    for (const { mark, x, y } of this.placeCanopyMarks(marks)) {
+      if (mark.speck) {
+        graphics.fillStyle(mark.fill, mark.alpha);
+        graphics.fillCircle(x, y, mark.width / 2);
+        continue;
       }
-    };
-    plot(bushes, 0x6a5a32, 1);
-    plot(trees, 0x2f4a28, stride);
+      const shadowW = mark.width * 1.05;
+      const shadowH = Math.max(1.5, mark.height * 0.42);
+      graphics.fillStyle(CANOPY_SHADOW, mark.alpha * 0.34);
+      graphics.fillEllipse(x + mark.width * 0.08, y + shadowH * 0.2, shadowW, shadowH, 16);
+      const cy = y - mark.height * 0.72;
+      graphics.fillStyle(mark.shade, mark.alpha);
+      graphics.fillEllipse(x, cy, mark.width, mark.height, 24);
+      graphics.fillStyle(mark.fill, Math.min(0.92, mark.alpha + 0.06));
+      graphics.fillEllipse(x - mark.width * 0.08, cy - mark.height * 0.14, mark.width * 0.58, mark.height * 0.5, 16);
+    }
     graphics.setVisible(true);
+    return true;
+  }
+
+  /** One image for a wide view, so the phone is not filling thousands of crowns every frame. */
+  private bakeCanopyTexture(bounds: TreeLodRect, marks: readonly CanopyMark[]): boolean {
+    const placed = this.placeCanopyMarks(marks);
+    const reach = placed.reduce((max, item) => Math.max(max, item.mark.width), 8);
+    const corners = [
+      tileCenter(bounds.minX, bounds.minY, this.layout, this.groundTileW, this.groundTileH),
+      tileCenter(bounds.maxX, bounds.minY, this.layout, this.groundTileW, this.groundTileH),
+      tileCenter(bounds.maxX, bounds.maxY, this.layout, this.groundTileW, this.groundTileH),
+      tileCenter(bounds.minX, bounds.maxY, this.layout, this.groundTileW, this.groundTileH),
+    ];
+    let minWX = Infinity;
+    let minWY = Infinity;
+    let maxWX = -Infinity;
+    let maxWY = -Infinity;
+    for (const corner of corners) {
+      minWX = Math.min(minWX, corner.x);
+      minWY = Math.min(minWY, corner.y);
+      maxWX = Math.max(maxWX, corner.x);
+      maxWY = Math.max(maxWY, corner.y);
+    }
+    minWX -= reach;
+    minWY -= reach;
+    maxWX += reach;
+    maxWY += reach;
+    const size = canopyTextureSize(maxWX - minWX, maxWY - minWY);
+    const canvas = document.createElement("canvas");
+    canvas.width = size.width;
+    canvas.height = size.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return false;
+    const ellipse = (x: number, y: number, w: number, h: number, colour: number, alpha: number) => {
+      const rx = (w * size.scale) / 2;
+      const ry = (h * size.scale) / 2;
+      if (rx < 0.45 || ry < 0.45 || alpha <= 0) return;
+      ctx.fillStyle = canopyCss(colour);
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.ellipse((x - minWX) * size.scale, (y - minWY) * size.scale, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    let speckCount = 0;
+    for (const { mark, x, y } of placed) {
+      if (mark.speck) {
+        speckCount += 1;
+        ellipse(x, y, mark.width, mark.height, mark.fill, mark.alpha);
+        continue;
+      }
+      const shadowW = mark.width * 1.05;
+      const shadowH = Math.max(1.5, mark.height * 0.42);
+      ellipse(x + mark.width * 0.08, y + shadowH * 0.2, shadowW, shadowH, CANOPY_SHADOW, mark.alpha * 0.34);
+      const cy = y - mark.height * 0.72;
+      ellipse(x, cy, mark.width, mark.height, mark.shade, mark.alpha);
+      ellipse(x - mark.width * 0.08, cy - mark.height * 0.14, mark.width * 0.58, mark.height * 0.5, mark.fill, Math.min(0.92, mark.alpha + 0.06));
+    }
+    ctx.globalAlpha = 1;
+    const key = `${CANOPY_TEXTURE_KEY}-${this.vegLodSerial}`;
+    this.vegLodSerial += 1;
+    this.textures.addCanvas(key, canvas);
+    const speckTexture = placed.length > 0 && speckCount > placed.length * 0.6;
+    this.textures.get(key).setFilter(speckTexture ? Phaser.Textures.FilterMode.NEAREST : Phaser.Textures.FilterMode.LINEAR);
+    const previous = this.vegLodImage?.texture.key;
+    const worldW = Math.max(1, maxWX - minWX);
+    const worldH = Math.max(1, maxWY - minWY);
+    if (!this.vegLodImage) {
+      this.vegLodImage = this.add.image(minWX, minWY, key).setOrigin(0, 0).setDepth(TREE_CANOPY_DEPTH);
+    } else {
+      this.vegLodImage.setTexture(key).setPosition(minWX, minWY);
+    }
+    if (previous && previous !== key && this.textures.exists(previous)) this.textures.remove(previous);
+    this.vegLodImage.setDisplaySize(worldW, worldH).setVisible(true);
+    this.vegDots?.clear();
+    this.vegDots?.setVisible(false);
+    return true;
   }
 
   private syncMetreFrame(): void {
