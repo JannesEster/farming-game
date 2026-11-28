@@ -1,12 +1,12 @@
 import Phaser from "phaser";
+import { CONFIG } from "../sim/config";
+import { grazeableFraction } from "../sim/pasture";
 import type { GameState } from "../sim/types";
 import { tileCenter, type IsoLayout } from "./iso";
-import { palette } from "./palette";
+import { campFillColour, palette } from "./palette";
 import { ensureMetreSandTexture } from "./v2Ground";
 import { PIXELS_PER_METRE } from "./worldScale";
 
-/** Muted Kalahari earth. Only the far farm map uses flat camp fills. */
-const CAMP_FILLS = [0x8d4e2a, 0x7a4524, 0x9a5a32, 0x6e3e22, 0xa06838, 0x84502c];
 const SAND_NAME = "metre-sand";
 
 function corners(
@@ -49,7 +49,10 @@ export function farmMapView(scene: Phaser.Scene): boolean {
   return widthM > 4500;
 }
 
-/** Flat camp shapes. Only the far farm map. Close and mid views use the sand texture. */
+/**
+ * Camp colour from standing grass and soil moisture, at close zoom and on the farm map.
+ * Close zoom is a wash over the sand. The farm map is nearly solid so worn and rested camps separate.
+ */
 export function paintCampShapes(
   graphics: Phaser.GameObjects.Graphics,
   state: GameState,
@@ -60,16 +63,23 @@ export function paintCampShapes(
   far = zoom < 0.05,
 ): void {
   graphics.clear();
-  if (!far) return;
+  const alpha = far ? CONFIG.view.campWashAlphaFar : CONFIG.view.campWashAlphaNear;
   const line = Math.max(1.2, Math.min(48, 1.6 / Math.max(zoom, 0.002)));
-  state.camps.forEach((camp, index) => {
-    if (!camp.rect) return;
+  for (const camp of state.camps) {
+    if (!camp.rect) continue;
     const poly = corners(camp.rect.x, camp.rect.y, camp.rect.w, camp.rect.h, layout, tileW, tileH);
-    graphics.fillStyle(CAMP_FILLS[index % CAMP_FILLS.length], 1);
+    graphics.fillStyle(campFillColour(grazeableFraction(camp), camp.soilMoistureMm), alpha);
     graphics.fillPoints(poly, true);
-    graphics.lineStyle(line, 0x5c4030, 0.85);
-    graphics.strokePoints(poly, true);
-  });
+    if (camp.soilMoistureMm >= CONFIG.rain.wetGroundMoistureMm) {
+      graphics.fillStyle(0x1e4a44, far ? 0.24 : 0.2);
+      graphics.fillPoints(poly, true);
+    }
+    if (far) {
+      graphics.lineStyle(line, 0x5c4030, 0.85);
+      graphics.strokePoints(poly, true);
+    }
+  }
+  if (!far) return;
   if (state.road && state.road.length > 1 && zoom < 0.2) {
     graphics.lineStyle(Math.max(1.2, Math.min(24, 1.1 / Math.max(zoom, 0.002))), palette.track, 0.85);
     graphics.beginPath();

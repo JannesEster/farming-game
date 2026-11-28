@@ -220,6 +220,76 @@ body {
   white-space: nowrap;
 }
 
+button.chip {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.year-line {
+  position: fixed;
+  left: max(8px, env(safe-area-inset-left));
+  right: max(8px, env(safe-area-inset-right));
+  top: calc(var(--hud-top-chrome, 52px) + 4px);
+  z-index: 6;
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(226, 177, 90, 0.55);
+  background: rgba(20, 36, 54, 0.92);
+  color: var(--paper);
+  font: inherit;
+  font-size: 0.84rem;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rain-book,
+.reading-card {
+  position: fixed;
+  right: max(8px, env(safe-area-inset-right));
+  bottom: calc(var(--hud-bottom-chrome, 120px) + 8px);
+  width: min(92vw, 360px);
+  max-height: 42vh;
+  overflow: auto;
+  z-index: 8;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--gold);
+  background: rgba(20, 32, 48, 0.96);
+  color: var(--paper);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.rain-book header,
+.reading-card h3 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+
+.rain-book p,
+.reading-card p,
+.rain-book li {
+  margin: 0 0 6px;
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.rain-book ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chip-rain.is-raining {
+  background: rgba(90, 140, 170, 0.45);
+  border-color: #d6e8f5;
+}
+
 .chip-date {
   font-weight: 600;
 }
@@ -453,7 +523,7 @@ body {
   position: fixed;
   left: max(8px, env(safe-area-inset-left));
   right: max(8px, env(safe-area-inset-right));
-  top: calc(var(--hud-top-chrome, 52px) + 4px);
+  top: calc(var(--hud-top-chrome, 52px) + 52px);
   z-index: 4;
   margin: 0;
   padding: 6px 10px;
@@ -755,7 +825,12 @@ body {
   }
 
   .chip-rain {
-    display: none;
+    display: inline-flex;
+  }
+
+  .year-line {
+    font-size: 0.78rem;
+    padding: 6px 8px;
   }
 
   .top-actions {
@@ -1374,7 +1449,7 @@ body {
 
 .news-rail {
   position: absolute;
-  top: calc(var(--hud-top-chrome, 44px) + 6px);
+  top: calc(var(--hud-top-chrome, 44px) + 56px);
   right: 8px;
   display: flex;
   flex-direction: column;

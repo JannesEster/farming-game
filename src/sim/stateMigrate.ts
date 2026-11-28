@@ -18,7 +18,7 @@ import { defaultBakkieRun } from "./bakkie";
 import { generateFarm } from "./generate";
 import { usesMetreCoords } from "./metreFarm";
 
-export const GAME_STATE_VERSION = 9;
+export const GAME_STATE_VERSION = 10;
 
 function isOldTileSave(state: GameState): boolean {
   if (usesMetreCoords(state)) return false;
@@ -139,6 +139,7 @@ export function migrateState(state: GameState): GameState {
   if (state.herd.transit === undefined) state.herd.transit = null;
   if (state.story) {
     if (state.story.moveWarnCampId === undefined) state.story.moveWarnCampId = null;
+    if (state.story.restWarnCampId === undefined) state.story.restWarnCampId = null;
     if (state.story.thirstWarnCampId === undefined) state.story.thirstWarnCampId = null;
   }
   if (state.date.hour === undefined) state.date.hour = CONFIG.calendar.startHour;
@@ -153,6 +154,12 @@ export function migrateState(state: GameState): GameState {
     state.clock.settings.catchUpCapMs = CONFIG.time.catchUpCapMs;
   }
   if (!state.notifications) state.notifications = defaultNotificationState();
+  if (!state.rainLog) state.rainLog = [];
+  if (state.lastUsefulRain === undefined) state.lastUsefulRain = null;
+  for (const camp of state.camps ?? []) {
+    if (camp.restDaysAfterRain === undefined) camp.restDaysAfterRain = 0;
+    if (camp.restOwedAfterRain === undefined) camp.restOwedAfterRain = false;
+  }
   if (state.date.hour < 0 || state.date.hour > 23) state.date.hour = CONFIG.calendar.startHour;
   if (state.story) {
     if (!state.story.costLevers) state.story.costLevers = defaultCostLevers();

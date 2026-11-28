@@ -1,5 +1,5 @@
 import { isDaylightHour } from "./clock";
-import { CONFIG, type GameConfig } from "./config";
+import { CONFIG, HERD_MOTION_TUNING, type GameConfig } from "./config";
 import { findCamp } from "./simulation";
 import { farmerDisplayName } from "./playerName";
 import { STEP3A } from "./step3aConfig";
@@ -264,6 +264,12 @@ function resumeHerdAfterNight(state: GameState): void {
   if (state.story) state.story.returnWalk = null;
 }
 
+/** Real seconds of grazing wander. The ranch clock and 1x, 2x, 3x do not scale this. */
+function grazeRealSeconds(deltaMs: number, config: GameConfig): number {
+  if (deltaMs <= 0) return 0;
+  return Math.min(deltaMs, config.time.catchUpCapMs) / 1000;
+}
+
 export function tickHerdingRealtime(
   state: GameState,
   deltaMs: number,
@@ -284,7 +290,14 @@ export function tickHerdingRealtime(
     tickReturnWalk(state, deltaMs, mode, config);
     if (usesMetreCoords(state) && mode !== "pause") {
       const hours = gameHoursElapsed(state.date.hour, deltaMs, mode, 1, config);
-      advanceHerdMotion(state, hours * 3600, "graze", config);
+      advanceHerdMotion(
+        state,
+        hours * 3600,
+        "graze",
+        config,
+        HERD_MOTION_TUNING.simStepGameS,
+        grazeRealSeconds(deltaMs, config),
+      );
     }
     return;
   }
@@ -296,7 +309,14 @@ export function tickHerdingRealtime(
     if (still?.phase === "approach") {
       if (usesMetreCoords(state) && mode !== "pause") {
         const hours = gameHoursElapsed(state.date.hour, deltaMs, mode, config.transit.driveClockFactor, config);
-        advanceHerdMotion(state, hours * 3600, "graze", config);
+        advanceHerdMotion(
+          state,
+          hours * 3600,
+          "graze",
+          config,
+          HERD_MOTION_TUNING.simStepGameS,
+          grazeRealSeconds(deltaMs, config),
+        );
       }
       return;
     }

@@ -5,7 +5,6 @@ import {
   formatCondition,
   formatHudDate,
   formatHudMoney,
-  formatHudRain,
   formatHerdSheetSummary,
   formatDaysInCamp,
   formatFeedStatus,
@@ -25,6 +24,8 @@ import type { NotificationItem } from "../sim/notifications";
 import { herdMoveStatusLine } from "../sim/herding";
 import { DEFAULT_PLAYER_DISPLAY_NAME } from "../sim/playerName";
 import { grazeableFraction, grazingDaysLeft } from "../sim/pasture";
+import { isRainyMonth } from "../sim/calendar";
+import { formatRainChip, formatYearLine, rainBookModel } from "../sim/yearFeel";
 import { renderAnimalPanel, type AnimalFilterId } from "./animalSheet";
 import type { GameState } from "../sim/types";
 import type { ViewInsets } from "./camera";
@@ -55,6 +56,8 @@ export type Hud = {
   setScaleBar(label: string, widthPx?: number): void;
   setDaylight(blend: number): void;
   setNightChrome(active: boolean): void;
+  openRainBook(): void;
+  showReading(title: string, body: string): void;
   destroy(): void;
 };
 
@@ -102,7 +105,7 @@ export function mountHud(options: {
         <span class="chip chip-time" id="stat-time" title="Ranch clock"></span>
         <span class="chip chip-icon" id="stat-season" title="Season"></span>
         <span class="chip chip-cash" id="stat-cash" title="${COPY.cashTitle}"></span>
-        <span class="chip chip-rain" id="stat-rain" title="${COPY.rainTitle}"></span>
+        <button type="button" class="chip chip-rain" id="stat-rain" title="${COPY.rainTitle}"></button>
       </div>
       <div class="top-actions">
         <div class="speeds compact" role="group" aria-label="Speed">
@@ -140,6 +143,20 @@ export function mountHud(options: {
         <button type="button" id="new-farm">${COPY.newFarmLabel}</button>
       </div>
     </header>
+    <button type="button" class="year-line" id="year-line"></button>
+    <aside class="rain-book" id="rain-book" hidden>
+      <header>
+        <strong>Rain book</strong>
+        <button type="button" class="icon-btn" id="rain-book-close" aria-label="Close rain book">×</button>
+      </header>
+      <p id="rain-book-yesterday"></p>
+      <ul id="rain-book-list"></ul>
+    </aside>
+    <aside class="reading-card" id="reading-card" hidden>
+      <h3 id="reading-title"></h3>
+      <p id="reading-body"></p>
+      <button type="button" class="pill-btn ghost" id="reading-dismiss">Close</button>
+    </aside>
     <p class="daily-goal-strip" id="daily-goal-strip" hidden></p>
     <aside class="news-rail" id="news-rail" aria-label="News">
       <div class="letter-stack" id="letter-stack" hidden></div>
@@ -238,6 +255,43 @@ export function mountHud(options: {
   const ranchBtn = requiredButton(root, "ranch-open");
   const ranchBadge = required(root, "ranch-badge");
   const dailyGoalStrip = required(root, "daily-goal-strip");
+  const yearLine = requiredButton(root, "year-line");
+  const rainBook = required(root, "rain-book");
+  const rainBookYesterday = required(root, "rain-book-yesterday");
+  const rainBookList = required(root, "rain-book-list");
+  const rainBookClose = requiredButton(root, "rain-book-close");
+  const readingCard = required(root, "reading-card");
+  const readingTitle = required(root, "reading-title");
+  const readingBody = required(root, "reading-body");
+  const readingDismiss = requiredButton(root, "reading-dismiss");
+  const paintRainBook = (state: GameState): void => {
+    const book = rainBookModel(state);
+    rainBookYesterday.textContent = book.headline;
+    rainBookList.replaceChildren();
+    if (book.lines.length === 0) {
+      const empty = document.createElement("li");
+      empty.textContent = "No storms recorded yet.";
+      rainBookList.append(empty);
+      return;
+    }
+    for (const line of book.lines) {
+      const item = document.createElement("li");
+      item.textContent = line;
+      rainBookList.append(item);
+    }
+  };
+  const openRainBook = (): void => {
+    if (lastState) paintRainBook(lastState);
+    rainBook.hidden = false;
+  };
+  yearLine.addEventListener("click", openRainBook);
+  rainEl.addEventListener("click", openRainBook);
+  rainBookClose.addEventListener("click", () => {
+    rainBook.hidden = true;
+  });
+  readingDismiss.addEventListener("click", () => {
+    readingCard.hidden = true;
+  });
   const overflowBtn = requiredButton(root, "menu-overflow");
   const eventCard = required(root, "event-card");
   const eventTitle = required(root, "event-title");
@@ -477,7 +531,7 @@ export function mountHud(options: {
     update(state, ui) {
       lastState = state;
       const seasonText = seasonLabelForHud(state);
-      const dry = !seasonText.toLowerCase().includes("rain");
+      const dry = !isRainyMonth(state.date.month);
       const narrow = typeof window !== "undefined" && window.innerWidth <= 430;
       dateEl.textContent = formatHudDate(state.date);
       timeEl.textContent = formatClockTime(
@@ -507,8 +561,12 @@ export function mountHud(options: {
       const pendingEvent = state.story?.pendingPlayerEvent;
       ranchBadge.hidden = !pendingEvent;
       ranchBadge.setAttribute("aria-hidden", pendingEvent ? "false" : "true");
-      rainEl.textContent = formatHudRain(state.seasonRainMm);
+      const yearText = formatYearLine(state);
+      yearLine.textContent = yearText;
+      rainEl.textContent = formatRainChip(state);
+      rainEl.title = `${COPY.rainTitle} ${yearText}`;
       rainEl.classList.toggle("is-raining", state.todayRainMm > 0);
+      if (!rainBook.hidden) paintRainBook(state);
 
       sheet.hidden = !ui.selected;
       if (!ui.selected) {
@@ -694,6 +752,14 @@ export function mountHud(options: {
     },
     setNightChrome(active) {
       root.classList.toggle("ranch-night", active);
+    },
+    openRainBook() {
+      openRainBook();
+    },
+    showReading(title, body) {
+      readingTitle.textContent = title;
+      readingBody.textContent = body;
+      readingCard.hidden = false;
     },
     destroy() {
       if (toastTimer) clearTimeout(toastTimer);

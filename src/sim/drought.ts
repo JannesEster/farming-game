@@ -1,6 +1,7 @@
 import { CONFIG, type GameConfig } from "./config";
 import { droughtSupplementCostNad, syncHeadFromComposition } from "./economy";
 import { emitNotification, defaultNotificationState } from "./notifications";
+import { droughtChoiceBody, moveHerdMessage } from "./yearFeel";
 import type { DroughtChoiceId, StoryState } from "./storyTypes";
 import type { GameState } from "./types";
 
@@ -67,7 +68,7 @@ export function tickDrought(state: GameState, config: GameConfig = CONFIG): void
       id: `drought-choice-${state.date.year}-${month}`,
       kind: "drought",
       title: "Drought building",
-      body: "Choose: sell some tollies, buy boskos with camelthorn pods, or move to greener camps.",
+      body: droughtChoiceBody(state, config),
       priority: 6,
     });
   }
@@ -105,12 +106,12 @@ export function resolveDroughtChoice(
       story.drought.forageMultiplier = Math.min(1, story.drought.forageMultiplier + 0.15);
       return {
         ok: true,
-        message: `Boskos and camelthorn pods for ${config.story.droughtSupplementDays} days (N$${cost}).`,
+        message: `Boskos at ${config.story.droughtBoskosKgPerHeadDay} kg per head per day and camelthorn pods at ${config.story.droughtCamelthornPodsKgPerHeadDay} kg per head per day, for ${config.story.droughtSupplementDays} days. Charged N$${cost}. That cash figure is a stand-in until a boskos price is sourced.`,
       };
     }
     case "move_herd":
       story.drought.choicePending = null;
-      return { ok: true, message: "Move the herd to rested camps with grass. Empty camps recover when rain returns." };
+      return { ok: true, message: moveHerdMessage(state, config) };
     default:
       return { ok: false, message: "Unknown choice." };
   }

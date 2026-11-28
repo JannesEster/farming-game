@@ -1,5 +1,4 @@
 import Phaser from "phaser";
-import { isRainyMonth } from "../sim/calendar";
 import { CONFIG } from "../sim/config";
 import { grazeableFraction } from "../sim/pasture";
 import { TILE_HOMESTEAD, TILE_OUTSIDE, type GameState } from "../sim/types";
@@ -141,9 +140,9 @@ function grassOverlay(state: GameState, x: number, y: number, track: Set<string>
   const camp = state.camps.find((item) => item.id === id);
   if (!camp) return null;
   const cover = grazeableFraction(camp);
-  const rainy = isRainyMonth(state.date.month, CONFIG);
+  const wet = camp.soilMoistureMm / Math.max(1, CONFIG.rain.moistureMmForFullGrowth);
   if (cover < 0.32) return { key: V2_GROUND_KEYS.bare, alpha: Math.min(0.9, 0.5 + (0.32 - cover) * 1.3) };
-  if (rainy) return { key: V2_GROUND_KEYS.green, alpha: Math.min(0.88, 0.28 + cover * 0.55) };
+  if (cover > 0.45 || wet > 0.2) return { key: V2_GROUND_KEYS.green, alpha: Math.min(0.9, 0.22 + cover * 0.5 + wet * 0.2) };
   return null;
 }
 

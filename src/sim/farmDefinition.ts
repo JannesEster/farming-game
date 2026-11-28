@@ -228,7 +228,7 @@ export function gameStateFromFarmDefinition(def: FarmDefinition, config: GameCon
   for (const animal of state.story?.animals ?? []) {
     if (!animal.split && animal.whereabouts === "in_camp") animal.campId = state.herd.campId;
   }
-  state.stateVersion = 9;
+  state.stateVersion = 10;
   return state;
 }
 

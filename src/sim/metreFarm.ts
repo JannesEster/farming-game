@@ -343,6 +343,8 @@ export function buildMetreFarm(rng: Rng, config: GameConfig = CONFIG, seed = con
     },
     seasonRainMm: 0,
     todayRainMm: 0,
+    rainLog: [],
+    lastUsefulRain: null,
     cashNad: config.economy.startingCashNad,
     width: outline.width,
     height: outline.height,
@@ -361,7 +363,7 @@ export function buildMetreFarm(rng: Rng, config: GameConfig = CONFIG, seed = con
     road,
     farmWaterPoints: waterPoints,
     story: createStoryState(config.herd.headCount, config),
-    stateVersion: 9,
+    stateVersion: 10,
   };
   initStoryPeople(state, config);
   ensureAnimals(state, config);

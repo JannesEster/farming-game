@@ -19,6 +19,7 @@ import {
   tramplingLossKgPerHa,
 } from "./pasture";
 import { dailyRainMm } from "./rainfall";
+import { applyRestAfterRain, ensureYearFeel, recordDayRain } from "./yearFeel";
 import { rngFromState } from "./rng";
 import { afterFeedDay } from "./story";
 import { requestHerdMove, tryDispatchHerdQueue } from "./herding";
@@ -93,6 +94,9 @@ export function campIdAt(state: GameState, x: number, y: number): number | null 
 export function stepDayWithRain(state: GameState, rainMm: number, config: GameConfig = CONFIG): void {
   if (!state.clock) state.clock = defaultRanchClock();
   if (!state.notifications) state.notifications = defaultNotificationState();
+  ensureYearFeel(state);
+  recordDayRain(state, state.date, rainMm, config);
+  const usefulRain = rainMm >= config.rain.usefulRainMm;
   const nextDate = rollGameDayFromState(state, config);
   if (isSeasonStart(nextDate, config)) state.seasonRainMm = 0;
   state.todayRainMm = rainMm;
@@ -133,6 +137,7 @@ export function stepDayWithRain(state: GameState, rainMm: number, config: GameCo
     } else {
       camp.restDays += 1;
     }
+    applyRestAfterRain(camp, occupied, usefulRain, config);
   }
 
   if (!walking) {

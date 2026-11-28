@@ -577,6 +577,8 @@ export function tryBuild(rng: Rng, config: GameConfig): { state: GameState; scor
     },
     seasonRainMm: 0,
     todayRainMm: 0,
+    rainLog: [],
+    lastUsefulRain: null,
     cashNad: config.economy.startingCashNad,
     width,
     height,
@@ -597,7 +599,7 @@ export function tryBuild(rng: Rng, config: GameConfig): { state: GameState; scor
   };
   initStoryPeople(state, config);
   ensureAnimals(state, config);
-  state.stateVersion = 8;
+  state.stateVersion = 10;
   return { state, score };
 }
 

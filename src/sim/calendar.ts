@@ -78,6 +78,25 @@ export function isSeasonStart(date: CalendarDate, config: GameConfig = CONFIG): 
   return date.month === config.calendar.seasonStartMonth && date.day === 1;
 }
 
+function absoluteDay(date: CalendarDate): number {
+  let days = date.day;
+  for (let year = 1; year < date.year; year += 1) days += isLeapYear(year) ? 366 : 365;
+  for (let month = 1; month < date.month; month += 1) days += daysInMonth(date.year, month);
+  return days;
+}
+
+/** Whole days from `from` to `to`. Positive when `to` is later. */
+export function daysBetween(from: CalendarDate, to: CalendarDate): number {
+  return absoluteDay(to) - absoluteDay(from);
+}
+
+/** 1 July of the season year that contains this date. Atlas year, same as seasonStartMonth. */
+export function seasonOpenedOn(date: CalendarDate, config: GameConfig = CONFIG): CalendarDate {
+  const start = config.calendar.seasonStartMonth;
+  const year = date.month >= start ? date.year : date.year - 1;
+  return { year, month: start, day: 1, hour: 0 };
+}
+
 export function isRainyMonth(month: number, config: GameConfig = CONFIG): boolean {
   return config.calendar.rainyMonths.includes(month);
 }

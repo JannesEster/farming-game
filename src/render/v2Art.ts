@@ -9,12 +9,14 @@ import { V2_SPRITES, type V2SpriteMeta } from "./v2Manifest";
 import { renderPenFloor } from "./v2Ground";
 import {
   FENCE_CLOSE_VIEW_PX,
+  FENCE_FAR_INNER_PX,
   FENCE_POST_SPACING_METRES,
   FENCE_WIDE_VIEW_PX,
   FENCE_WIRE_PIECE_PX,
   fencePieceInView,
   fenceViewMarginPx,
 } from "./fences";
+import { palette } from "./palette";
 import { bushFileAt, treeFileAt } from "./treeLod";
 import { displayScaleForFile, PIXELS_PER_METRE } from "./worldScale";
 import { yardGeometry } from "./yardDraw";
@@ -613,6 +615,7 @@ export function placeV2Fences(
     view?: { x: number; y: number; right: number; bottom: number };
     gatesOnly?: boolean;
     drawGates?: boolean;
+    zoom?: number;
   },
 ): Phaser.GameObjects.Image[] {
   const images: Phaser.GameObjects.Image[] = [];
@@ -649,7 +652,8 @@ export function placeV2Fences(
         if (view && !fencePieceInView(x1, y1, x2, y2, view, margin)) continue;
         const wire = scene.add.graphics().setName("metre-fence-wire");
         wire.setDepth(8 + ((y1 + y2) / 2) * 0.04 + 0.15);
-        wire.lineStyle(2.8, 0x2a241c, 1);
+        const zoom = Math.max(limit?.zoom ?? 1, 0.0004);
+        wire.lineStyle(Math.max(2.8, FENCE_FAR_INNER_PX / zoom), palette.fenceInk, 1);
         for (const sign of [-1, 1]) {
           wire.beginPath();
           wire.moveTo(x1 + ox * sign, y1 + oy * sign);
