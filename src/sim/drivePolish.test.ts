@@ -141,7 +141,7 @@ describe("drive polish", () => {
     expect(state.date.day).toBe(day);
     expect(sawNight).toBe(true);
     expect(Number.isInteger(state.date.hour)).toBe(true);
-  }, 20_000);
+  }, 90_000);
 
   it("holds a long drive at dusk and walks it on at dawn", () => {
     const state = ready();

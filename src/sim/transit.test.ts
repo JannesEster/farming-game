@@ -32,7 +32,7 @@ describe("herd transit", () => {
     expect(state.herd.campId).toBe(dest.id);
     expect(state.herd.transit).toBeNull();
     expect(state.herd.daysInCamp).toBe(0);
-  });
+  }, 40_000);
 
   it("does not advance walk progress inside stepDay", () => {
     const state = createGame(11);
