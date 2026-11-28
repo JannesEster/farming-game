@@ -1,0 +1,153 @@
+[
+  {
+    "phoneFps": 52.9,
+    "fpsSamples": [
+      54,
+      54,
+      54,
+      54,
+      52,
+      52,
+      52,
+      52
+    ]
+  },
+  {
+    "started": {
+      "clock": "08:00",
+      "hour": 8,
+      "day": 1,
+      "phase": "approach",
+      "progress": 0,
+      "approach": 0.01202015101486877,
+      "campId": 5,
+      "cash": 425170,
+      "head": 120,
+      "herderX": 517.0484742858118,
+      "herderY": 4961.552618458567,
+      "sale": null,
+      "paid": false,
+      "heifers": 4,
+      "freeze": false,
+      "speed": "x1",
+      "herderBehind": false,
+      "queue": null,
+      "cutPhase": null,
+      "event": false,
+      "market": false,
+      "picker": false,
+      "tutorial": false
+    }
+  },
+  {
+    "drive00": {
+      "clock": "08:03",
+      "hour": 8,
+      "day": 1,
+      "phase": "drive",
+      "progress": 0.013147696080809903,
+      "approach": 1,
+      "campId": 5,
+      "cash": 425170,
+      "head": 120,
+      "herderX": 521.6427168478286,
+      "herderY": 4920.412552081273,
+      "sale": null,
+      "paid": false,
+      "heifers": 4,
+      "freeze": false,
+      "speed": "x1",
+      "herderBehind": false,
+      "queue": null,
+      "cutPhase": null,
+      "event": false,
+      "market": false,
+      "picker": false,
+      "tutorial": false
+    }
+  },
+  {
+    "gate": {
+      "clock": "08:13",
+      "hour": 8,
+      "day": 1,
+      "phase": "drive",
+      "progress": 0.3524700103823924,
+      "approach": 1,
+      "campId": 2,
+      "cash": 425170,
+      "head": 120,
+      "herderX": 523.7573584344381,
+      "herderY": 4870.102548164503,
+      "sale": null,
+      "paid": false,
+      "heifers": 4,
+      "freeze": false,
+      "speed": "x1",
+      "herderBehind": false,
+      "queue": null,
+      "cutPhase": null,
+      "event": false,
+      "market": false,
+      "picker": false,
+      "tutorial": false
+    }
+  },
+  {
+    "arriveMinus": {
+      "clock": "08:29",
+      "hour": 8,
+      "day": 1,
+      "phase": "drive",
+      "progress": 0.9335755631169308,
+      "approach": 1,
+      "campId": 2,
+      "cash": 425170,
+      "head": 120,
+      "herderX": 525.5587521125386,
+      "herderY": 4764.838833780042,
+      "sale": null,
+      "paid": false,
+      "heifers": 4,
+      "freeze": false,
+      "speed": "x1",
+      "herderBehind": false,
+      "queue": null,
+      "cutPhase": null,
+      "event": false,
+      "market": false,
+      "picker": false,
+      "tutorial": false
+    }
+  },
+  {
+    "arrivePlus": {
+      "clock": "08:31",
+      "hour": 8,
+      "day": 1,
+      "phase": null,
+      "progress": null,
+      "approach": null,
+      "campId": 2,
+      "cash": 425170,
+      "head": 120,
+      "herderX": 526.0032156840743,
+      "herderY": 4755.849814986523,
+      "sale": null,
+      "paid": false,
+      "heifers": 4,
+      "freeze": false,
+      "speed": "x1",
+      "herderBehind": false,
+      "queue": null,
+      "cutPhase": null,
+      "event": false,
+      "market": false,
+      "picker": false,
+      "tutorial": false
+    }
+  },
+  {
+    "trough": true
+  }
+]

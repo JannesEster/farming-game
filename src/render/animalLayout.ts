@@ -1,12 +1,16 @@
 import { visualCampId } from "../sim/animals";
+import { herdAgent, type HerdAgent } from "../sim/herdMotion";
+import { usesMetreCoords } from "../sim/metreFarm";
 import type { AnimalRecord } from "../sim/storyTypes";
 import { herdWorldTile } from "../sim/transit";
 import type { GameState } from "../sim/types";
 import type { HerdOffset } from "./art";
 import { offsetsForHerd } from "./herdLayout";
 import { tileCenter, type IsoLayout } from "./iso";
-import { cowOctantFromScreen } from "./sprites";
+import { cowOctantFromScreen, cowOctantFromTile } from "./sprites";
 import { yardSlots } from "./yardDraw";
+
+const legacySlots = new WeakMap<GameState, Map<string, number>>();
 
 export type AnimalSpriteRole = "herd-animal" | "escaped-animal" | "cut-out-animal" | "other-camp-animal";
 
@@ -25,6 +29,48 @@ function hashUnit(n: number): number {
   return x / 4294967296;
 }
 
+function legacyOffset(state: GameState, id: string, offsets: HerdOffset[]): HerdOffset | undefined {
+  if (offsets.length === 0) return undefined;
+  let slots = legacySlots.get(state);
+  if (!slots) {
+    slots = new Map();
+    legacySlots.set(state, slots);
+  }
+  let slot = slots.get(id);
+  if (slot === undefined) {
+    slot = slots.size;
+    slots.set(id, slot);
+  }
+  return offsets[slot % offsets.length];
+}
+
+/** Screen pose from the stored agent. Graze pose only while the head is down. */
+function placeFromAgent(
+  animal: AnimalRecord,
+  agent: HerdAgent,
+  layout: IsoLayout,
+  tileW: number,
+  tileH: number,
+  calf: boolean,
+): PlacedAnimal {
+  const point = tileCenter(agent.x, agent.y, layout, tileW, tileH);
+  const octant = cowOctantFromTile(Math.cos(agent.heading), Math.sin(agent.heading));
+  const moving = agent.mode === "walk" || agent.mode === "follow";
+  animal.activity = moving ? "walk" : "graze";
+  animal.facing = octant;
+  animal.tileX = agent.x;
+  animal.tileY = agent.y;
+  return {
+    animal,
+    x: point.x,
+    y: point.y,
+    octant,
+    role: "herd-animal",
+    calf,
+    moving,
+  };
+}
+
 export function layoutAnimals(
   state: GameState,
   layout: IsoLayout,
@@ -34,32 +80,37 @@ export function layoutAnimals(
 ): PlacedAnimal[] {
   const animals = (state.story?.animals ?? []).filter((animal) => animal.whereabouts !== "sold");
   if (animals.length === 0) return [];
+  const metre = usesMetreCoords(state);
   const herdTile = herdWorldTile(state);
   const herdPoint = tileCenter(herdTile.x, herdTile.y, layout, tileW, tileH);
-  const home = animals.filter(
-    (animal) => animal.whereabouts === "in_camp" && !animal.split && visualCampId(state, animal) === state.herd.campId,
-  );
   const walking = Boolean(state.herd.transit && state.herd.transit.phase !== "approach" && state.herd.transit.progress < 1);
-  const offsets: HerdOffset[] = offsetsForHerd(
-    state,
-    layout,
-    tileW,
-    tileH,
-    walking,
-    state.herd.transit?.progress ?? 0,
-    { x: 1, y: 0 },
-    timeMs,
-    herdPoint.x,
-    herdPoint.y,
-    home.length,
-  );
-  const homeIndex = new Map(home.map((animal, index) => [animal.id, index]));
+  const legacyOffsets: HerdOffset[] = metre
+    ? []
+    : offsetsForHerd(
+        state,
+        layout,
+        tileW,
+        tileH,
+        walking,
+        state.herd.transit?.progress ?? 0,
+        { x: 1, y: 0 },
+        timeMs,
+        herdPoint.x,
+        herdPoint.y,
+      );
   const placed: PlacedAnimal[] = [];
   for (const animal of animals) {
     const calf = animal.stockClass === "calf";
-    const homeAt = homeIndex.get(animal.id);
-    if (homeAt !== undefined && animal.whereabouts === "in_camp") {
-      const offset = offsets[homeAt];
+    const withHerd = animal.whereabouts === "in_camp" && !animal.split && visualCampId(state, animal) === state.herd.campId;
+    if (withHerd && metre) {
+      const agent = herdAgent(state, animal.id);
+      if (agent) {
+        placed.push(placeFromAgent(animal, agent, layout, tileW, tileH, calf));
+        continue;
+      }
+    }
+    if (withHerd && !metre) {
+      const offset = legacyOffset(state, animal.id, legacyOffsets);
       if (walking && offset?.moving) {
         animal.activity = "walk";
         if (offset.octant !== undefined) animal.facing = offset.octant;

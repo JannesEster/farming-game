@@ -1,4 +1,3 @@
-import { fractionalHour } from "../sim/clock";
 import { CONFIG } from "../sim/config";
 import { pointCampId, usesMetreCoords } from "../sim/metreFarm";
 import { PIXELS_PER_METRE } from "./worldScale";
@@ -925,18 +924,6 @@ export function offsetsForHerd(
         moving: false,
       };
     });
-  }
-  const graze = state.story?.grazeIn;
-  if (graze && graze.campId === fromCampId) {
-    const dayLength = state.clock?.settings.dayLengthSeconds ?? 240;
-    const now = fractionalHour(state.date.hour, state.clock?.bankMs ?? 0, dayLength);
-    const elapsed = now >= graze.startedHour ? now - graze.startedHour : now + 24 - graze.startedHour;
-    if (elapsed >= 3 && state.story) state.story.grazeIn = null;
-    else {
-      const t = Math.max(0, Math.min(1, elapsed / 2));
-      const cluster = 0.4 + 0.6 * t;
-      return spread.map((spot) => ({ ...spot, x: spot.x * cluster, y: spot.y * cluster, moving: false }));
-    }
   }
   return clampOffsetsToCamp(state, fromCampId, spread, herdX, herdY, layout, tileW, tileH, inTransit, track);
 }

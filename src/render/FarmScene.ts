@@ -17,6 +17,7 @@ import { hireFarmhand } from "../sim/workers";
 import type { DayLengthSeconds } from "../sim/clock";
 import { driveSlowsClock, herdInTransit, herdMoveActive, herdWorldTile, pathTangent } from "../sim/transit";
 import { beginHerdMove, snapHerderToDrive, syncHerderOnDrive, tickHerdingRealtime } from "../sim/herding";
+import { resetHerdMotion, setHerdMotionView } from "../sim/herdMotion";
 import { freeWorkerHouseSlots } from "../sim/housing";
 import { ensurePeopleState, tickPeopleSchedule, workerAtHomeAtNight } from "../sim/people";
 import { farmerDisplayName, DEFAULT_PLAYER_DISPLAY_NAME } from "../sim/playerName";
@@ -1069,6 +1070,20 @@ export class FarmScene extends Phaser.Scene {
         return true;
       },
       moveHerdTo: (campId: number) => this.commitMove(campId),
+      placeHerdCamp: (campId: number) => {
+        const camp = this.state.camps.find((item) => item.id === campId);
+        if (!camp) return false;
+        this.state.herd.campId = campId;
+        this.state.herd.transit = null;
+        for (const animal of this.state.story?.animals ?? []) {
+          if (animal.whereabouts !== "in_camp" || animal.split) continue;
+          animal.campId = campId;
+        }
+        resetHerdMotion(this.state);
+        this.state.date = { ...this.state.date, hour: 8 };
+        if (this.state.clock) this.state.clock.bankMs = 0;
+        return true;
+      },
       panToTip: (tip: LayoutTip, zoom: number | null = null) => {
         const camera = this.cameras.main;
         if (zoom !== null) camera.setZoom(clampZoom(zoom, this.minZoom, this.maxZoom));
@@ -1732,11 +1747,19 @@ export class FarmScene extends Phaser.Scene {
       pushCritical: (title, body) => this.hud.showEventCard(title, body),
       syncAlerts: (labels) => this.hud.syncAlerts(labels),
     });
+    this.noteHerdMotionView();
     const moveActive = herdMoveActive(this.state.herd) || Boolean(this.state.story?.returnWalk);
-    if (moveActive && transitMayAdvance(blocked, this.mode) && !this.captureFreezeClock && !this.captureHoldTransit) {
+    const herdTick =
+      !this.captureFreezeClock &&
+      !this.captureHoldTransit &&
+      !blocked &&
+      this.mode !== "pause" &&
+      (moveActive ? transitMayAdvance(blocked, this.mode) : this.metre);
+    if (herdTick) {
+      const wasMoving = moveActive;
       const was = this.state.herd.transit?.progress ?? 0;
       tickHerdingRealtime(this.state, delta, this.mode);
-      if (!herdInTransit(this.state.herd)) {
+      if (wasMoving && !herdInTransit(this.state.herd)) {
         this.syncHud();
         this.persist();
         this.redrawFences();
@@ -1784,6 +1807,33 @@ export class FarmScene extends Phaser.Scene {
     this.applyPanInertia(delta);
     this.drawRain(time);
     this.drawRing();
+  }
+
+  /** Metres the camera can see, so off-screen cows can take coarser steps. */
+  private noteHerdMotionView(): void {
+    if (!this.metre) {
+      setHerdMotionView(this.state, null);
+      return;
+    }
+    const camera = this.cameras.main;
+    const view = camera.worldView;
+    const corners = [
+      worldToTile(view.x, view.y, this.layout, this.groundTileW, this.groundTileH),
+      worldToTile(view.right, view.y, this.layout, this.groundTileW, this.groundTileH),
+      worldToTile(view.x, view.bottom, this.layout, this.groundTileW, this.groundTileH),
+      worldToTile(view.right, view.bottom, this.layout, this.groundTileW, this.groundTileH),
+    ];
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    for (const corner of corners) {
+      minX = Math.min(minX, corner.x);
+      minY = Math.min(minY, corner.y);
+      maxX = Math.max(maxX, corner.x);
+      maxY = Math.max(maxY, corner.y);
+    }
+    setHerdMotionView(this.state, { minX, minY, maxX, maxY });
   }
 
   private syncHerdLocator(): void {

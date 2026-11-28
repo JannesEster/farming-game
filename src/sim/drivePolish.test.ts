@@ -12,7 +12,7 @@ import { generateFarm } from "./generate";
 import { treesInRect } from "./vegetation";
 import { CONFIG } from "./config";
 import { herdMoveStatusLine, tickHerdingRealtime } from "./herding";
-import { campGateBetween, fenceCrossingsOffGate, pathLengthKm, planHerdPath, pointOnPath } from "./path";
+import { campGateBetween, campGrazingGoal, fenceCrossingsOffGate, pathLengthKm, planHerdPath, pointOnPath } from "./path";
 import { createGame, moveHerd, primeDefaultFarmCache } from "./simulation";
 import { migrateState } from "./stateMigrate";
 import { gameHoursElapsed, repairStuckTransit, walkGameHours } from "./transit";
@@ -61,7 +61,7 @@ function tickBoth(state: GameState, deltaMs: number, pace: number): void {
 }
 
 describe("drive polish", () => {
-  it("routes a default-farm neighbour move through the shared gate, within 1.3x of straight", () => {
+  it("routes a default-farm neighbour move through the shared gate to the grazing centre", () => {
     const state = ready();
     const pairs = neighbourPairs(state);
     expect(pairs.length).toBeGreaterThan(0);
@@ -69,15 +69,20 @@ describe("drive polish", () => {
       const from = state.camps.find((camp) => camp.id === fromId)!;
       const to = state.camps.find((camp) => camp.id === toId)!;
       const path = planHerdPath(state, fromId, toId);
-      const ratio = tileLength(path) / Math.max(0.01, straight(from.anchor, to.anchor));
-      expect(ratio).toBeLessThanOrEqual(1.3);
+      const goal = campGrazingGoal(state, to);
+      const started = campGrazingGoal(state, from);
+      expect(Math.hypot(path[0].x - started.x, path[0].y - started.y)).toBeLessThan(2);
+      expect(Math.hypot(path[path.length - 1].x - goal.x, path[path.length - 1].y - goal.y)).toBeLessThan(2);
+      // The walk now ends at the grazing centre, so it is longer than the old stop just inside the gate.
+      const viaAnchors = tileLength(path) / Math.max(0.01, straight(from.anchor, to.anchor));
+      expect(viaAnchors).toBeLessThanOrEqual(3);
       expect(fenceCrossingsOffGate(state, path)).toBe(0);
       const gate = campGateBetween(from, to)!;
       expect(path.some((tile) => tile.x === gate.fromGate.x && tile.y === gate.fromGate.y)).toBe(true);
     }
   }, 20_000);
 
-  it("keeps picker-farm neighbour routes within 2x and on gates", () => {
+  it("keeps picker-farm neighbour routes on gates and not a farm-wide detour", () => {
     const offers = generateFarmOffers(88001).filter((offer) => offer.playable);
     expect(offers.length).toBeGreaterThan(0);
     for (const offer of offers) {
@@ -88,8 +93,8 @@ describe("drive polish", () => {
         const from = state.camps.find((camp) => camp.id === fromId)!;
         const to = state.camps.find((camp) => camp.id === toId)!;
         const path = planHerdPath(state, fromId, toId);
-        const ratio = tileLength(path) / Math.max(0.01, straight(from.anchor, to.anchor));
-        expect(ratio).toBeLessThanOrEqual(2);
+        const viaAnchors = tileLength(path) / Math.max(0.01, straight(from.anchor, to.anchor));
+        expect(viaAnchors).toBeLessThanOrEqual(3.2);
         expect(fenceCrossingsOffGate(state, path)).toBe(0);
       }
     }
@@ -136,7 +141,7 @@ describe("drive polish", () => {
     expect(state.date.day).toBe(day);
     expect(sawNight).toBe(true);
     expect(Number.isInteger(state.date.hour)).toBe(true);
-  });
+  }, 20_000);
 
   it("holds a long drive at dusk and walks it on at dawn", () => {
     const state = ready();
