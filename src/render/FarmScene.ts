@@ -77,8 +77,10 @@ import { groundTexture, terrainVariant, tileTint, trackKeys } from "./colour";
 import {
   closestPointOnFence,
   collectFenceSegments,
+  drawFarFences,
   drawFences,
   FENCE_CLOSE_VIEW_PX,
+  FENCE_FAR_MAX_ZOOM,
   FENCE_VIEW_BUCKET_PX,
   FENCE_WIDE_VIEW_PX,
 } from "./fences";
@@ -956,6 +958,19 @@ export class FarmScene extends Phaser.Scene {
     return camera.zoom <= 0.08;
   }
 
+  /** Whole property at a chosen zoom, still centred. Used for the far fence captures. */
+  private frameFarmAtZoom(zoom: number): { zoom: number; viewWidth: number } {
+    this.capturePin = null;
+    const camera = this.cameras.main;
+    this.refreshZoomLimits();
+    camera.setZoom(clampZoom(zoom, this.minZoom, this.maxZoom));
+    const mid = tileCenter(this.state.width / 2, this.state.height / 2, this.layout, this.groundTileW, this.groundTileH);
+    camera.centerOn(mid.x, mid.y);
+    this.clampScroll();
+    this.syncMetreFrame();
+    return { zoom: camera.zoom, viewWidth: liveCameraView(this).width };
+  }
+
   /** Handling yard beside the two-track, out from the homestead. */
   private prepareHandlingYardCapture(): boolean {
     this.capturePin = null;
@@ -1679,6 +1694,7 @@ export class FarmScene extends Phaser.Scene {
       prepareRoadWideCapture: () => this.prepareRoadWideCapture(),
       prepareFenceLineCapture: () => this.prepareFenceLineCapture(),
       prepareFarmMapCapture: () => this.prepareFarmMapCapture(),
+      frameFarmAtZoom: (zoom: number) => this.frameFarmAtZoom(zoom),
       prepareOneCampCapture: () => this.prepareOneCampCapture(),
       prepareHandlingYardCapture: () => this.prepareHandlingYardCapture(),
       prepareHomesteadCloseCapture: () => this.prepareHomesteadCloseCapture(),
@@ -2682,8 +2698,9 @@ export class FarmScene extends Phaser.Scene {
     const viewW = live?.width ?? 0;
     const closeEnough = !live || viewW < FENCE_CLOSE_VIEW_PX;
     const viewWide = Boolean(live && viewW > FENCE_WIDE_VIEW_PX);
+    const farFence = Boolean(this.metre && zoom < FENCE_FAR_MAX_ZOOM);
     const viewKey = live ? `${Math.round(live.x / FENCE_VIEW_BUCKET_PX)}:${Math.round(live.y / FENCE_VIEW_BUCKET_PX)}` : "0";
-    const sig = `${herdCamp}:${this.selected ? 1 : 0}:${paintedFence ? 1 : 0}:${Math.round(zoom * 50)}:${viewKey}:${closeEnough ? 1 : 0}:${viewWide ? 1 : 0}`;
+    const sig = `${herdCamp}:${this.selected ? 1 : 0}:${paintedFence ? 1 : 0}:${Math.round(zoom * 50)}:${viewKey}:${closeEnough ? 1 : 0}:${viewWide ? 1 : 0}:${farFence ? 1 : 0}`;
     if (sig === this.fenceSig) return;
     this.fenceSig = sig;
     this.fenceGates.forEach((gate) => gate.destroy());
@@ -2692,16 +2709,18 @@ export class FarmScene extends Phaser.Scene {
     this.fenceArt = [];
     const segments = collectFenceSegments(this.state, this.layout, herdCamp, this.selected);
     const closeFence = Boolean(live && viewW < FENCE_CLOSE_VIEW_PX);
-    const midFence = Boolean(this.metre && live && !closeFence && zoom >= 0.02 && zoom < 0.2);
+    const midFence = Boolean(this.metre && live && !closeFence && zoom >= FENCE_FAR_MAX_ZOOM && zoom < 0.2);
     if (closeFence && paintedFence) this.fences.clear();
+    else if (farFence) drawFarFences(this.fences, segments, zoom);
     else drawFences(this.fences, segments, zoom, { posts: !paintedFence && !this.metre, single: midFence });
     if (paintedFence) {
       this.fenceArt = placeV2Fences(this, segments, {
         maxPosts: this.metre && zoom < 0.08 ? 0 : 240,
         view: live ? { x: live.x, y: live.y, right: live.right, bottom: live.bottom } : undefined,
-        gatesOnly: midFence,
+        gatesOnly: midFence || farFence,
+        drawGates: !farFence,
       });
-    } else if (!midFence) this.fenceGates = placeGateSprites(this, segments, this.paintedSprites);
+    } else if (!midFence && !farFence) this.fenceGates = placeGateSprites(this, segments, this.paintedSprites);
   }
 
   private syncHerdFromSim(): void {

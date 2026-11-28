@@ -61,9 +61,22 @@ async function main() {
     page.on("pageerror", (error) => report.errors.push(String(error)));
     await ready(page);
 
+    const onlyFar = process.env.FENCE_SHOTS === "far";
     report.far = await page.evaluate(() => window.__farmCapture.prepareFarmMapCapture());
     await page.waitForTimeout(500);
+    report.fpsFar = await page.evaluate(() => window.__farmCapture.sampleFps(45));
     report.shots.push(await shot(page, "fences-far.png"));
+
+    report.zoom008 = await page.evaluate(() => window.__farmCapture.frameFarmAtZoom(0.08));
+    await page.waitForTimeout(500);
+    report.fpsZoom008 = await page.evaluate(() => window.__farmCapture.sampleFps(45));
+    report.shots.push(await shot(page, "fences-zoom-008.png"));
+    if (onlyFar) {
+      await page.close();
+      await browser.close();
+      console.log(JSON.stringify(report, null, 2));
+      return;
+    }
 
     report.mid = await page.evaluate(() => window.__farmCapture.prepareOneCampCapture());
     await page.waitForTimeout(500);

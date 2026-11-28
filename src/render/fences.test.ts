@@ -5,11 +5,17 @@ import { metreSharedGate } from "../sim/metreFarm";
 import { campGateBetween, fenceCrossingsOffGate } from "../sim/path";
 import type { GameState } from "../sim/types";
 import {
+  FENCE_FAR_BOUNDARY_PX,
+  FENCE_FAR_GAP_PX,
+  FENCE_FAR_INNER_PX,
+  FENCE_FAR_TICK_PX,
   FENCE_VIEW_BUCKET_PX,
   FENCE_WIRE_PIECE_PX,
   FENCE_WIRE_STRAND_OFFSET_PX,
   closestPointOnFence,
   collectFenceSegments,
+  farFenceLineWidth,
+  farFenceStrokes,
   fencePieceInView,
   fenceViewMarginPx,
   mergeStraightFences,
@@ -325,6 +331,64 @@ describe("gate openings stay on their own wire", () => {
     expect(covers(100)).toBe(true);
     expect(covers(200)).toBe(false);
     expect(covers(300)).toBe(true);
+  });
+});
+
+describe("far zoom fence lines", () => {
+  it("keeps inner lines near 1 px and the perimeter a little heavier", () => {
+    const zoom = 0.012;
+    expect(farFenceLineWidth(zoom, FENCE_FAR_INNER_PX) * zoom).toBeCloseTo(FENCE_FAR_INNER_PX, 5);
+    expect(farFenceLineWidth(zoom, FENCE_FAR_BOUNDARY_PX) * zoom).toBeCloseTo(FENCE_FAR_BOUNDARY_PX, 5);
+    expect(FENCE_FAR_INNER_PX).toBeGreaterThanOrEqual(1);
+    expect(FENCE_FAR_INNER_PX).toBeLessThanOrEqual(1.5);
+    expect(FENCE_FAR_BOUNDARY_PX).toBeGreaterThan(FENCE_FAR_INNER_PX);
+    expect(FENCE_FAR_BOUNDARY_PX).toBeLessThanOrEqual(1.5);
+
+    const state = generateFarm(3300);
+    const layout = farmLayout(state);
+    const strokes = farFenceStrokes(collectFenceSegments(state, layout, state.herd.campId, false), zoom);
+    const wires = strokes.filter((stroke) => stroke.role === "wire");
+    const inner = wires.filter((stroke) => stroke.kind === "inner");
+    const boundary = wires.filter((stroke) => stroke.kind === "boundary");
+    expect(inner.length).toBeGreaterThan(0);
+    expect(boundary.length).toBeGreaterThan(0);
+    for (const stroke of inner) expect(stroke.screenPx).toBe(FENCE_FAR_INNER_PX);
+    for (const stroke of boundary) expect(stroke.screenPx).toBe(FENCE_FAR_BOUNDARY_PX);
+  });
+
+  it("opens each sim gate by a few screen pixels and marks it with a short tick", () => {
+    const zoom = 0.012;
+    const state = generateFarm(3300);
+    const layout = farmLayout(state);
+    const segments = collectFenceSegments(state, layout, state.herd.campId, false);
+    const strokes = farFenceStrokes(segments, zoom);
+    const wires = strokes.filter((stroke) => stroke.role === "wire");
+    const ticks = strokes.filter((stroke) => stroke.role === "gate");
+    const gates = segments.filter((segment) => segment.gate);
+    expect(ticks).toHaveLength(gates.length);
+    const halfGap = FENCE_FAR_GAP_PX / 2;
+    for (const gate of gates) {
+      const cx = (gate.x1 + gate.x2) / 2;
+      const cy = (gate.y1 + gate.y2) / 2;
+      const tick = ticks.find((stroke) => Math.hypot((stroke.x1 + stroke.x2) / 2 - cx, (stroke.y1 + stroke.y2) / 2 - cy) < 1);
+      expect(tick).toBeTruthy();
+      const tickScreen = Math.hypot(tick!.x2 - tick!.x1, tick!.y2 - tick!.y1) * zoom;
+      expect(tickScreen).toBeCloseTo(FENCE_FAR_TICK_PX, 4);
+      let nearest = Number.POSITIVE_INFINITY;
+      for (const wire of wires) {
+        const point = closestPointOnFence(cx, cy, { ...wire, gate: false });
+        nearest = Math.min(nearest, Math.hypot(point.x - cx, point.y - cy) * zoom);
+      }
+      expect(nearest).toBeGreaterThan(halfGap - 0.2);
+    }
+  });
+
+  it("does not pull a wire that is not on the gate line", () => {
+    const wire = { x1: 0, y1: 400, x2: 1000, y2: 400, kind: "inner" as const, gate: false };
+    const gate = { x1: 480, y1: 0, x2: 520, y2: 0, kind: "inner" as const, gate: true };
+    const strokes = farFenceStrokes([wire, gate], 0.01);
+    const kept = strokes.find((stroke) => stroke.role === "wire");
+    expect(kept).toMatchObject({ x1: 0, y1: 400, x2: 1000, y2: 400 });
   });
 });
 

@@ -612,6 +612,7 @@ export function placeV2Fences(
     maxPosts?: number;
     view?: { x: number; y: number; right: number; bottom: number };
     gatesOnly?: boolean;
+    drawGates?: boolean;
   },
 ): Phaser.GameObjects.Image[] {
   const images: Phaser.GameObjects.Image[] = [];
@@ -680,6 +681,7 @@ export function placeV2Fences(
       if (image) images.push(image);
     }
   }
+  if (limit?.drawGates === false) return images;
   for (const segment of segments) {
     if (!segment.gate) continue;
     const dx = segment.x2 - segment.x1;

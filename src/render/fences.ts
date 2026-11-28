@@ -529,6 +529,134 @@ function strokeDoubleWire(
   }
 }
 
+/** Below this zoom the mid stroke is not used, and a world-pixel line shrinks under a screen pixel. */
+export const FENCE_FAR_MAX_ZOOM = 0.02;
+/** Inner fences at the whole-farm view. On-screen pixels, not world pixels. */
+export const FENCE_FAR_INNER_PX = 1.15;
+/** Outer perimeter, a little heavier than the inner wires. */
+export const FENCE_FAR_BOUNDARY_PX = 1.5;
+/** Opening left at a gate so the 3.6 m gap still reads when the farm fills the screen. */
+export const FENCE_FAR_GAP_PX = 4.5;
+/** Light tick across that opening. */
+export const FENCE_FAR_TICK_PX = 4;
+
+export type FarFenceStroke = {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  screenPx: number;
+  role: "wire" | "gate";
+  kind: FenceSegment["kind"];
+};
+
+/** World-pixel stroke that lands at `screenPx` once the camera zoom is applied. */
+export function farFenceLineWidth(zoom: number, screenPx: number): number {
+  return screenPx / Math.max(zoom, 0.0004);
+}
+
+function farScreenPx(kind: FenceSegment["kind"]): number {
+  return kind === "inner" ? FENCE_FAR_INNER_PX : FENCE_FAR_BOUNDARY_PX;
+}
+
+/**
+ * Pull a wire back from a gate so the opening is at least `halfGap` world px
+ * from the gate centre. The real 3.6 m gap is a fraction of a pixel at farm zoom.
+ */
+function trimWireForFarGates(
+  wire: FenceSegment,
+  gates: FenceSegment[],
+  halfGap: number,
+): { x1: number; y1: number; x2: number; y2: number } | null {
+  const dx = wire.x2 - wire.x1;
+  const dy = wire.y2 - wire.y1;
+  const len = Math.hypot(dx, dy);
+  if (len < 1) return null;
+  const ux = dx / len;
+  const uy = dy / len;
+  let t0 = 0;
+  let t1 = len;
+  for (const gate of gates) {
+    const gdx = gate.x2 - gate.x1;
+    const gdy = gate.y2 - gate.y1;
+    const glen = Math.hypot(gdx, gdy) || 1;
+    const cross = dx * gdy - dy * gdx;
+    if (Math.abs(cross) / (len * glen) > 0.04) continue;
+    const cx = (gate.x1 + gate.x2) / 2;
+    const cy = (gate.y1 + gate.y2) / 2;
+    const lat = (cx - wire.x1) * -uy + (cy - wire.y1) * ux;
+    if (Math.abs(lat) > 12) continue;
+    const t = (cx - wire.x1) * ux + (cy - wire.y1) * uy;
+    if (t < -halfGap || t > len + halfGap) continue;
+    if (t <= len / 2) t0 = Math.max(t0, t + halfGap);
+    else t1 = Math.min(t1, t - halfGap);
+  }
+  if (t1 - t0 < 2) return null;
+  return {
+    x1: wire.x1 + ux * t0,
+    y1: wire.y1 + uy * t0,
+    x2: wire.x1 + ux * t1,
+    y2: wire.y1 + uy * t1,
+  };
+}
+
+/**
+ * Far-zoom fence plan. A few dozen runs, not the tree canopy, so this stays on
+ * the Graphics layer and is rebuilt with the view bucket. A baked wide texture
+ * would shrink a 1 px line under a texel.
+ */
+export function farFenceStrokes(segments: FenceSegment[], zoom: number): FarFenceStroke[] {
+  const z = Math.max(zoom, 0.0004);
+  const halfGap = FENCE_FAR_GAP_PX / 2 / z;
+  const gates = segments.filter((segment) => segment.gate);
+  const strokes: FarFenceStroke[] = [];
+  for (const wire of segments) {
+    if (wire.gate) continue;
+    const trimmed = trimWireForFarGates(wire, gates, halfGap);
+    if (!trimmed) continue;
+    strokes.push({
+      ...trimmed,
+      screenPx: farScreenPx(wire.kind),
+      role: "wire",
+      kind: wire.kind,
+    });
+  }
+  const tick = FENCE_FAR_TICK_PX / z;
+  for (const gate of gates) {
+    const dx = gate.x2 - gate.x1;
+    const dy = gate.y2 - gate.y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const px = -dy / len;
+    const py = dx / len;
+    const cx = (gate.x1 + gate.x2) / 2;
+    const cy = (gate.y1 + gate.y2) / 2;
+    strokes.push({
+      x1: cx - px * (tick / 2),
+      y1: cy - py * (tick / 2),
+      x2: cx + px * (tick / 2),
+      y2: cy + py * (tick / 2),
+      screenPx: FENCE_FAR_INNER_PX,
+      role: "gate",
+      kind: gate.kind,
+    });
+  }
+  return strokes;
+}
+
+/** Thin dark camp lines for the whole-farm view. Gates are a gap plus a light tick. */
+export function drawFarFences(graphics: Phaser.GameObjects.Graphics, segments: FenceSegment[], zoom: number): void {
+  graphics.clear();
+  const z = Math.max(zoom, 0.0004);
+  for (const stroke of farFenceStrokes(segments, zoom)) {
+    const color = stroke.role === "gate" ? 0xf4ead8 : stroke.kind === "selected" ? palette.fenceSelected : 0x1a120e;
+    graphics.lineStyle(stroke.screenPx / z, color, stroke.role === "gate" ? 0.92 : 0.96);
+    graphics.beginPath();
+    graphics.moveTo(stroke.x1, stroke.y1);
+    graphics.lineTo(stroke.x2, stroke.y2);
+    graphics.strokePath();
+  }
+}
+
 export function drawFences(
   graphics: Phaser.GameObjects.Graphics,
   segments: FenceSegment[],
