@@ -7,7 +7,14 @@ import { tileCenter } from "./iso";
 import { cowOctantFromScreen, spritesBaseUrl } from "./sprites";
 import { V2_SPRITES, type V2SpriteMeta } from "./v2Manifest";
 import { renderPenFloor } from "./v2Ground";
-import { FENCE_POST_SPACING_METRES } from "./fences";
+import {
+  FENCE_CLOSE_VIEW_PX,
+  FENCE_POST_SPACING_METRES,
+  FENCE_WIDE_VIEW_PX,
+  FENCE_WIRE_PIECE_PX,
+  fencePieceInView,
+  fenceViewMarginPx,
+} from "./fences";
 import { bushFileAt, treeFileAt } from "./treeLod";
 import { displayScaleForFile, PIXELS_PER_METRE } from "./worldScale";
 import { yardGeometry } from "./yardDraw";
@@ -601,36 +608,36 @@ type FenceSeg = { x1: number; y1: number; x2: number; y2: number; kind: "boundar
 export function placeV2Fences(
   scene: Phaser.Scene,
   segments: FenceSeg[],
-  limit?: { maxPosts?: number; view?: { x: number; y: number; right: number; bottom: number } },
+  limit?: {
+    maxPosts?: number;
+    view?: { x: number; y: number; right: number; bottom: number };
+    gatesOnly?: boolean;
+    drawGates?: boolean;
+  },
 ): Phaser.GameObjects.Image[] {
   const images: Phaser.GameObjects.Image[] = [];
   const spacing = FENCE_POST_SPACING_METRES * PIXELS_PER_METRE;
   const seen = new Set<string>();
   const maxPosts = limit?.maxPosts ?? 80;
   const view = limit?.view;
-  const viewWide = view ? view.right - view.x > 8000 : false;
-  const closeEnough = !view || view.right - view.x < 5000;
+  const viewWide = view ? view.right - view.x > FENCE_WIDE_VIEW_PX : false;
+  const closeEnough = !view || view.right - view.x < FENCE_CLOSE_VIEW_PX;
+  const margin = fenceViewMarginPx();
   const stale: Phaser.GameObjects.GameObject[] = [];
   scene.children.each((child) => {
     if (child.name === "metre-fence-wire") stale.push(child);
   });
   stale.forEach((child) => child.destroy());
-  if (closeEnough) {
+  if (closeEnough && !limit?.gatesOnly) {
     for (const segment of segments) {
       if (segment.gate) continue;
-      const minX = Math.min(segment.x1, segment.x2);
-      const maxX = Math.max(segment.x1, segment.x2);
-      const minY = Math.min(segment.y1, segment.y2);
-      const maxY = Math.max(segment.y1, segment.y2);
-      if (view && (maxX < view.x - 80 || minX > view.right + 80 || maxY < view.y - 80 || minY > view.bottom + 80)) {
-        continue;
-      }
+      if (view && !fencePieceInView(segment.x1, segment.y1, segment.x2, segment.y2, view, margin)) continue;
       const dx = segment.x2 - segment.x1;
       const dy = segment.y2 - segment.y1;
       const len = Math.hypot(dx, dy) || 1;
       const ox = (-dy / len) * 5;
       const oy = (dx / len) * 5;
-      const piece = 24 * PIXELS_PER_METRE;
+      const piece = FENCE_WIRE_PIECE_PX;
       const steps = Math.max(1, Math.ceil(len / piece));
       for (let step = 0; step < steps; step += 1) {
         const t0 = step / steps;
@@ -639,15 +646,7 @@ export function placeV2Fences(
         const y1 = segment.y1 + dy * t0;
         const x2 = segment.x1 + dx * t1;
         const y2 = segment.y1 + dy * t1;
-        if (
-          view &&
-          (Math.max(x1, x2) < view.x - 40 ||
-            Math.min(x1, x2) > view.right + 40 ||
-            Math.max(y1, y2) < view.y - 40 ||
-            Math.min(y1, y2) > view.bottom + 40)
-        ) {
-          continue;
-        }
+        if (view && !fencePieceInView(x1, y1, x2, y2, view, margin)) continue;
         const wire = scene.add.graphics().setName("metre-fence-wire");
         wire.setDepth(8 + ((y1 + y2) / 2) * 0.04 + 0.15);
         wire.lineStyle(2.8, 0x2a241c, 1);
@@ -661,7 +660,7 @@ export function placeV2Fences(
     }
   }
   for (const segment of segments) {
-    if (segment.gate || viewWide || maxPosts <= 0) continue;
+    if (limit?.gatesOnly || segment.gate || viewWide || maxPosts <= 0) continue;
     const dx = segment.x2 - segment.x1;
     const dy = segment.y2 - segment.y1;
     const length = Math.hypot(dx, dy);
@@ -682,6 +681,7 @@ export function placeV2Fences(
       if (image) images.push(image);
     }
   }
+  if (limit?.drawGates === false) return images;
   for (const segment of segments) {
     if (!segment.gate) continue;
     const dx = segment.x2 - segment.x1;

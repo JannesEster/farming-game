@@ -1,0 +1,146 @@
+{
+  "capturedAt": "2026-11-28T11:51:43.324Z",
+  "shots": [
+    "fences-far.png",
+    "fences-mid.png",
+    "fences-gate-0-2.png",
+    "fences-gate-3-7.png",
+    "fences-gate-5-6.png",
+    "fences-close.png",
+    "fences-pan-edge.png",
+    "fences-pan-1.png",
+    "fences-pan-2.png",
+    "fences-pan-3.png"
+  ],
+  "errors": [],
+  "far": true,
+  "mid": true,
+  "gates": [
+    {
+      "a": 0,
+      "b": 1
+    },
+    {
+      "a": 0,
+      "b": 2
+    },
+    {
+      "a": 0,
+      "b": 3
+    },
+    {
+      "a": 1,
+      "b": 3
+    },
+    {
+      "a": 1,
+      "b": 4
+    },
+    {
+      "a": 2,
+      "b": 3
+    },
+    {
+      "a": 2,
+      "b": 5
+    },
+    {
+      "a": 2,
+      "b": 6
+    },
+    {
+      "a": 3,
+      "b": 4
+    },
+    {
+      "a": 3,
+      "b": 6
+    },
+    {
+      "a": 3,
+      "b": 7
+    },
+    {
+      "a": 4,
+      "b": 7
+    },
+    {
+      "a": 4,
+      "b": 8
+    },
+    {
+      "a": 5,
+      "b": 6
+    },
+    {
+      "a": 6,
+      "b": 7
+    },
+    {
+      "a": 7,
+      "b": 8
+    }
+  ],
+  "framedGates": [
+    {
+      "ok": true,
+      "campA": 0,
+      "campB": 2,
+      "x": 603,
+      "y": 2476,
+      "zoom": 0.85,
+      "viewWidth": 1505.8823529411766
+    },
+    {
+      "ok": true,
+      "campA": 3,
+      "campB": 7,
+      "x": 2657,
+      "y": 4178,
+      "zoom": 0.85,
+      "viewWidth": 1505.8823529411766
+    },
+    {
+      "ok": true,
+      "campA": 5,
+      "campB": 6,
+      "x": 1034,
+      "y": 4962,
+      "zoom": 0.85,
+      "viewWidth": 1505.8823529411766
+    }
+  ],
+  "close": {
+    "ok": true,
+    "campA": 0,
+    "campB": 2,
+    "x": 603,
+    "y": 2476,
+    "zoom": 0.85,
+    "viewWidth": 1505.8823529411766
+  },
+  "panEdge": {
+    "scrollX": 31592.53333333334,
+    "scrollY": 12384.666666666668,
+    "zoom": 0.85,
+    "viewWidth": 1505.8823529411766
+  },
+  "pan1": {
+    "scrollX": 31852.53333333334,
+    "scrollY": 12404.666666666668,
+    "zoom": 0.85,
+    "viewWidth": 1505.8823529411766
+  },
+  "pan2": {
+    "scrollX": 32112.53333333334,
+    "scrollY": 12424.666666666668,
+    "zoom": 0.85,
+    "viewWidth": 1505.8823529411766
+  },
+  "pan3": {
+    "scrollX": 32632.53333333334,
+    "scrollY": 12504.666666666668,
+    "zoom": 0.85,
+    "viewWidth": 1505.8823529411766
+  }
+}
