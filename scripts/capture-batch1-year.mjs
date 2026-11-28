@@ -63,6 +63,20 @@ async function main() {
         window.__flowCapture?.skipTutorialForCapture?.();
       });
       await page.waitForTimeout(400);
+      for (const level of ["close", "mid", "far"]) {
+        const zoomShot = await page.evaluate((name) => window.__farmCapture?.prepareZoomReadCapture?.(name), level);
+        if (!zoomShot?.ok) throw new Error(`${viewport.name} zoom ${level} failed: ${JSON.stringify(zoomShot)}`);
+        await page.evaluate(
+          () =>
+            new Promise((resolve) => {
+              requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+            }),
+        );
+        await page.waitForTimeout(350);
+        const file = path.join(outDir, `zoom-${viewport.name}-${level}.png`);
+        await page.screenshot({ path: file });
+        console.log(`${viewport.name}-zoom-${level}: zoom=${Number(zoomShot.zoom).toFixed(4)}`);
+      }
       for (const mode of MODES) {
         const result = await shot(page, mode);
         const file = path.join(outDir, `${viewport.name}-${mode}.png`);

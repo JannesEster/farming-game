@@ -348,6 +348,18 @@ export type GameConfig = {
     flushCoverMix: number;
     /** assumption, tune by eye, not sourced. Extra pull toward flush green while the soil is moist. */
     flushMoistureMix: number;
+    /** assumption, tune by eye, not sourced. Inner camp fences stay at least this many pixels on screen. */
+    minFenceScreenPx: number;
+    /** assumption, tune by eye, not sourced. Outer boundary, a little heavier than the inner wires. */
+    minBoundaryScreenPx: number;
+    /** assumption, tune by eye, not sourced. Gate bar thickness on screen. */
+    minGateScreenPx: number;
+    /** assumption, tune by eye, not sourced. Gate bar length on screen, so the opening still reads. */
+    gateTickScreenPx: number;
+    /** assumption, tune by eye, not sourced. Gap left around a gate, in screen pixels. */
+    gateGapScreenPx: number;
+    /** assumption, tune by eye, not sourced. Below this on-screen cow length, draw a herd marker instead of specks. */
+    herdMarkerBelowCowPx: number;
   };
 };
 
@@ -707,6 +719,18 @@ export const CONFIG: GameConfig = {
     flushCoverMix: 0.9,
     // assumption, tune by eye, not sourced. See GameConfig.view.flushMoistureMix.
     flushMoistureMix: 0.45,
+    // assumption, tune by eye, not sourced. See GameConfig.view.minFenceScreenPx.
+    minFenceScreenPx: 2.4,
+    // assumption, tune by eye, not sourced. See GameConfig.view.minBoundaryScreenPx.
+    minBoundaryScreenPx: 3.2,
+    // assumption, tune by eye, not sourced. See GameConfig.view.minGateScreenPx.
+    minGateScreenPx: 3.6,
+    // assumption, tune by eye, not sourced. See GameConfig.view.gateTickScreenPx.
+    gateTickScreenPx: 14,
+    // assumption, tune by eye, not sourced. See GameConfig.view.gateGapScreenPx.
+    gateGapScreenPx: 9,
+    // assumption, tune by eye, not sourced. See GameConfig.view.herdMarkerBelowCowPx.
+    herdMarkerBelowCowPx: 8,
   },
 };
 

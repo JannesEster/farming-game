@@ -163,8 +163,10 @@ import {
   BAKKIE_LENGTH_METRES,
   BUSH_DENSE_METRES,
   CAMELTHORN_LARGE_METRES,
+  CAMP_GATE_METRES,
   COW_LENGTH_METRES,
   COW_SHOULDER_METRES,
+  cowDisplayPx,
   COTTAGE_WIDTH_METRES,
   FARMHOUSE_WIDTH_METRES,
   GARDEN_WIDTH_METRES,
@@ -264,6 +266,7 @@ export class FarmScene extends Phaser.Scene {
   private roadGraphics?: Phaser.GameObjects.Graphics;
   private midMarks?: Phaser.GameObjects.Graphics;
   private herdMarker?: Phaser.GameObjects.Text;
+  private herdBlob?: Phaser.GameObjects.Graphics;
   private metreChunks = new Map<string, Phaser.GameObjects.Graphics>();
   private vegSprites: Phaser.GameObjects.Image[] = [];
   private vegDots: Phaser.GameObjects.Graphics | null = null;
@@ -1745,6 +1748,7 @@ export class FarmScene extends Phaser.Scene {
       prepareOverviewCapture: () => this.prepareOverviewCapture(),
       prepareHomesteadCapture: () => this.prepareHomesteadCapture(),
       prepareYearFeelCapture: (mode: string) => this.prepareYearFeelCapture(mode),
+      prepareZoomReadCapture: (level: string) => this.prepareZoomReadCapture(level),
       prepareHomesteadAtDefaultZoom: () => this.prepareHomesteadAtDefaultZoom(),
       prepareRoadWideCapture: () => this.prepareRoadWideCapture(),
       prepareFenceLineCapture: () => this.prepareFenceLineCapture(),
@@ -2066,6 +2070,8 @@ export class FarmScene extends Phaser.Scene {
     this.campMap = this.add.graphics().setDepth(0.2);
     this.roadGraphics = this.add.graphics().setDepth(1.2);
     this.midMarks = this.add.graphics().setDepth(3.4);
+    this.herdBlob?.destroy();
+    this.herdBlob = this.add.graphics().setDepth(25990).setVisible(false);
     this.herdMarker = this.add
       .text(0, 0, "", {
         fontFamily: "Segoe UI, Helvetica Neue, sans-serif",
@@ -2358,17 +2364,7 @@ export class FarmScene extends Phaser.Scene {
       label.setText(camp.name);
       label.setScale(nameScale);
     }
-    if (this.herdMarker) {
-      const farHerd = zoom < 0.12 && !this.captureHideHerdLabel;
-      this.herdMarker.setVisible(farHerd);
-      if (this.herdMarker.input) this.herdMarker.input.enabled = farHerd;
-      if (farHerd) {
-        const centre = this.cowCentreWorld();
-        this.herdMarker.setPosition(centre.x, centre.y - 8);
-        this.herdMarker.setScale(nameScale);
-        this.herdMarker.setText(`${this.state.herd.headCount} head`);
-      }
-    }
+    this.syncHerdMarker();
     for (const sprite of this.propSprites) {
       const kind = sprite.getData("featureKind");
       if (kind !== "tree" && kind !== "bush") continue;
@@ -2811,15 +2807,18 @@ export class FarmScene extends Phaser.Scene {
     const segments = collectFenceSegments(this.state, this.layout, herdCamp, this.selected);
     const closeFence = Boolean(live && viewW < FENCE_CLOSE_VIEW_PX);
     const midFence = Boolean(this.metre && live && !closeFence && zoom >= FENCE_FAR_MAX_ZOOM && zoom < 0.2);
+    const gateScreen = CAMP_GATE_METRES * PIXELS_PER_METRE * Math.max(zoom, 0.0004);
+    const gateSprites = paintedFence && !farFence && gateScreen >= 16;
     if (closeFence && paintedFence) this.fences.clear();
     else if (farFence) drawFarFences(this.fences, segments, zoom);
-    else drawFences(this.fences, segments, zoom, { posts: !paintedFence && !this.metre, single: midFence });
+    else drawFences(this.fences, segments, zoom, { posts: !paintedFence && !this.metre, single: midFence, gates: !gateSprites });
     if (paintedFence) {
       this.fenceArt = placeV2Fences(this, segments, {
         maxPosts: this.metre && zoom < 0.08 ? 0 : 240,
         view: live ? { x: live.x, y: live.y, right: live.right, bottom: live.bottom } : undefined,
         gatesOnly: midFence || farFence,
-        drawGates: !farFence,
+        drawGates: gateSprites,
+        zoom,
       });
     } else if (!midFence && !farFence) this.fenceGates = placeGateSprites(this, segments, this.paintedSprites);
   }
@@ -2899,10 +2898,38 @@ export class FarmScene extends Phaser.Scene {
     return false;
   }
 
+  /** Cows smaller than this on screen become a blob and a head count. */
+  private herdIsAMarker(): boolean {
+    if (this.captureHideCattle || this.captureHideHerdLabel) return false;
+    return cowDisplayPx() * this.cameras.main.zoom < CONFIG.view.herdMarkerBelowCowPx;
+  }
+
+  private syncHerdMarker(): void {
+    if (!this.herdMarker) return;
+    const show = this.herdIsAMarker();
+    this.herdMarker.setVisible(show);
+    if (this.herdMarker.input) this.herdMarker.input.enabled = show;
+    if (!this.herdBlob) return;
+    this.herdBlob.clear();
+    this.herdBlob.setVisible(show);
+    if (!show) return;
+    const centre = this.cowCentreWorld();
+    const zoom = Math.max(this.cameras.main.zoom, 0.0004);
+    const rx = 20 / zoom;
+    const ry = 13 / zoom;
+    this.herdBlob.fillStyle(0x2a1810, 0.95);
+    this.herdBlob.fillEllipse(centre.x, centre.y, rx * 2, ry * 2);
+    this.herdBlob.lineStyle(2.6 / zoom, 0xfff3c4, 1);
+    this.herdBlob.strokeEllipse(centre.x, centre.y, rx * 2, ry * 2);
+    this.herdMarker.setScale(1 / zoom);
+    this.herdMarker.setPosition(centre.x, centre.y - ry - 6 / zoom);
+    this.herdMarker.setText(`${this.state.herd.headCount} head`);
+  }
+
   private refreshHerdLabel(): void {
     if (!this.herdLabel) return;
     this.herdLabel.setText(`${this.state.herd.headCount} head`);
-    this.herdLabel.setVisible(!this.selected && !this.captureHideHerdLabel);
+    this.herdLabel.setVisible(!this.selected && !this.captureHideHerdLabel && !this.herdIsAMarker());
     let top = this.herdVisual.y;
     for (const offset of this.herdOffsets) top = Math.min(top, this.herdVisual.y + offset.y);
     const center = this.mobCenter();
@@ -4579,8 +4606,13 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private placeIndividualAnimals(time: number): void {
-    if (this.captureHideCattle) {
+    if (this.captureHideCattle || this.herdIsAMarker()) {
       this.ensureCowCount(0);
+      this.herdOffsets = [];
+      const tile = this.captureHerdTile ?? herdWorldTile(this.state);
+      const point = tileCenter(tile.x, tile.y, this.layout, this.groundTileW, this.groundTileH);
+      this.herdVisual.x = point.x;
+      this.herdVisual.y = point.y;
       return;
     }
     const placed = layoutAnimals(this.state, this.layout, this.groundTileW, this.groundTileH, time);
@@ -5014,6 +5046,56 @@ export class FarmScene extends Phaser.Scene {
     camera.centerOn((a.x + b.x) / 2, (a.y + b.y) / 2);
     this.clampScroll();
     this.syncMetreFrame();
+  }
+
+  /** Close, mid, and whole-farm frames so fences, gates, and the herd can be checked. */
+  private prepareZoomReadCapture(level: string): { ok: boolean; zoom: number } {
+    this.captureFreezeClock = true;
+    this.capturePin = null;
+    this.captureHideCattle = false;
+    this.captureHideHerdLabel = false;
+    this.setSpeed("pause");
+    this.hud.hideEventCard();
+    const hide = (id: string) => document.getElementById(id)?.setAttribute("hidden", "true");
+    hide("event-card");
+    hide("reading-card");
+    hide("rain-book");
+    hide("flow-tutorial");
+    const camera = this.cameras.main;
+    this.refreshZoomLimits();
+    const herd = tileCenter(
+      herdWorldTile(this.state).x,
+      herdWorldTile(this.state).y,
+      this.layout,
+      this.groundTileW,
+      this.groundTileH,
+    );
+    if (level === "far") {
+      camera.setZoom(this.minZoom);
+      const mid = tileCenter(this.state.width / 2, this.state.height / 2, this.layout, this.groundTileW, this.groundTileH);
+      camera.centerOn(mid.x, mid.y);
+    } else if (level === "mid") {
+      const zoom = clampZoom(Math.max(this.minZoom * 6, 0.055), this.minZoom, Math.min(this.maxZoom, 0.12));
+      camera.setZoom(zoom);
+      camera.centerOn(herd.x, herd.y);
+    } else if (level === "close") {
+      const segments = collectFenceSegments(this.state, this.layout, this.state.herd.campId, false);
+      const gate = segments
+        .filter((segment) => segment.gate)
+        .map((segment) => ({ x: (segment.x1 + segment.x2) / 2, y: (segment.y1 + segment.y2) / 2 }))
+        .sort((a, b) => Math.hypot(a.x - herd.x, a.y - herd.y) - Math.hypot(b.x - herd.x, b.y - herd.y))[0];
+      const focus = gate ?? herd;
+      camera.setZoom(clampZoom(0.48, this.minZoom, this.maxZoom));
+      camera.centerOn(focus.x, focus.y);
+    } else {
+      return { ok: false, zoom: camera.zoom };
+    }
+    this.clampScroll();
+    this.placeHerd(0);
+    this.redrawFences();
+    this.syncMetreFrame();
+    this.syncHud();
+    return { ok: true, zoom: camera.zoom };
   }
 
   /**

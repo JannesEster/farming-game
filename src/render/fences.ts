@@ -531,14 +531,21 @@ function strokeDoubleWire(
 
 /** Below this zoom the mid stroke is not used, and a world-pixel line shrinks under a screen pixel. */
 export const FENCE_FAR_MAX_ZOOM = 0.02;
-/** Inner fences at the whole-farm view. On-screen pixels, not world pixels. */
-export const FENCE_FAR_INNER_PX = 1.15;
+/** Inner fences. On-screen pixels, held at every zoom. assumption, tune by eye, not sourced. */
+export const FENCE_FAR_INNER_PX = CONFIG.view.minFenceScreenPx;
 /** Outer perimeter, a little heavier than the inner wires. */
-export const FENCE_FAR_BOUNDARY_PX = 1.5;
-/** Opening left at a gate so the 3.6 m gap still reads when the farm fills the screen. */
-export const FENCE_FAR_GAP_PX = 4.5;
-/** Light tick across that opening. */
-export const FENCE_FAR_TICK_PX = 4;
+export const FENCE_FAR_BOUNDARY_PX = CONFIG.view.minBoundaryScreenPx;
+/** Gate bar thickness, on-screen pixels. */
+export const FENCE_FAR_GATE_PX = CONFIG.view.minGateScreenPx;
+/** Opening left at a gate so the gap still reads when the farm fills the screen. */
+export const FENCE_FAR_GAP_PX = CONFIG.view.gateGapScreenPx;
+/** Gate bar length across the opening, on-screen pixels. */
+export const FENCE_FAR_TICK_PX = CONFIG.view.gateTickScreenPx;
+
+/** World-pixel width that lands at `screenPx` after the camera zoom. */
+export function fenceWorldWidth(zoom: number, screenPx: number): number {
+  return screenPx / Math.max(zoom, 0.0004);
+}
 
 export type FarFenceStroke = {
   x1: number;
@@ -635,7 +642,7 @@ export function farFenceStrokes(segments: FenceSegment[], zoom: number): FarFenc
       y1: cy - py * (tick / 2),
       x2: cx + px * (tick / 2),
       y2: cy + py * (tick / 2),
-      screenPx: FENCE_FAR_INNER_PX,
+      screenPx: FENCE_FAR_GATE_PX,
       role: "gate",
       kind: gate.kind,
     });
@@ -643,16 +650,58 @@ export function farFenceStrokes(segments: FenceSegment[], zoom: number): FarFenc
   return strokes;
 }
 
-/** Thin dark camp lines for the whole-farm view. Gates are a gap plus a light tick. */
+/** Camp lines that stay at least a couple of pixels on screen. Gates are a dark bar with a light core. */
 export function drawFarFences(graphics: Phaser.GameObjects.Graphics, segments: FenceSegment[], zoom: number): void {
   graphics.clear();
   const z = Math.max(zoom, 0.0004);
   for (const stroke of farFenceStrokes(segments, zoom)) {
-    const color = stroke.role === "gate" ? 0xf4ead8 : stroke.kind === "selected" ? palette.fenceSelected : 0x1a120e;
-    graphics.lineStyle(stroke.screenPx / z, color, stroke.role === "gate" ? 0.92 : 0.96);
+    const ink = stroke.kind === "selected" ? palette.fenceSelected : palette.fenceInk;
+    if (stroke.role === "gate") {
+      graphics.lineStyle(stroke.screenPx / z, palette.fenceInk, 1);
+      graphics.beginPath();
+      graphics.moveTo(stroke.x1, stroke.y1);
+      graphics.lineTo(stroke.x2, stroke.y2);
+      graphics.strokePath();
+      graphics.lineStyle((stroke.screenPx * 0.42) / z, palette.fenceGateBar, 1);
+      graphics.beginPath();
+      graphics.moveTo(stroke.x1, stroke.y1);
+      graphics.lineTo(stroke.x2, stroke.y2);
+      graphics.strokePath();
+      continue;
+    }
+    graphics.lineStyle(stroke.screenPx / z, ink, 1);
     graphics.beginPath();
     graphics.moveTo(stroke.x1, stroke.y1);
     graphics.lineTo(stroke.x2, stroke.y2);
+    graphics.strokePath();
+  }
+}
+
+function drawGateBars(graphics: Phaser.GameObjects.Graphics, segments: FenceSegment[], zoom: number): void {
+  const z = Math.max(zoom, 0.0004);
+  const reach = FENCE_FAR_TICK_PX / z;
+  for (const gate of segments) {
+    if (!gate.gate) continue;
+    const dx = gate.x2 - gate.x1;
+    const dy = gate.y2 - gate.y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const px = -dy / len;
+    const py = dx / len;
+    const cx = (gate.x1 + gate.x2) / 2;
+    const cy = (gate.y1 + gate.y2) / 2;
+    const x1 = cx - px * (reach / 2);
+    const y1 = cy - py * (reach / 2);
+    const x2 = cx + px * (reach / 2);
+    const y2 = cy + py * (reach / 2);
+    graphics.lineStyle(FENCE_FAR_GATE_PX / z, palette.fenceInk, 1);
+    graphics.beginPath();
+    graphics.moveTo(x1, y1);
+    graphics.lineTo(x2, y2);
+    graphics.strokePath();
+    graphics.lineStyle((FENCE_FAR_GATE_PX * 0.42) / z, palette.fenceGateBar, 1);
+    graphics.beginPath();
+    graphics.moveTo(x1, y1);
+    graphics.lineTo(x2, y2);
     graphics.strokePath();
   }
 }
@@ -661,12 +710,13 @@ export function drawFences(
   graphics: Phaser.GameObjects.Graphics,
   segments: FenceSegment[],
   cameraZoom = 1,
-  options: { posts?: boolean; single?: boolean } = {},
+  options: { posts?: boolean; single?: boolean; gates?: boolean } = {},
 ): void {
   graphics.clear();
+  const paintGates = options.gates !== false;
   if (options.single) {
-    const width = 1.6 / Math.max(cameraZoom, 0.004);
-    graphics.lineStyle(width, 0x2a241c, 0.95);
+    const width = fenceWorldWidth(cameraZoom, FENCE_FAR_INNER_PX);
+    graphics.lineStyle(width, palette.fenceInk, 1);
     for (const segment of segments) {
       if (segment.gate) continue;
       graphics.beginPath();
@@ -674,6 +724,7 @@ export function drawFences(
       graphics.lineTo(segment.x2, segment.y2);
       graphics.strokePath();
     }
+    if (paintGates) drawGateBars(graphics, segments, cameraZoom);
     return;
   }
   const zoomBoost = Math.max(1, 0.62 / Math.max(cameraZoom, 0.12));
@@ -693,22 +744,23 @@ export function drawFences(
 
   drawBucket(
     buckets.inner,
-    Math.max(1.1, CONFIG.view.fencePx * 0.65 * zoomBoost),
-    palette.fenceWire,
-    0.74,
+    Math.max(fenceWorldWidth(cameraZoom, FENCE_FAR_INNER_PX), CONFIG.view.fencePx * 0.65 * zoomBoost),
+    palette.fenceInk,
+    1,
   );
   drawBucket(
     buckets.boundary,
-    Math.max(1.3, CONFIG.view.fenceBoundaryPx * 0.7 * zoomBoost),
-    palette.fenceStrong,
-    0.84,
+    Math.max(fenceWorldWidth(cameraZoom, FENCE_FAR_BOUNDARY_PX), CONFIG.view.fenceBoundaryPx * 0.7 * zoomBoost),
+    palette.fenceInk,
+    1,
   );
   drawBucket(
     buckets.selected,
-    CONFIG.view.fenceSelectedPx * 0.85 * zoomBoost,
+    Math.max(fenceWorldWidth(cameraZoom, FENCE_FAR_BOUNDARY_PX), CONFIG.view.fenceSelectedPx * 0.85 * zoomBoost),
     palette.fenceSelected,
-    0.95,
+    1,
   );
+  if (paintGates) drawGateBars(graphics, segments, cameraZoom);
 
   if (options.posts === false) return;
   const spacing = FENCE_POST_SPACING_METRES * PIXELS_PER_METRE;

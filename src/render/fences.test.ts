@@ -7,6 +7,7 @@ import type { GameState } from "../sim/types";
 import {
   FENCE_FAR_BOUNDARY_PX,
   FENCE_FAR_GAP_PX,
+  FENCE_FAR_GATE_PX,
   FENCE_FAR_INNER_PX,
   FENCE_FAR_TICK_PX,
   FENCE_VIEW_BUCKET_PX,
@@ -335,14 +336,16 @@ describe("gate openings stay on their own wire", () => {
 });
 
 describe("far zoom fence lines", () => {
-  it("keeps inner lines near 1 px and the perimeter a little heavier", () => {
+  it("keeps inner lines at least about 2 px and the perimeter a little heavier", () => {
     const zoom = 0.012;
     expect(farFenceLineWidth(zoom, FENCE_FAR_INNER_PX) * zoom).toBeCloseTo(FENCE_FAR_INNER_PX, 5);
     expect(farFenceLineWidth(zoom, FENCE_FAR_BOUNDARY_PX) * zoom).toBeCloseTo(FENCE_FAR_BOUNDARY_PX, 5);
-    expect(FENCE_FAR_INNER_PX).toBeGreaterThanOrEqual(1);
-    expect(FENCE_FAR_INNER_PX).toBeLessThanOrEqual(1.5);
+    expect(FENCE_FAR_INNER_PX).toBeGreaterThanOrEqual(2);
     expect(FENCE_FAR_BOUNDARY_PX).toBeGreaterThan(FENCE_FAR_INNER_PX);
-    expect(FENCE_FAR_BOUNDARY_PX).toBeLessThanOrEqual(1.5);
+    for (const sample of [0.2, 0.08, 0.02, 0.008]) {
+      expect(farFenceLineWidth(sample, FENCE_FAR_INNER_PX) * sample).toBeGreaterThanOrEqual(2);
+      expect(farFenceLineWidth(sample, FENCE_FAR_BOUNDARY_PX) * sample).toBeGreaterThanOrEqual(2);
+    }
 
     const state = generateFarm(3300);
     const layout = farmLayout(state);
@@ -366,6 +369,8 @@ describe("far zoom fence lines", () => {
     const ticks = strokes.filter((stroke) => stroke.role === "gate");
     const gates = segments.filter((segment) => segment.gate);
     expect(ticks).toHaveLength(gates.length);
+    for (const tick of ticks) expect(tick.screenPx).toBeGreaterThanOrEqual(FENCE_FAR_GATE_PX);
+    expect(FENCE_FAR_GATE_PX).toBeGreaterThanOrEqual(2);
     const halfGap = FENCE_FAR_GAP_PX / 2;
     for (const gate of gates) {
       const cx = (gate.x1 + gate.x2) / 2;

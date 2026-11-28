@@ -14,6 +14,10 @@ export const palette = {
   grassBrown: 0x8a4c22,
   fence: 0x5a5248,
   fenceWire: 0x4a443c,
+  /** Near-black wire. Reads on red sand and on green veld. */
+  fenceInk: 0x140c08,
+  /** Light bar across a gate opening. */
+  fenceGateBar: 0xfff6d0,
   fenceStrong: 0x625850,
   fenceSelected: 0xc89038,
   fencePost: 0x5c3a22,
