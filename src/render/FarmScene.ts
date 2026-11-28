@@ -6,6 +6,7 @@ import { COPY } from "../sim/format";
 import { clamp } from "../sim/math";
 import { getGameFlow } from "../integration/GameFlowService";
 import { hasBlockingCard, popNextCard } from "../sim/story";
+import { droughtChoiceBody, mayForageBudget, mayForageCardBody, restWarningBody } from "../sim/yearFeel";
 import { presentStoryCard } from "./storyPresent";
 import { formatClockTime, isDaylightHour, nightOverlayAlpha, realMsPerGameHour, sceneDaylightBlend, tickRanchClock } from "../sim/clock";
 import { elementVisible, isSimBlocked as simClockBlocked, speedMultiplier, transitMayAdvance } from "./simGate";
@@ -285,6 +286,7 @@ export class FarmScene extends Phaser.Scene {
   private homesteadGlow?: Phaser.GameObjects.Graphics;
   private homesteadLight?: { x: number; y: number };
   private captureHideHerdLabel = false;
+  private captureHideCattle = false;
   private captureLightingHour: number | null = null;
   private captureFreezeClock = false;
   private captureSkipCowCull = false;
@@ -1742,6 +1744,7 @@ export class FarmScene extends Phaser.Scene {
       prepareHandlingCapture: () => this.prepareHandlingCapture(),
       prepareOverviewCapture: () => this.prepareOverviewCapture(),
       prepareHomesteadCapture: () => this.prepareHomesteadCapture(),
+      prepareYearFeelCapture: (mode: string) => this.prepareYearFeelCapture(mode),
       prepareHomesteadAtDefaultZoom: () => this.prepareHomesteadAtDefaultZoom(),
       prepareRoadWideCapture: () => this.prepareRoadWideCapture(),
       prepareFenceLineCapture: () => this.prepareFenceLineCapture(),
@@ -1901,6 +1904,7 @@ export class FarmScene extends Phaser.Scene {
     }
     if (this.capturePin) {
       this.applyCapturePin();
+      this.drawRain(time);
       return;
     }
     this.applyPanInertia(delta);
@@ -2355,7 +2359,7 @@ export class FarmScene extends Phaser.Scene {
       label.setScale(nameScale);
     }
     if (this.herdMarker) {
-      const farHerd = zoom < 0.12;
+      const farHerd = zoom < 0.12 && !this.captureHideHerdLabel;
       this.herdMarker.setVisible(farHerd);
       if (this.herdMarker.input) this.herdMarker.input.enabled = farHerd;
       if (farHerd) {
@@ -4575,6 +4579,10 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private placeIndividualAnimals(time: number): void {
+    if (this.captureHideCattle) {
+      this.ensureCowCount(0);
+      return;
+    }
     const placed = layoutAnimals(this.state, this.layout, this.groundTileW, this.groundTileH, time);
     this.ensureCowCount(placed.length);
     const anchor = tileCenter(
@@ -4991,21 +4999,192 @@ export class FarmScene extends Phaser.Scene {
     this.ring.setDepth(19 + tile.x + tile.y);
   }
 
+  private frameCampForCapture(campId: number): void {
+    const camp = this.state.camps.find((item) => item.id === campId);
+    if (!camp?.rect) return;
+    const { x, y, w, h } = camp.rect;
+    const a = tileCenter(x, y, this.layout, this.groundTileW, this.groundTileH);
+    const b = tileCenter(x + w, y + h, this.layout, this.groundTileW, this.groundTileH);
+    const camera = this.cameras.main;
+    const span = Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y) * 1.15, 120);
+    const raw = (Math.min(camera.width, camera.height) * 0.72) / span;
+    const zoom = clampZoom(raw, this.minZoom, this.maxZoom);
+    this.capturePin = null;
+    camera.setZoom(zoom);
+    camera.centerOn((a.x + b.x) / 2, (a.y + b.y) / 2);
+    this.clampScroll();
+    this.syncMetreFrame();
+  }
+
+  /**
+   * Still frames for the year you can feel. The clock stays paused and no centre modal is opened.
+   */
+  private prepareYearFeelCapture(mode: string): { ok: boolean; line: string } {
+    this.captureFreezeClock = true;
+    this.capturePin = null;
+    this.captureHideCattle = false;
+    this.captureHideHerdLabel = false;
+    this.setSpeed("pause");
+    this.hud.hideEventCard();
+    this.selected = false;
+    const hide = (id: string) => document.getElementById(id)?.setAttribute("hidden", "true");
+    hide("event-card");
+    hide("reading-card");
+    hide("rain-book");
+    hide("flow-tutorial");
+    hide("daily-goal-strip");
+    const herdSheet = document.getElementById("herd-sheet");
+    if (herdSheet) herdSheet.hidden = true;
+    const herdCamp = this.state.camps.find((camp) => camp.id === this.state.herd.campId) ?? this.state.camps[0];
+    const other = this.state.camps.find((camp) => camp.id !== herdCamp?.id);
+    const paintCover = (camp: typeof herdCamp, fraction: number, moisture: number) => {
+      if (!camp) return;
+      camp.standingDmKgPerHa = camp.peakDmKgPerHa * fraction;
+      camp.soilMoistureMm = moisture;
+    };
+    if (mode === "storm") {
+      this.state.date = { ...this.state.date, month: 11, day: 3, hour: 11 };
+      this.state.todayRainMm = 28;
+      this.state.seasonRainMm = 28;
+      this.state.rainLog = [{ year: this.state.date.year, month: 11, day: 2, mm: 28 }];
+      this.state.lastUsefulRain = { year: this.state.date.year, month: 11, day: 2 };
+      paintCover(herdCamp, 0.7, 22);
+      this.prepareHomesteadCapture();
+      this.capturePin = null;
+    } else if (mode === "rainbook") {
+      this.state.date = { ...this.state.date, month: 11, day: 4, hour: 8 };
+      this.state.todayRainMm = 0;
+      this.state.seasonRainMm = 34;
+      this.state.rainLog = [
+        { year: this.state.date.year, month: 11, day: 1, mm: 6 },
+        { year: this.state.date.year, month: 11, day: 2, mm: 12 },
+        { year: this.state.date.year, month: 11, day: 3, mm: 22 },
+      ];
+      this.state.lastUsefulRain = { year: this.state.date.year, month: 11, day: 3 };
+      this.prepareHomesteadCapture();
+      this.capturePin = null;
+      this.syncHud();
+      this.hud.openRainBook();
+    } else if (mode === "wet" && herdCamp) {
+      this.state.date = { ...this.state.date, month: 11, day: 4, hour: 9 };
+      this.state.todayRainMm = 0;
+      this.state.seasonRainMm = 28;
+      this.state.rainLog = [{ year: this.state.date.year, month: 11, day: 3, mm: 28 }];
+      paintCover(herdCamp, 0.55, 22);
+      herdCamp.restOwedAfterRain = true;
+      herdCamp.restDaysAfterRain = 1;
+      this.frameCampForCapture(herdCamp.id);
+    } else if (mode === "flush" && herdCamp) {
+      this.state.date = { ...this.state.date, month: 12, day: 2, hour: 10 };
+      this.state.todayRainMm = 0;
+      this.state.seasonRainMm = 70;
+      this.state.rainLog = [{ year: this.state.date.year, month: 11, day: 18, mm: 24 }];
+      paintCover(herdCamp, 0.98, 4);
+      herdCamp.restDays = CONFIG.pasture.fullRestDays;
+      herdCamp.restDaysAfterRain = 21;
+      herdCamp.restOwedAfterRain = true;
+      if (other) paintCover(other, 0.3, 0);
+      this.state.herd.campId = other?.id ?? herdCamp.id;
+      this.captureHideCattle = true;
+      this.captureHideHerdLabel = true;
+      this.frameCampForCapture(herdCamp.id);
+    } else if (mode === "dry") {
+      this.state.date = { ...this.state.date, month: 9, day: 2, hour: 11 };
+      this.state.todayRainMm = 0;
+      this.state.seasonRainMm = 0;
+      this.state.rainLog = [];
+      this.state.lastUsefulRain = null;
+      for (const camp of this.state.camps) paintCover(camp, 0.2, 0);
+      this.prepareFarmMapCapture();
+      this.capturePin = null;
+    } else if (mode === "contrast" && herdCamp && other) {
+      this.state.date = { ...this.state.date, month: 10, day: 2, hour: 11 };
+      this.state.todayRainMm = 0;
+      paintCover(herdCamp, 0.16, 0);
+      paintCover(other, 0.96, 2);
+      for (const camp of this.state.camps) {
+        if (camp.id !== herdCamp.id && camp.id !== other.id) paintCover(camp, 0.45, 0);
+      }
+      this.prepareFarmMapCapture();
+      this.capturePin = null;
+    } else if (mode === "may") {
+      this.state.date = { ...this.state.date, month: 5, day: 2, hour: 9 };
+      this.state.todayRainMm = 0;
+      const budget = mayForageBudget(this.state.camps, this.state.herd);
+      this.prepareFarmMapCapture();
+      this.capturePin = null;
+      this.syncHud();
+      this.hud.showReading("May forage budget", mayForageCardBody(budget));
+    } else if (mode === "rest" && herdCamp) {
+      this.state.date = { ...this.state.date, month: 11, day: 5, hour: 10 };
+      this.state.todayRainMm = 0;
+      this.state.seasonRainMm = 28;
+      this.state.rainLog = [{ year: this.state.date.year, month: 11, day: 4, mm: 18 }];
+      paintCover(herdCamp, 0.62, 16);
+      herdCamp.restOwedAfterRain = true;
+      herdCamp.restDaysAfterRain = 2;
+      this.frameCampForCapture(herdCamp.id);
+      this.syncHud();
+      this.hud.showReading("Rest this camp", restWarningBody(herdCamp));
+    } else if (mode === "season") {
+      this.state.date = { ...this.state.date, month: 11, day: 2, hour: 8 };
+      this.state.todayRainMm = 0;
+      this.state.seasonRainMm = 14;
+      this.state.rainLog = [{ year: this.state.date.year, month: 11, day: 1, mm: 14 }];
+      for (const camp of this.state.camps) {
+        const held = camp.id === this.state.herd.campId;
+        paintCover(camp, held ? 0.4 : 0.82, held ? 6 : 14);
+      }
+      this.prepareFarmMapCapture();
+      this.capturePin = null;
+    } else if (mode === "drought") {
+      this.state.date = { ...this.state.date, month: 2, day: 10, hour: 9 };
+      this.state.todayRainMm = 0;
+      this.state.seasonRainMm = 20;
+      this.state.rainLog = [{ year: this.state.date.year - 1, month: 12, day: 4, mm: 8 }];
+      if (this.state.story) this.state.story.drought.choicePending = "sell_down";
+      if (other) paintCover(other, 0.9, 0);
+      if (herdCamp) paintCover(herdCamp, 0.28, 0);
+      this.prepareFarmMapCapture();
+      this.capturePin = null;
+      this.syncHud();
+      this.hud.showReading("Drought building", droughtChoiceBody(this.state));
+      hide("event-card");
+    } else {
+      return { ok: false, line: mode };
+    }
+    this.syncHud();
+    this.syncMetreFrame();
+    const line = document.getElementById("year-line")?.textContent ?? "";
+    return { ok: true, line };
+  }
+
   private drawRain(time: number): void {
     this.rain.clear();
     const mm = this.state.todayRainMm;
     if (mm <= 0) return;
-    const count = Math.min(CONFIG.view.rainDropCap, Math.round(8 + mm));
-    const width = this.cameras.main.width;
-    const height = this.cameras.main.height;
-    this.rain.lineStyle(2, 0xc5dce8, 0.45);
-    const drift = this.reduceMotion ? 0 : time * 0.08;
+    const camera = this.cameras.main;
+    const width = camera.width;
+    const height = camera.height;
+    const zoom = camera.zoom || 1;
+    // Screen-space graphics still sit inside the camera zoom. Undo it so the storm fills the view.
+    this.rain.setScale(1 / zoom);
+    this.rain.setPosition((width / 2) * (1 - 1 / zoom), (height / 2) * (1 - 1 / zoom));
+    this.rain.fillStyle(0x9ec0d4, 0.22);
+    this.rain.fillRect(0, 0, width, height);
+    this.rain.fillStyle(0x1b2c3d, 0.62);
+    this.rain.fillEllipse(width * 0.48, height * 0.16, width * 0.92, height * 0.46);
+    this.rain.fillStyle(0x101c28, 0.55);
+    this.rain.fillEllipse(width * 0.34, height * 0.1, width * 0.55, height * 0.28);
+    const count = Math.min(CONFIG.view.stormStreakCap, Math.round(70 + mm * 3));
+    this.rain.lineStyle(3.2, 0xf4fbff, 1);
+    const drift = this.reduceMotion ? 36 : (time * 0.14) % (height + 36);
     this.rain.beginPath();
     for (let i = 0; i < count; i += 1) {
-      const x = (i * 97 + 13) % Math.max(1, width);
-      const y = (i * 53 + drift) % (height + 24) - 12;
+      const x = (i * 53 + 17) % Math.max(1, width);
+      const y = (i * 29 + drift) % (height + 28) - 14;
       this.rain.moveTo(x, y);
-      this.rain.lineTo(x + 3, y + 11);
+      this.rain.lineTo(x - 7, y + 20);
     }
     this.rain.strokePath();
   }

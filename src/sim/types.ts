@@ -63,6 +63,14 @@ export type HerdTransit = {
 /** Axis-aligned camp in world metres. The right and bottom edges are exclusive. */
 export type CampRect = { x: number; y: number; w: number; h: number };
 
+/** One line in the homestead rain book. The date is the day the rain fell. */
+export type RainLogEntry = {
+  year: number;
+  month: number;
+  day: number;
+  mm: number;
+};
+
 export type CampState = {
   id: number;
   name: string;
@@ -71,6 +79,13 @@ export type CampState = {
   standingDmKgPerHa: number;
   soilMoistureMm: number;
   restDays: number;
+  /**
+   * Empty days counted since the last useful rain, while this camp still owes a rest.
+   * Missing on older saves until migration.
+   */
+  restDaysAfterRain?: number;
+  /** True after a useful rain until the camp has been empty for fullRestDays. */
+  restOwedAfterRain?: boolean;
   /** Sample points (corners and anchor). Membership for a metre camp is `rect`, not this list. */
   tiles: TilePoint[];
   anchor: TilePoint;
@@ -109,6 +124,10 @@ export type GameState = {
   notifications?: NotificationState;
   seasonRainMm: number;
   todayRainMm: number;
+  /** Homestead rain book. Date and mm. Older saves omit it until migration. */
+  rainLog?: RainLogEntry[];
+  /** Day of the last fall at or above usefulRainMm. Null until one falls. */
+  lastUsefulRain?: { year: number; month: number; day: number } | null;
   cashNad: number;
   width: number;
   height: number;

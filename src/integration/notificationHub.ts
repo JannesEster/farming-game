@@ -27,20 +27,22 @@ export function deliverCard(
   sink: HudNotificationSink,
 ): void {
   const notes = ensureNotifications(state);
-  if (card.kind === "critical" || card.kind === "drought") {
+  if (card.kind === "critical") {
     sink.pushCritical(card.title, card.body);
     return;
   }
-  if (card.kind === "summary" || card.kind === "season" || card.kind === "warning") {
+  if (card.kind === "summary" || card.kind === "season" || card.kind === "warning" || card.kind === "drought") {
     const item = emitNotification(notes, {
       id: card.id,
       tier: card.kind === "warning" ? "letter" : "letter",
       kind:
         card.kind === "summary"
           ? "month_summary"
-          : card.kind === "season"
-            ? "season"
-            : "feed_warning",
+          : card.kind === "drought"
+            ? "drought_choice"
+            : card.kind === "season"
+              ? "season"
+              : "feed_warning",
       title: card.title,
       body: card.body,
       priority: card.priority,

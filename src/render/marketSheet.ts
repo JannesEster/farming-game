@@ -10,6 +10,7 @@ import { beginSaleConvoy, saleConvoyActive } from "../sim/sales";
 import { repairStuckTransit } from "../sim/transit";
 import { isDaylightHour } from "../sim/clock";
 import { resolveDroughtChoice } from "../sim/drought";
+import { greenerCampLines } from "../sim/yearFeel";
 import { formatHudMoney, formatMoney } from "../sim/format";
 import { hireFarmhand, setFarmhandJob } from "../sim/workers";
 import type { DroughtChoiceId, SaleChannel, SaleLine, StockClass } from "../sim/storyTypes";
@@ -150,7 +151,10 @@ export function mountMarketSheet(options: {
     const drought = state.story?.drought;
     if (drought?.choicePending) {
       droughtBox.hidden = false;
-      droughtText.textContent = "Drought choice pending.";
+      const cover = greenerCampLines(state);
+      droughtText.textContent = cover.length
+        ? `Drought choice. Move toward rested grass: ${cover.join("; ")}.`
+        : "Drought choice. Sell tollies, buy feed, or move to a rested camp.";
     } else {
       droughtBox.hidden = true;
     }

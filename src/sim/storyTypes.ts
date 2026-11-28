@@ -161,6 +161,8 @@ export type StoryState = {
   demandYesterdayKg: number;
   /** Camp that already showed the move warning for this stay. */
   moveWarnCampId: number | null;
+  /** Camp that already showed the rest-after-rain letter for this stay. */
+  restWarnCampId?: number | null;
   /** Camp that already showed the water warning for this stay. */
   thirstWarnCampId: number | null;
   costLevers?: CostLevers;

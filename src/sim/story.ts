@@ -8,6 +8,7 @@ import {
 } from "./cattleClasses";
 import { applyStarvationDay, feedContextForHerd, queueHusbandryWarnings } from "./consequences";
 import { tickDrought, droughtWatchScore } from "./drought";
+import { seasonStage, tickYearFeel } from "./yearFeel";
 import {
   defaultCostLevers,
   defaultInfrastructureWear,
@@ -25,14 +26,7 @@ import { tickPeopleSchedule } from "./people";
 import { tickFarmhand } from "./workers";
 import { tickHerdWaterDay } from "./water";
 import { isLastGameDayOfMonth } from "./calendar";
-import {
-  closeMonth,
-  tryCalving,
-  tryWeaning,
-  weeklyDigest,
-  cyclePhase,
-  cyclePhaseLabel,
-} from "./seasonCycle";
+import { closeMonth, tryCalving, tryWeaning, weeklyDigest } from "./seasonCycle";
 import type { GameState } from "./types";
 import type { HerdComposition, StoryState } from "./storyTypes";
 
@@ -94,7 +88,7 @@ export function initStoryPeople(state: GameState, config: GameConfig = CONFIG): 
   state.story.herdMoveQueue ??= null;
 }
 
-const BLOCKING_CARD_KINDS = new Set(["drought", "critical"]);
+const BLOCKING_CARD_KINDS = new Set(["critical"]);
 
 /** A card the player must read before the clock may move on. Weekly notes stay as toasts. */
 export function hasBlockingCard(state: GameState): boolean {
@@ -142,6 +136,7 @@ export function afterFeedDay(
   tryCalving(state, config);
   tryWeaning(state, config);
   tickDrought(state, config);
+  tickYearFeel(state, config);
   const farmNote = tickFarmhand(state, config);
   if (farmNote) state.story.lastDailyNote = farmNote;
   tickPlayerEvents(state, config);
@@ -151,10 +146,9 @@ export function afterFeedDay(
 }
 
 export function seasonLabelForHud(state: GameState, config: GameConfig = CONFIG): string {
-  const phase = cyclePhase(state.date, config);
-  let label = cyclePhaseLabel(phase);
+  let label = seasonStage(state.date).label;
   if (state.story?.drought.watchActive && droughtWatchScore(state, config) > 0.35) {
-    label += " · drought watch";
+    label += ". Drought watch";
   }
   return label;
 }

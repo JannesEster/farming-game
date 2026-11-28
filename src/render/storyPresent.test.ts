@@ -32,6 +32,17 @@ describe("presentStoryCard", () => {
     expect(seen).toEqual(["card:Month in review:August is closed."]);
   });
 
+  it("routes a drought choice to the letter rail", () => {
+    const seen: string[] = [];
+    presentStoryCard(state, { ...card("drought"), id: "drought-letter", title: "Drought building", body: "Move the herd." }, {
+      showEventCard: () => seen.push("card"),
+      setHint: () => seen.push("hint"),
+      pushLetter: (item) => seen.push(`letter:${item.title}`),
+      syncAlerts: () => {},
+    });
+    expect(seen).toEqual(["letter:Drought building"]);
+  });
+
   it("keeps a weekly note as one hint", () => {
     const seen: string[] = [];
     presentStoryCard(state, card("weekly"), {

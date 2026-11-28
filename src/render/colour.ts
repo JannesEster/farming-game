@@ -1,11 +1,10 @@
-import { isRainyMonth } from "../sim/calendar";
 import { usesMetreCoords } from "../sim/metreFarm";
 import type { GameState } from "../sim/types";
 import { TILE_HOMESTEAD, TILE_OUTSIDE } from "../sim/types";
 import { grazeableFraction } from "../sim/pasture";
 import { CONFIG } from "../sim/config";
 import { clamp } from "../sim/math";
-import { grassTint, palette, shade, toCss } from "./palette";
+import { campFillColour, grassTint, palette, shade, toCss } from "./palette";
 
 import { SPRITE_KEYS } from "./sprites";
 
@@ -90,8 +89,8 @@ export function tileTint(state: GameState, x: number, y: number, track: Set<stri
   if (kind === "yard") return shade(palette.sandLight, x, y, CONFIG.view.tileShadeSpread);
   const camp = state.camps.find((item) => item.id === state.campIds[y * state.width + x]);
   if (!camp) return palette.sand;
-  const dry = !isRainyMonth(state.date.month, CONFIG);
-  return shade(grassTint(grazeableFraction(camp), dry), x, y, CONFIG.view.tileShadeSpread);
+  const wet = camp.soilMoistureMm / Math.max(1, CONFIG.rain.moistureMmForFullGrowth);
+  return shade(grassTint(grazeableFraction(camp), wet), x, y, CONFIG.view.tileShadeSpread);
 }
 
 export function paintedTileRotation(x: number, y: number): number {
@@ -162,15 +161,15 @@ export function paintedGroundStamps(
   if (!camp) return [dryBase];
 
   const frac = grazeableFraction(camp);
-  const rainy = isRainyMonth(state.date.month, CONFIG);
+  const wet = camp.soilMoistureMm / Math.max(1, CONFIG.rain.moistureMmForFullGrowth);
   const field = veldCoverField(x, y, camp.id * 13.7 + state.seed * 0.001);
-  const campWide = clamp(frac * 0.72 + field * 0.18 + (rainy ? 0.06 : -0.02), 0, 1);
-  const cover = clamp(frac * 0.42 + field * 0.38 + (rainy ? 0.08 : -0.04), 0, 1);
+  const campWide = clamp(frac * 0.72 + field * 0.18 + wet * 0.08, 0, 1);
+  const cover = clamp(frac * 0.42 + field * 0.38 + wet * 0.1, 0, 1);
   const stamps: PaintedGroundStamp[] = [
     {
       ...dryBase,
       alpha: clamp(1.05 - campWide * 0.35, 0.72, 1),
-      tint: grassTint(frac, !rainy),
+      tint: grassTint(frac, wet),
     },
   ];
 
@@ -219,10 +218,9 @@ export function paintMinimap(canvas: HTMLCanvasElement, state: GameState): void 
     const ch = canvas.height / state.height;
     ctx.fillStyle = toCss(palette.sand);
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    const fills = [palette.grassBrown, palette.grassGold, palette.sandLight, palette.sandDark];
-    state.camps.forEach((camp, index) => {
+    state.camps.forEach((camp) => {
       if (!camp.rect) return;
-      ctx.fillStyle = toCss(fills[index % fills.length]);
+      ctx.fillStyle = toCss(campFillColour(grazeableFraction(camp), camp.soilMoistureMm));
       ctx.fillRect(camp.rect.x * cw, camp.rect.y * ch, Math.max(1, camp.rect.w * cw), Math.max(1, camp.rect.h * ch));
     });
     const camp = state.camps.find((item) => item.id === state.herd.campId);

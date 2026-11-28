@@ -76,6 +76,8 @@ export type GameConfig = {
     initialRestDaysMax: number;
     /** A. TODO tune. Opening camp is topped up to about this many days of grass when the camp can hold it. */
     openingMinGrassDays: number;
+    /** S: Kruger method, livestock lesson 1.4. Days from a May forage count through to about February. */
+    forageBudgetHorizonDays: number;
   };
   herd: {
     name: string;
@@ -221,6 +223,29 @@ export type GameConfig = {
     maxDailyRainMm: number;
     moistureMmForFullGrowth: number;
     moistureRetention: number;
+    /**
+     * assumption, tune by eye, not sourced.
+     * A fall at or above this starts the six week rest clock and counts as the last useful rain.
+     * Smaller falls still go in the rain book.
+     */
+    usefulRainMm: number;
+    /**
+     * assumption, tune by eye, not sourced.
+     * Ground reads wet while soil moisture is at or above this.
+     * Overnight retention is 0.88, so a solid storm stays visibly wet for about a day or two.
+     */
+    wetGroundMoistureMm: number;
+    /**
+     * assumption, tune by eye, not sourced.
+     * How many rain book lines a save keeps. Older lines drop off.
+     */
+    rainLogCap: number;
+    /**
+     * assumption, tune by eye, not sourced.
+     * Share of a full growth day's moisture before the lick nudge can call the veld green.
+     * Cover still has to reach grassColourMidpoint. This is not a new climate threshold.
+     */
+    greenVeldMoistureFraction: number;
   };
   transit: {
     kmPerTile: number;
@@ -313,6 +338,16 @@ export type GameConfig = {
     ringLinePx: number;
     labelSizePx: number;
     rainDropCap: number;
+    /** assumption, tune by eye, not sourced. Screen streaks drawn in a storm cell. */
+    stormStreakCap: number;
+    /** assumption, tune by eye, not sourced. Camp colour wash at close zoom, 0 to 1. */
+    campWashAlphaNear: number;
+    /** assumption, tune by eye, not sourced. Camp colour wash on the whole farm map, 0 to 1. */
+    campWashAlphaFar: number;
+    /** assumption, tune by eye, not sourced. How far high cover moves from gold toward the flush green. */
+    flushCoverMix: number;
+    /** assumption, tune by eye, not sourced. Extra pull toward flush green while the soil is moist. */
+    flushMoistureMix: number;
   };
 };
 
@@ -364,6 +399,8 @@ export const CONFIG: GameConfig = {
     bushyPeakFraction: 0.6,
     // S: NAU. About six weeks of rest in the growing season.
     fullRestDays: 42,
+    // S: Kruger method, livestock lesson 1.4. Plan from May through to about February.
+    forageBudgetHorizonDays: 270,
     // A. A camp that cattle have just left still grows. It reaches full speed after fullRestDays.
     restGrowthFloor: 0.7,
     // S: Reuben (Namibian farmer). Grass only recovers while a camp rests empty. Cattle in camp plough the veld.
@@ -552,6 +589,14 @@ export const CONFIG: GameConfig = {
     moistureMmForFullGrowth: 24,
     // A. Fraction of soil moisture kept overnight. A storm keeps feeding growth for days, then fades.
     moistureRetention: 0.88,
+    // assumption, tune by eye, not sourced. See GameConfig.rain.usefulRainMm.
+    usefulRainMm: 5,
+    // assumption, tune by eye, not sourced. See GameConfig.rain.wetGroundMoistureMm.
+    wetGroundMoistureMm: 12,
+    // assumption, tune by eye, not sourced. See GameConfig.rain.rainLogCap.
+    rainLogCap: 96,
+    // assumption, tune by eye, not sourced. See GameConfig.rain.greenVeldMoistureFraction.
+    greenVeldMoistureFraction: 0.35,
   },
 
   transit: {
@@ -653,6 +698,15 @@ export const CONFIG: GameConfig = {
     ringLinePx: 3,
     labelSizePx: 20,
     rainDropCap: 40,
+    // assumption, tune by eye, not sourced. Dense enough that a still frame reads as rain.
+    stormStreakCap: 150,
+    // assumption, tune by eye, not sourced. Strong enough to read green or brown over the sand texture.
+    campWashAlphaNear: 0.62,
+    campWashAlphaFar: 0.96,
+    // assumption, tune by eye, not sourced. See GameConfig.view.flushCoverMix.
+    flushCoverMix: 0.9,
+    // assumption, tune by eye, not sourced. See GameConfig.view.flushMoistureMix.
+    flushMoistureMix: 0.45,
   },
 };
 
