@@ -693,7 +693,7 @@ function wearGrass(runtime: Runtime, camp: CampState, agent: HerdAgent, dt: numb
   runtime.wear.set(key, Math.min(0.9, prev + HERD_MOTION_TUNING.grassWearPerHour * (dt / 3600)));
 }
 
-function stepGraze(state: GameState, runtime: Runtime, dt: number, config: GameConfig): void {
+function stepGraze(state: GameState, runtime: Runtime, clockDt: number, config: GameConfig, motionDt = clockDt): void {
   const members = herdMembers(state).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const agents: HerdAgent[] = [];
   for (const animal of members) {
@@ -722,8 +722,8 @@ function stepGraze(state: GameState, runtime: Runtime, dt: number, config: GameC
     const seen = inView(runtime, agent);
     agent.stride = (agent.stride + 1) % HERD_MOTION_TUNING.offscreenStride;
     const full = seen || agent.stride === 0;
-    agent.drinkUrge = Math.min(2.5, agent.drinkUrge + dt / drinkInterval);
-    if (full) agent.timer -= dt;
+    agent.drinkUrge = Math.min(2.5, agent.drinkUrge + clockDt / drinkInterval);
+    if (full) agent.timer -= motionDt;
 
     const camp = homeCamp(state, animal);
     if (animal.stockClass === "calf") {
@@ -775,15 +775,15 @@ function stepGraze(state: GameState, runtime: Runtime, dt: number, config: GameC
         : agent.mode === "graze"
           ? grazeSpeed
           : 0;
-    const maxStep = Math.max(speed, grazeSpeed) * dt;
+    const maxStep = Math.max(speed, grazeSpeed) * motionDt;
     let dx = 0;
     let dy = 0;
     if (speed > 0) {
       dx = agent.targetX - agent.x;
       dy = agent.targetY - agent.y;
       const dist = Math.hypot(dx, dy) || 1;
-      dx = (dx / dist) * speed * dt;
-      dy = (dy / dist) * speed * dt;
+      dx = (dx / dist) * speed * motionDt;
+      dy = (dy / dist) * speed * motionDt;
     }
     if (full) {
       const push = separation(agent, grid, cell, animal.stockClass === "calf" ? gap * 0.55 : gap);
@@ -800,7 +800,7 @@ function stepGraze(state: GameState, runtime: Runtime, dt: number, config: GameC
       const clamped = clampToCamp(camp, agent.x, agent.y, HERD_MOTION_TUNING.fenceInsetM);
       agent.x = clamped.x;
       agent.y = clamped.y;
-      if (full) wearGrass(runtime, camp, agent, dt);
+      if (full) wearGrass(runtime, camp, agent, motionDt);
     }
     animal.tileX = agent.x;
     animal.tileY = agent.y;
@@ -1045,9 +1045,10 @@ function stepDrive(state: GameState, runtime: Runtime, dt: number, leadDist: num
 }
 
 /**
- * Advance every cow by a slice of game time. Large slices are split into
- * fixed steps so a slow frame and a fast frame land on the same decision.
- * Pause passes 0 and nothing moves.
+ * Advance every cow. A drive uses game seconds, so a camp move still finishes
+ * with the ranch clock. Grazing uses real seconds when `realSeconds` is set,
+ * and game seconds otherwise (the direct tests). Pause passes 0 and nothing moves.
+ * Large slices are split so a slow frame and a fast frame land on the same decision.
  */
 export function advanceHerdMotion(
   state: GameState,
@@ -1055,15 +1056,20 @@ export function advanceHerdMotion(
   kind: "graze" | "drive" | "hold",
   config: GameConfig = CONFIG,
   stepSeconds: number = HERD_MOTION_TUNING.simStepGameS,
+  realSeconds?: number,
 ): void {
   if (!usesMetreCoords(state)) return;
   const runtime = ensureHerdAgents(state);
-  if (kind === "hold" || gameSeconds <= 0) return;
+  if (kind === "hold") return;
   const transit = state.herd.transit;
   const driving = kind === "drive" && Boolean(transit && transit.phase !== "approach" && transit.phase !== "night");
+  const motionTotal = !driving && realSeconds !== undefined ? Math.max(0, realSeconds) : Math.max(0, gameSeconds);
+  const clockTotal = Math.max(0, gameSeconds);
+  if (motionTotal <= 0) return;
   if (driving && transit) beginDrive(state, runtime);
   const step = Math.max(0.05, stepSeconds);
-  let left = gameSeconds;
+  let left = motionTotal;
+  const clockPerMotion = clockTotal / motionTotal;
   let lead = driving && transit && runtime.geom ? transit.progress * runtime.geom.length : 0;
   const speed = cattleMps(config);
   let guard = 0;
@@ -1073,7 +1079,7 @@ export function advanceHerdMotion(
       lead = Math.min(runtime.geom.length, lead + speed * dt);
       stepDrive(state, runtime, dt, lead, config);
     } else {
-      stepGraze(state, runtime, dt, config);
+      stepGraze(state, runtime, dt * clockPerMotion, config, dt);
     }
     left -= dt;
     guard += 1;

@@ -262,7 +262,11 @@ export type GameConfig = {
     herderWalkKmH: number;
     /** Daylight clock rate while a drive is on. 0.5 is a tuning value. */
     driveClockFactor: number;
-    /** Grazing drift after a herd arrives. */
+    /**
+     * Grazing wander in real kilometres per real hour.
+     * assumption, tune by eye, not sourced.
+     * Not scaled by the ranch clock or by 1x, 2x, or 3x. Pause stops it.
+     */
     grazeWalkKmH: number;
     fastPlayFraction: number;
   };
@@ -636,7 +640,7 @@ export const CONFIG: GameConfig = {
      * about 8 seconds. Pause, x2 and x3 still scale everything together.
      */
     driveClockFactor: 0.5,
-    /** Drift onto the new camp after a drive. About a slow graze. */
+    // assumption, tune by eye, not sourced. Real km/h while grazing. See GameConfig.transit.grazeWalkKmH.
     grazeWalkKmH: 0.4,
     /** Realtime fast mode is this fraction of play duration (never below fastMsMin). */
     fastPlayFraction: 0.22,
@@ -750,7 +754,7 @@ export const HERD_MOTION_TUNING = {
   standMaxS: 20,
   walkMinS: 8,
   walkMaxS: 26,
-  /** Walk between feeding spots. Slower than a drive. */
+  /** Walk between feeding spots, on the same real-time graze step. Slower than a drive. */
   spotWalkKmH: 1.1,
   drinkSeconds: 14,
   drinkIntervalGameHours: 48,

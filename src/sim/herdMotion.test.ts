@@ -71,6 +71,71 @@ function insideInset(camp: CampState, x: number, y: number, inset: number): bool
 }
 
 describe("herd motion", () => {
+  it("grazing wander distance per real second does not depend on game speed", () => {
+    const deltaMs = 1000;
+    const mps = (CONFIG.transit.grazeWalkKmH * 1000) / 3600;
+    const wander = (mode: "pause" | "x1" | "x2" | "x3"): number => {
+      const state = createGame(3300);
+      state.date.hour = 10;
+      state.herd.transit = null;
+      const grass = state.camps.map((camp) => camp.standingDmKgPerHa);
+      const adult = herdOf(state).find((animal) => animal.stockClass !== "calf");
+      expect(adult).toBeTruthy();
+      if (!adult) return 0;
+      advanceHerdMotion(state, 0.05, "graze");
+      for (const agent of herdAgentList(state)) {
+        agent.mode = "graze";
+        agent.timer = 10_000;
+        agent.drinkPhase = "none";
+        agent.drinkUrge = 0;
+        agent.targetX = agent.x + 8;
+        agent.targetY = agent.y;
+      }
+      const before = positions(state).get(adult.id);
+      expect(before).toBeTruthy();
+      if (!before) return 0;
+      tickHerdingRealtime(state, deltaMs, mode);
+      expect(state.camps.map((camp) => camp.standingDmKgPerHa)).toEqual(grass);
+      const after = positions(state).get(adult.id);
+      expect(after).toBeTruthy();
+      if (!after) return 0;
+      return Math.hypot(after.x - before.x, after.y - before.y);
+    };
+    const paused = wander("pause");
+    const x1 = wander("x1");
+    const x2 = wander("x2");
+    const x3 = wander("x3");
+    expect(paused).toBe(0);
+    expect(x1).toBeGreaterThan(mps * 0.5);
+    expect(x1).toBeLessThanOrEqual(mps + 1e-6);
+    expect(x2).toBeCloseTo(x1, 5);
+    expect(x3).toBeCloseTo(x1, 5);
+    const clockMetres = gameHoursElapsed(10, deltaMs, "x1", 1, CONFIG) * 3600 * mps;
+    expect(clockMetres).toBeGreaterThan(x1 * 50);
+  });
+
+  it("keeps a camp drive on the game clock", () => {
+    const step = (mode: "x1" | "x3"): number => {
+      const state = createGame(3300);
+      state.date.hour = 10;
+      putHerdIn(state, 5);
+      expect(moveHerd(state, 2).ok).toBe(true);
+      const transit = state.herd.transit;
+      expect(transit).toBeTruthy();
+      if (!transit) return 0;
+      transit.phase = "drive";
+      transit.approachProgress = 1;
+      advanceHerdMotion(state, 0.2, "drive");
+      const before = positions(state);
+      tickHerdingRealtime(state, 400, mode);
+      return moved(before, positions(state));
+    };
+    const slow = step("x1");
+    const fast = step("x3");
+    expect(slow).toBeGreaterThan(0.2);
+    expect(fast).toBeGreaterThan(slow * 2);
+  });
+
   it("walks camp 5 to camp 2 without a step larger than walking speed", () => {
     const state = createGame(3300);
     state.date.hour = 8;
