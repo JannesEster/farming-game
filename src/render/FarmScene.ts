@@ -74,7 +74,14 @@ import {
   type HerdOffset,
 } from "./art";
 import { groundTexture, terrainVariant, tileTint, trackKeys } from "./colour";
-import { closestPointOnFence, collectFenceSegments, drawFences } from "./fences";
+import {
+  closestPointOnFence,
+  collectFenceSegments,
+  drawFences,
+  FENCE_CLOSE_VIEW_PX,
+  FENCE_VIEW_BUCKET_PX,
+  FENCE_WIDE_VIEW_PX,
+} from "./fences";
 import {
   measureChipWidths,
   measureHudHeights,
@@ -1504,6 +1511,45 @@ export class FarmScene extends Phaser.Scene {
         this.clampScroll();
         return { x: this.cameras.main.width / 2, y: this.cameras.main.height / 2 };
       },
+      listCampGates: () => {
+        const pairs: { a: number; b: number }[] = [];
+        for (let i = 0; i < this.state.camps.length; i += 1) {
+          for (let j = i + 1; j < this.state.camps.length; j += 1) {
+            if (campGateBetween(this.state.camps[i], this.state.camps[j])) {
+              pairs.push({ a: this.state.camps[i].id, b: this.state.camps[j].id });
+            }
+          }
+        }
+        return pairs;
+      },
+      frameCampGate: (a: number, b: number) => {
+        const from = this.state.camps.find((camp) => camp.id === a);
+        const to = this.state.camps.find((camp) => camp.id === b);
+        if (!from || !to) return { ok: false as const };
+        const gate = campGateBetween(from, to);
+        if (!gate) return { ok: false as const };
+        const vertical = gate.fromGate.x !== gate.toGate.x;
+        const x = vertical ? Math.max(gate.fromGate.x, gate.toGate.x) : gate.fromGate.x;
+        const y = vertical ? gate.fromGate.y : Math.max(gate.fromGate.y, gate.toGate.y);
+        const center = tileCenter(x, y, this.layout, this.groundTileW, this.groundTileH);
+        const camera = this.cameras.main;
+        this.refreshZoomLimits();
+        const zoom = clampZoom(0.85, this.minZoom, this.maxZoom);
+        camera.setZoom(zoom);
+        camera.centerOn(center.x, center.y);
+        this.clampScroll();
+        this.redrawFences();
+        return { ok: true as const, campA: a, campB: b, x, y, zoom: camera.zoom, viewWidth: liveCameraView(this).width };
+      },
+      nudgeCamera: (dx: number, dy: number) => {
+        const camera = this.cameras.main;
+        camera.scrollX += dx;
+        camera.scrollY += dy;
+        this.clampScroll();
+        this.redrawFences();
+        const view = liveCameraView(this);
+        return { scrollX: camera.scrollX, scrollY: camera.scrollY, zoom: camera.zoom, viewWidth: view.width };
+      },
       herdTile: () => {
         const tile = herdWorldTile(this.state);
         return { x: tile.x, y: tile.y };
@@ -2216,6 +2262,7 @@ export class FarmScene extends Phaser.Scene {
       for (const cow of this.cows) cow.setVisible(false);
       for (const shadow of this.cowShadows) shadow?.setVisible(false);
     }
+    this.redrawFences();
   }
 
   private bakeAllTerrain(): void {
@@ -2627,12 +2674,16 @@ export class FarmScene extends Phaser.Scene {
   }
 
   private redrawFences(): void {
+    if (!this.fences) return;
     const herdCamp = this.state.herd.campId;
     const zoom = this.cameras.main.zoom;
     const paintedFence = v2Ready(this.textures);
     const live = this.metre ? liveCameraView(this) : null;
-    const viewKey = live ? `${Math.round(live.x / 240)}:${Math.round(live.y / 240)}` : "0";
-    const sig = `${herdCamp}:${this.selected ? 1 : 0}:${paintedFence ? 1 : 0}:${Math.round(zoom * 50)}:${viewKey}`;
+    const viewW = live?.width ?? 0;
+    const closeEnough = !live || viewW < FENCE_CLOSE_VIEW_PX;
+    const viewWide = Boolean(live && viewW > FENCE_WIDE_VIEW_PX);
+    const viewKey = live ? `${Math.round(live.x / FENCE_VIEW_BUCKET_PX)}:${Math.round(live.y / FENCE_VIEW_BUCKET_PX)}` : "0";
+    const sig = `${herdCamp}:${this.selected ? 1 : 0}:${paintedFence ? 1 : 0}:${Math.round(zoom * 50)}:${viewKey}:${closeEnough ? 1 : 0}:${viewWide ? 1 : 0}`;
     if (sig === this.fenceSig) return;
     this.fenceSig = sig;
     this.fenceGates.forEach((gate) => gate.destroy());
@@ -2640,14 +2691,15 @@ export class FarmScene extends Phaser.Scene {
     this.fenceArt.forEach((sprite) => sprite.destroy());
     this.fenceArt = [];
     const segments = collectFenceSegments(this.state, this.layout, herdCamp, this.selected);
-    const closeFence = Boolean(live && live.width < 5000);
+    const closeFence = Boolean(live && viewW < FENCE_CLOSE_VIEW_PX);
     const midFence = Boolean(this.metre && live && !closeFence && zoom >= 0.02 && zoom < 0.2);
-    if (closeFence) this.fences.clear();
+    if (closeFence && paintedFence) this.fences.clear();
     else drawFences(this.fences, segments, zoom, { posts: !paintedFence && !this.metre, single: midFence });
-    if (paintedFence && !midFence) {
+    if (paintedFence) {
       this.fenceArt = placeV2Fences(this, segments, {
         maxPosts: this.metre && zoom < 0.08 ? 0 : 240,
         view: live ? { x: live.x, y: live.y, right: live.right, bottom: live.bottom } : undefined,
+        gatesOnly: midFence,
       });
     } else if (!midFence) this.fenceGates = placeGateSprites(this, segments, this.paintedSprites);
   }

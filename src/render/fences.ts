@@ -1,8 +1,8 @@
 import Phaser from "phaser";
 import { CONFIG } from "../sim/config";
 import { usesMetreCoords } from "../sim/metreFarm";
-import { fenceGateBetweenCamps } from "../sim/path";
-import { TILE_OUTSIDE, type GameState } from "../sim/types";
+import { campGateBetween, fenceGateBetweenCamps } from "../sim/path";
+import { TILE_OUTSIDE, type CampRect, type CampState, type GameState } from "../sim/types";
 import { tileCenter, tileTop } from "./iso";
 import type { IsoLayout } from "./iso";
 import { palette } from "./palette";
@@ -16,6 +16,40 @@ export type FenceSegment = {
   kind: "boundary" | "selected" | "inner";
   gate: boolean;
 };
+
+/** Pan and zoom rebuild fences when the camera origin crosses one of these buckets. */
+export const FENCE_VIEW_BUCKET_PX = 240;
+/** Painted wires are built only inside this view width. Wider views use the Graphics layer. */
+export const FENCE_CLOSE_VIEW_PX = 5000;
+/** Posts are skipped once the view is this wide. */
+export const FENCE_WIDE_VIEW_PX = 8000;
+/**
+ * Screen length of one painted wire step (`24 * PIXELS_PER_METRE` in v2Art).
+ * The cull margin has to cover a pan of one bucket plus one of these steps.
+ */
+export const FENCE_WIRE_PIECE_PX = 24 * PIXELS_PER_METRE;
+
+export function fenceViewMarginPx(): number {
+  return FENCE_VIEW_BUCKET_PX + FENCE_WIRE_PIECE_PX;
+}
+
+export type FenceView = { x: number; y: number; right: number; bottom: number };
+
+/** True when the segment's box meets the view, expanded by `margin` px. */
+export function fencePieceInView(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  view: FenceView,
+  margin: number,
+): boolean {
+  const minX = Math.min(x1, x2);
+  const maxX = Math.max(x1, x2);
+  const minY = Math.min(y1, y2);
+  const maxY = Math.max(y1, y2);
+  return maxX >= view.x - margin && minX <= view.right + margin && maxY >= view.y - margin && minY <= view.bottom + margin;
+}
 
 function edgeHasGate(
   gate: { a: { x: number; y: number }; b: { x: number; y: number } } | null,
@@ -37,56 +71,179 @@ function edgeKey(x1: number, y1: number, x2: number, y2: number): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
-/** One straight run per rectangle edge. Shared edges are drawn once, with a gate at the middle. */
+type MetreRun = { x1: number; y1: number; x2: number; y2: number; a: number; b: number };
+
+const EDGE_EPS = 0.51;
+
+function rectCorners(rect: CampRect): { x: number; y: number }[] {
+  return [
+    { x: rect.x, y: rect.y },
+    { x: rect.x + rect.w, y: rect.y },
+    { x: rect.x + rect.w, y: rect.y + rect.h },
+    { x: rect.x, y: rect.y + rect.h },
+  ];
+}
+
+/** True when (x, y) sits on the rectangle border, including the exclusive far edges. */
+function onRectBorder(rect: CampRect, x: number, y: number): boolean {
+  const onX = x >= rect.x - EDGE_EPS && x <= rect.x + rect.w + EDGE_EPS;
+  const onY = y >= rect.y - EDGE_EPS && y <= rect.y + rect.h + EDGE_EPS;
+  if (Math.abs(y - rect.y) <= EDGE_EPS && onX) return true;
+  if (Math.abs(y - (rect.y + rect.h)) <= EDGE_EPS && onX) return true;
+  if (Math.abs(x - rect.x) <= EDGE_EPS && onY) return true;
+  if (Math.abs(x - (rect.x + rect.w)) <= EDGE_EPS && onY) return true;
+  return false;
+}
+
+/**
+ * The sim gate, on the shared fence line. `campGateBetween` steps 1 m across
+ * that line, so the drawn opening is centred on the boundary coordinate.
+ */
+function simGateOnFence(from: CampState, to: CampState): { x: number; y: number; vertical: boolean } | null {
+  const gate = campGateBetween(from, to);
+  if (!gate) return null;
+  const vertical = gate.fromGate.x !== gate.toGate.x;
+  if (vertical) {
+    return { x: Math.max(gate.fromGate.x, gate.toGate.x), y: gate.fromGate.y, vertical: true };
+  }
+  return { x: gate.fromGate.x, y: Math.max(gate.fromGate.y, gate.toGate.y), vertical: false };
+}
+
+/** Drop a `CAMP_GATE_METRES` gap out of a run, keeping each piece on its own line. */
+function cutRunAtGate(run: MetreRun, gx: number, gy: number, vertical: boolean, half: number): MetreRun[] {
+  if (vertical) {
+    if (Math.abs(run.x1 - gx) > EDGE_EPS || Math.abs(run.x2 - gx) > EDGE_EPS) return [run];
+    const lo = Math.min(run.y1, run.y2);
+    const hi = Math.max(run.y1, run.y2);
+    const gLo = gy - half;
+    const gHi = gy + half;
+    if (hi <= gLo + 0.01 || lo >= gHi - 0.01) return [run];
+    const downward = run.y2 >= run.y1;
+    const pieces: MetreRun[] = [];
+    const push = (from: number, to: number) => {
+      if (to - from < 0.05) return;
+      pieces.push({ ...run, x1: gx, x2: gx, y1: downward ? from : to, y2: downward ? to : from });
+    };
+    if (lo < gLo) push(lo, Math.min(hi, gLo));
+    if (hi > gHi) push(Math.max(lo, gHi), hi);
+    return pieces;
+  }
+  if (Math.abs(run.y1 - gy) > EDGE_EPS || Math.abs(run.y2 - gy) > EDGE_EPS) return [run];
+  const lo = Math.min(run.x1, run.x2);
+  const hi = Math.max(run.x1, run.x2);
+  const gLo = gx - half;
+  const gHi = gx + half;
+  if (hi <= gLo + 0.01 || lo >= gHi - 0.01) return [run];
+  const rightward = run.x2 >= run.x1;
+  const pieces: MetreRun[] = [];
+  const push = (from: number, to: number) => {
+    if (to - from < 0.05) return;
+    pieces.push({ ...run, y1: gy, y2: gy, x1: rightward ? from : to, x2: rightward ? to : from });
+  };
+  if (lo < gLo) push(lo, Math.min(hi, gLo));
+  if (hi > gHi) push(Math.max(lo, gHi), hi);
+  return pieces;
+}
+
+/**
+ * Camp fences in metre space. Each side is split at neighbouring corners, so a
+ * piece is either shared with one camp or is outer boundary. Gate openings come
+ * from `campGateBetween` and are cut before the iso projection, so a gate cannot
+ * slide a parallel wire onto its own line.
+ */
 function collectRectFenceSegments(
   state: GameState,
   layout: IsoLayout,
   herdCampId: number,
   selected: boolean,
 ): FenceSegment[] {
-  const tileW = PIXELS_PER_METRE;
-  const tileH = PIXELS_PER_METRE / 2;
-  const edges = new Map<string, { x1: number; y1: number; x2: number; y2: number; a: number; b: number }>();
-  for (const camp of state.camps) {
+  const camps = state.camps.filter((camp): camp is CampState & { rect: CampRect } => Boolean(camp.rect));
+  const pieces: MetreRun[] = [];
+  for (const camp of camps) {
     const rect = camp.rect;
-    if (!rect) continue;
     const sides = [
-      [rect.x, rect.y, rect.x + rect.w, rect.y],
-      [rect.x + rect.w, rect.y, rect.x + rect.w, rect.y + rect.h],
-      [rect.x + rect.w, rect.y + rect.h, rect.x, rect.y + rect.h],
-      [rect.x, rect.y + rect.h, rect.x, rect.y],
+      { horizontal: true, line: rect.y, lo: rect.x, hi: rect.x + rect.w },
+      { horizontal: true, line: rect.y + rect.h, lo: rect.x, hi: rect.x + rect.w },
+      { horizontal: false, line: rect.x, lo: rect.y, hi: rect.y + rect.h },
+      { horizontal: false, line: rect.x + rect.w, lo: rect.y, hi: rect.y + rect.h },
     ];
-    for (const [x1, y1, x2, y2] of sides) {
-      const key = edgeKey(x1, y1, x2, y2);
-      const existing = edges.get(key);
-      if (existing) existing.b = camp.id;
-      else edges.set(key, { x1, y1, x2, y2, a: camp.id, b: TILE_OUTSIDE });
+    for (const side of sides) {
+      if (side.hi - side.lo < 0.05) continue;
+      const splits = [side.lo, side.hi];
+      for (const other of camps) {
+        if (other.id === camp.id) continue;
+        for (const corner of rectCorners(other.rect)) {
+          const cross = side.horizontal ? corner.y : corner.x;
+          const along = side.horizontal ? corner.x : corner.y;
+          if (Math.abs(cross - side.line) > EDGE_EPS) continue;
+          if (along < side.lo - EDGE_EPS || along > side.hi + EDGE_EPS) continue;
+          splits.push(Math.min(side.hi, Math.max(side.lo, along)));
+        }
+      }
+      splits.sort((left, right) => left - right);
+      const unique: number[] = [];
+      for (const split of splits) {
+        if (unique.length === 0 || split - unique[unique.length - 1] > 0.01) unique.push(split);
+      }
+      for (let index = 0; index < unique.length - 1; index += 1) {
+        const from = unique[index];
+        const to = unique[index + 1];
+        if (to - from < 0.05) continue;
+        const mid = (from + to) / 2;
+        const mx = side.horizontal ? mid : side.line;
+        const my = side.horizontal ? side.line : mid;
+        const neighbour = camps.find((other) => other.id !== camp.id && onRectBorder(other.rect, mx, my));
+        pieces.push({
+          x1: side.horizontal ? from : side.line,
+          y1: side.horizontal ? side.line : from,
+          x2: side.horizontal ? to : side.line,
+          y2: side.horizontal ? side.line : to,
+          a: camp.id,
+          b: neighbour ? neighbour.id : TILE_OUTSIDE,
+        });
+      }
     }
   }
-  const segments: FenceSegment[] = [];
-  for (const edge of edges.values()) {
-    const p1 = tileCenter(edge.x1, edge.y1, layout, tileW, tileH);
-    const p2 = tileCenter(edge.x2, edge.y2, layout, tileW, tileH);
-    const kind: FenceSegment["kind"] =
-      edge.b < 0 ? "boundary" : selected && (edge.a === herdCampId || edge.b === herdCampId) ? "selected" : "inner";
-    segments.push({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, kind, gate: false });
-    if (edge.b < 0) continue;
-    const dx = p2.x - p1.x;
-    const dy = p2.y - p1.y;
-    const len = Math.hypot(dx, dy) || 1;
-    const midX = (p1.x + p2.x) / 2;
-    const midY = (p1.y + p2.y) / 2;
-    const half = 4;
-    segments.push({
-      x1: midX - (dx / len) * half,
-      y1: midY - (dy / len) * half,
-      x2: midX + (dx / len) * half,
-      y2: midY + (dy / len) * half,
-      kind,
-      gate: true,
-    });
+
+  const deduped = new Map<string, MetreRun>();
+  for (const piece of pieces) {
+    const key = edgeKey(piece.x1, piece.y1, piece.x2, piece.y2);
+    const existing = deduped.get(key);
+    if (!existing || (existing.b < 0 && piece.b >= 0)) deduped.set(key, piece);
   }
-  return openFenceGates(mergeStraightFences(segments));
+
+  let wires = [...deduped.values()];
+  const gateRuns: MetreRun[] = [];
+  const half = CAMP_GATE_METRES / 2;
+  for (let i = 0; i < camps.length; i += 1) {
+    for (let j = i + 1; j < camps.length; j += 1) {
+      const gate = simGateOnFence(camps[i], camps[j]);
+      if (!gate) continue;
+      const next: MetreRun[] = [];
+      for (const wire of wires) next.push(...cutRunAtGate(wire, gate.x, gate.y, gate.vertical, half));
+      wires = next;
+      gateRuns.push({
+        x1: gate.vertical ? gate.x : gate.x - half,
+        y1: gate.vertical ? gate.y - half : gate.y,
+        x2: gate.vertical ? gate.x : gate.x + half,
+        y2: gate.vertical ? gate.y + half : gate.y,
+        a: camps[i].id,
+        b: camps[j].id,
+      });
+    }
+  }
+
+  const tileW = PIXELS_PER_METRE;
+  const tileH = PIXELS_PER_METRE / 2;
+  const project = (run: MetreRun, gate: boolean): FenceSegment => {
+    const p1 = tileCenter(run.x1, run.y1, layout, tileW, tileH);
+    const p2 = tileCenter(run.x2, run.y2, layout, tileW, tileH);
+    const kind: FenceSegment["kind"] =
+      run.b < 0 ? "boundary" : selected && (run.a === herdCampId || run.b === herdCampId) ? "selected" : "inner";
+    return { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, kind, gate };
+  };
+  const segments = wires.map((run) => project(run, false)).concat(gateRuns.map((run) => project(run, true)));
+  return mergeStraightFences(segments);
 }
 
 export function collectFenceSegments(
@@ -259,18 +416,28 @@ export function openFenceGates(segments: FenceSegment[], gapPx = CAMP_GATE_METRE
   return wires.concat(opened);
 }
 
-/** Cut a straight wire where a gate sits on it, and pull an end that already meets the gate. */
+/**
+ * Cut a straight wire where a gate sits on it. Parallel is not enough: in the
+ * iso view every east-west run is parallel, and rebuilding from the gate centre
+ * used to move those runs onto the gate's line.
+ */
 function splitWireAtGate(segment: FenceSegment, gate: FenceSegment, half: number): FenceSegment[] {
   const gdx = gate.x2 - gate.x1;
   const gdy = gate.y2 - gate.y1;
   const glen = Math.hypot(gdx, gdy) || 1;
-  const cross = (segment.x2 - segment.x1) * gdy - (segment.y2 - segment.y1) * gdx;
-  const scale = (Math.hypot(segment.x2 - segment.x1, segment.y2 - segment.y1) || 1) * glen;
-  if (Math.abs(cross) / scale > 0.02) return [segment];
+  const sdx = segment.x2 - segment.x1;
+  const sdy = segment.y2 - segment.y1;
+  const slen = Math.hypot(sdx, sdy) || 1;
+  const cross = sdx * gdy - sdy * gdx;
+  if (Math.abs(cross) / (slen * glen) > 0.02) return [segment];
   const dirx = gdx / glen;
   const diry = gdy / glen;
   const cx = (gate.x1 + gate.x2) / 2;
   const cy = (gate.y1 + gate.y2) / 2;
+  const lateral = (x: number, y: number) => (x - cx) * -diry + (y - cy) * dirx;
+  if (Math.abs(lateral(segment.x1, segment.y1)) > 1.5 || Math.abs(lateral(segment.x2, segment.y2)) > 1.5) {
+    return [segment];
+  }
   const along = (x: number, y: number) => (x - cx) * dirx + (y - cy) * diry;
   const a1 = along(segment.x1, segment.y1);
   const a2 = along(segment.x2, segment.y2);
@@ -278,7 +445,10 @@ function splitWireAtGate(segment: FenceSegment, gate: FenceSegment, half: number
   const hi = Math.max(a1, a2);
   if (hi < -half - 1.5 || lo > half + 1.5) return [segment];
   const forward = a2 >= a1;
-  const point = (d: number) => ({ x: cx + dirx * d, y: cy + diry * d });
+  const point = (d: number) => {
+    const t = Math.abs(a2 - a1) < 1e-6 ? 0 : (d - a1) / (a2 - a1);
+    return { x: segment.x1 + sdx * t, y: segment.y1 + sdy * t };
+  };
   const pieces: FenceSegment[] = [];
   const push = (from: number, to: number) => {
     if (to - from < 4) return;
