@@ -5,7 +5,6 @@ import {
   herdCentroid,
   herdDriveReadyToFinish,
   releaseHerdToGraze,
-  settleHerdOnDestination,
 } from "./herdMotion";
 import { mainHouseTile, workerHouseForFarmhand } from "./housing";
 import { campGrazingGoal, pathLengthKm, planHerdPath, planPersonPath, pointOnPath } from "./path";
@@ -148,32 +147,17 @@ export function finishTransit(state: GameState): void {
   }
 }
 
-/** A save that froze at dusk: the herd is put in the destination camp and the clock is a whole hour. */
+/**
+ * A save that froze at dusk. The clock becomes a whole hour, and a drive
+ * resumes from the cows' stored positions. Nothing is moved into the next camp.
+ */
 export function repairStuckTransit(state: GameState): void {
   if (!Number.isInteger(state.date.hour)) {
     state.date = { ...state.date, hour: Math.min(23, Math.max(0, Math.round(state.date.hour))) };
   }
   const transit = state.herd.transit;
   if (!transit) return;
-  if (transit.phase === "night") return;
-  const hour = ((state.date.hour % 24) + 24) % 24;
-  if (hour >= 6 && hour < 18) return;
-  if (usesMetreCoords(state)) settleHerdOnDestination(state);
-  finishTransit(state);
-  const story = state.story;
-  if (story?.returnWalk) story.returnWalk = null;
-  const farmer = story?.farmerPresence;
-  if (farmer) {
-    const home = mainHouseTile(state);
-    farmer.tileX = home.x;
-    farmer.tileY = home.y;
-    farmer.targetTileX = home.x;
-    farmer.targetTileY = home.y;
-    farmer.walkProgress = 1;
-    farmer.onHerdingDuty = false;
-    farmer.atHome = true;
-    farmer.activityLabel = "At the main house";
-  }
+  if (!transit.phase || transit.phase === "night") transit.phase = "drive";
 }
 
 export function startHerdMove(state: GameState, toCampId: number, config: GameConfig = CONFIG): void {

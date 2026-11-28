@@ -143,7 +143,7 @@ describe("drive polish", () => {
     expect(Number.isInteger(state.date.hour)).toBe(true);
   }, 90_000);
 
-  it("holds a long drive at dusk and walks it on at dawn", () => {
+  it("keeps a drive walking through dusk instead of jumping the herd", () => {
     const state = ready();
     const dest = state.camps.find((camp) => camp.id !== state.herd.campId);
     if (!dest) throw new Error("expected a camp");
@@ -158,32 +158,20 @@ describe("drive polish", () => {
     transit.progress = 0.2;
     transit.distanceKm = 40;
     transit.approachProgress = 1;
-    const home = state.features.find((feature) => feature.kind === "house");
     state.date.hour = 18;
     state.clock!.bankMs = 0;
     tickHerdingRealtime(state, 1000, "x1");
-    expect(state.herd.transit?.phase).toBe("night");
-    expect(state.herd.transit?.progress).toBeCloseTo(0.2, 5);
+    expect(state.herd.transit?.phase).toBe("drive");
+    expect(state.herd.transit?.progress ?? 0).toBeGreaterThan(0.2);
     expect(state.herd.campId).not.toBe(dest.id);
-    expect(herdMoveStatusLine(state)).toContain("held for the night");
-    const farmer = state.story?.farmerPresence;
-    expect(farmer?.atHome).toBe(true);
-    if (home && farmer) {
-      expect(Math.hypot(farmer.tileX - home.x, farmer.tileY - home.y)).toBeLessThan(30);
-    }
-    const before = state.date.hour;
-    tickBoth(state, 8000, 1);
-    expect(state.date.hour).toBeGreaterThan(before);
-    expect(state.herd.transit?.phase).toBe("night");
-    expect(state.herd.transit?.progress).toBeCloseTo(0.2, 5);
-    state.date.hour = 6;
-    state.clock!.bankMs = 0;
-    tickHerdingRealtime(state, 16, "x1");
-    expect(state.herd.transit?.phase === "approach" || state.herd.transit?.phase === "drive").toBe(true);
-    expect(state.herd.transit?.progress).toBeCloseTo(0.2, 5);
+    expect(herdMoveStatusLine(state)).toContain("driving");
+    const before = state.herd.transit?.progress ?? 0;
+    tickBoth(state, 800, CONFIG.transit.driveClockFactor);
+    expect(state.herd.transit?.phase).toBe("drive");
+    expect(state.herd.transit?.progress ?? 0).toBeGreaterThan(before);
   });
 
-  it("finishes into the next camp when dusk is close and little ground is left", () => {
+  it("does not finish a drive by jumping when little ground is left at dusk", () => {
     const state = ready();
     const dest = state.camps.find((camp) => camp.id !== state.herd.campId);
     if (!dest) throw new Error("expected a camp");
@@ -195,11 +183,13 @@ describe("drive polish", () => {
     transit.progress = 0.97;
     transit.distanceKm = 40;
     transit.approachProgress = 1;
+    const camp = state.herd.campId;
     state.date.hour = 18;
     state.clock!.bankMs = 0;
     tickHerdingRealtime(state, 1000, "x1");
-    expect(state.herd.transit).toBeNull();
-    expect(state.herd.campId).toBe(dest.id);
+    expect(state.herd.transit?.phase).toBe("drive");
+    expect(state.herd.campId).toBe(camp);
+    expect(state.herd.transit?.progress ?? 1).toBeLessThan(1);
   });
 
   it("queues a move that cannot finish before 18:00", () => {
@@ -220,10 +210,12 @@ describe("drive polish", () => {
     const dest = state.camps.find((camp) => camp.id !== state.herd.campId)!;
     moveHerd(state, dest.id);
     expect(state.herd.transit).toBeTruthy();
+    const camp = state.herd.campId;
     state.date.hour = 18.012288667834838;
     repairStuckTransit(state);
-    expect(state.herd.transit).toBeNull();
-    expect(state.herd.campId).toBe(dest.id);
+    expect(state.herd.transit).toBeTruthy();
+    expect(state.herd.campId).toBe(camp);
+    expect(state.herd.campId).not.toBe(dest.id);
     expect(state.date.hour).toBe(18);
     expect(formatClockTime(state.date)).toBe("18:00");
   });

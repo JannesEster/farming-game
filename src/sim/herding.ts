@@ -5,7 +5,6 @@ import { farmerDisplayName } from "./playerName";
 import { STEP3A } from "./step3aConfig";
 import { mainHouseTile, workerHouseForFarmhand } from "./housing";
 import {
-  finishTransit,
   fractionalRanchHour,
   gameHoursElapsed,
   herdInTransit,
@@ -14,7 +13,7 @@ import {
   type TransitSpeed,
 } from "./transit";
 import { columnMetrics, herderPathProgressBehindTail, herderStandTile } from "./convoy";
-import { advanceHerdMotion, herdCentroid, herderStandBehindCows, settleHerdOnDestination } from "./herdMotion";
+import { advanceHerdMotion, herdCentroid, herderStandBehindCows } from "./herdMotion";
 import { pointCampId, usesMetreCoords } from "./metreFarm";
 import { pathLengthKm, planHerdPath, planPersonPath, pointOnPath, WATER_STRUCTURE_CLEAR_TILES } from "./path";
 import type { GameState, HerdTransit, TilePoint } from "./types";
@@ -221,9 +220,6 @@ export function tickReturnWalk(state: GameState, deltaMs: number, mode: TransitS
   if (walk.progress >= 1 && state.story) state.story.returnWalk = null;
 }
 
-/** About half an hour of cattle walking. Nearer than this, finish into the next camp. */
-const NIGHT_FINISH_KM = 1.75;
-
 function sendHerderHome(state: GameState, who: HerderId | undefined): void {
   const presence = presenceForHerder(state, who);
   const home = who === "piet" ? workerHouseForFarmhand(state) ?? mainHouseTile(state) : mainHouseTile(state);
@@ -244,25 +240,18 @@ function holdHerdForNight(state: GameState): void {
   const transit = state.herd.transit;
   if (!transit || transit.phase === "night") return;
   ensureTransitFields(transit);
-  if (transit.phase === "approach") {
-    const camp = findCamp(state, transit.toCampId);
-    const who = transit.herder;
-    state.herd.transit = null;
-    if (state.story && camp) {
-      state.story.herdMoveQueue = { toCampId: camp.id, reason: "night", campName: camp.name };
-    }
-    sendHerderHome(state, who);
+  if (transit.phase !== "approach") {
+    // The drive is already on the road. It keeps walking after dusk from the
+    // cows' stored positions. Nothing is placed into the destination camp.
     return;
   }
-  const remaining = (1 - transit.progress) * transit.distanceKm;
-  if (remaining <= NIGHT_FINISH_KM) {
-    if (usesMetreCoords(state)) settleHerdOnDestination(state);
-    finishTransit(state);
-    return;
+  const camp = findCamp(state, transit.toCampId);
+  const who = transit.herder;
+  state.herd.transit = null;
+  if (state.story && camp) {
+    state.story.herdMoveQueue = { toCampId: camp.id, reason: "night", campName: camp.name };
   }
-  transit.phase = "night";
-  transit.resumeDrive = true;
-  sendHerderHome(state, transit.herder);
+  sendHerderHome(state, who);
 }
 
 function resumeHerdAfterNight(state: GameState): void {

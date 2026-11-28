@@ -106,6 +106,7 @@ async function main() {
 
     let sawDrive = false;
     let sawGate = false;
+    let sawDusk = false;
     let sawArrive = false;
     let frames = 0;
     const startedAt = Date.now();
@@ -117,11 +118,38 @@ async function main() {
         await shot(page, "drive-00s.png");
         notes.push({ drive00: now });
       }
-      if (now.phase === "drive" && !sawGate && now.campId === 2 && (now.progress ?? 0) > 0.05 && (now.progress ?? 0) < 0.95) {
-        sawGate = true;
-        await frame(page, 1.25);
-        await shot(page, "drive-gate.png");
-        notes.push({ gate: now });
+      if (!sawGate && now.phase === "drive") {
+        const near = await page.evaluate(() => window.__farmCapture.cowsNearGate(5, 2));
+        if (near.count >= 6 && near.closest !== null && near.closest < 18) {
+          sawGate = true;
+          const framed = await page.evaluate(() => window.__farmCapture.frameHerdGate(5, 2, 1.35));
+          await page.waitForTimeout(200);
+          await shot(page, "drive-gate.png");
+          notes.push({ gate: now, near, framed });
+        }
+      }
+      if (sawGate && !sawDusk && now.phase === "drive") {
+        sawDusk = true;
+        const dusk = [];
+        for (const [index, hour] of [
+          [1, 17.92],
+          [2, 18.28],
+          [3, 18.7],
+          [4, 19.15],
+        ]) {
+          const clock = await page.evaluate(async (nextHour) => {
+            window.__farmCapture.setCaptureHour(nextHour);
+            window.__farmCapture.bumpHerdCaptureZoom(1.2);
+            const tile = window.__farmCapture.herdTile();
+            window.__farmCapture.panToTile(tile.x, tile.y);
+            return window.__farmCapture.driveCaptureStatus();
+          }, hour);
+          await page.waitForTimeout(350);
+          await shot(page, `drive-dusk-${String(index).padStart(2, "0")}.png`);
+          dusk.push(clock);
+        }
+        notes.push({ dusk });
+        await page.evaluate(() => window.__farmCapture.setCaptureHour(10));
       }
       if (now.phase === "drive" && !sawArrive && (now.progress ?? 0) >= 0.9) {
         sawArrive = true;
@@ -142,7 +170,9 @@ async function main() {
       }
       await page.waitForTimeout(450);
     }
-    if (!sawDrive || !sawArrive) throw new Error(`missed drive beats ${JSON.stringify(notes)}`);
+    if (!sawDrive || !sawGate || !sawDusk || !sawArrive) {
+      throw new Error(`missed drive beats ${JSON.stringify(notes)}`);
+    }
 
     await boot(page);
     const trough = await page.evaluate(() => window.__farmCapture.prepareDrinkingCapture());

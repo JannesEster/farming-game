@@ -58,8 +58,8 @@ function rms(points: { x: number; y: number }[]): number {
   return Math.sqrt(sum / points.length);
 }
 
-function stepAllowance(deltaMs: number): number {
-  const hours = gameHoursElapsed(8, deltaMs, "x1", CONFIG.transit.driveClockFactor, CONFIG);
+function stepAllowance(deltaMs: number, hour = 8): number {
+  const hours = gameHoursElapsed(hour, deltaMs, "x1", CONFIG.transit.driveClockFactor, CONFIG);
   return hours * CONFIG.transit.cattleWalkKmH * 1000 * 1.12 + 0.2;
 }
 
@@ -99,6 +99,9 @@ describe("herd motion", () => {
       }
     }
     const opening = CAMP_GATE_METRES / 2 + COW_LENGTH_METRES / 2;
+    const minGap = COW_LENGTH_METRES * HERD_MOTION_TUNING.minGapFractionOfBody;
+    let gateSamples = 0;
+    let gateClose = 0;
     let guard = 0;
     let driveMs = 0;
     const deltaMs = 50;
@@ -134,6 +137,22 @@ describe("herd motion", () => {
         const py = prevPoint.y + dy * t;
         expect(Math.hypot(px - gate.x, py - gate.y)).toBeLessThanOrEqual(opening + 0.6);
       }
+      if (state.herd.transit?.phase === "drive") {
+        const listed = [...next.values()];
+        for (const gate of gates.values()) {
+          const near = listed.filter((point) => Math.hypot(point.x - gate.x, point.y - gate.y) < 30);
+          if (near.length < 6) continue;
+          gateSamples += 1;
+          let nearest = Number.POSITIVE_INFINITY;
+          for (let i = 0; i < near.length; i += 1) {
+            for (let j = i + 1; j < near.length; j += 1) {
+              nearest = Math.min(nearest, Math.hypot(near[i].x - near[j].x, near[i].y - near[j].y));
+            }
+          }
+          if (nearest < minGap * 0.72) gateClose += 1;
+          break;
+        }
+      }
       if (state.herd.transit?.phase === "drive" && driveMs < 5000) {
         driveMs += deltaMs;
         const ratio = rms([...next.values()]) / spread0;
@@ -146,6 +165,8 @@ describe("herd motion", () => {
     expect(state.herd.transit).toBeNull();
     expect(minRatio).toBeGreaterThan(0.28);
     expect(worst).toBeLessThan(stepAllowance(deltaMs));
+    expect(gateSamples).toBeGreaterThan(5);
+    expect(gateClose / gateSamples).toBeLessThan(0.15);
     if (process.env.HERD_EVIDENCE === "1") {
       const lines = ["step_index,max_cow_step_m", ...samples.map((value, index) => `${index},${value.toFixed(4)}`)];
       writeFileSync("docs/screenshots/herd-move-graze/max-step.csv", `${lines.join("\n")}\n`);
@@ -169,46 +190,61 @@ describe("herd motion", () => {
     }
   });
 
-  it("keeps a dusk finish and a stuck save inside the destination camp", () => {
-    const repaired = createGame(3300);
-    repaired.date.hour = 8;
-    const dest = repaired.camps.find((camp) => camp.id !== repaired.herd.campId);
-    expect(dest).toBeTruthy();
-    if (!dest) return;
-    expect(moveHerd(repaired, dest.id).ok).toBe(true);
-    repaired.date.hour = 18.012288667834838;
-    repairStuckTransit(repaired);
-    expect(repaired.herd.transit).toBeNull();
-    expect(repaired.herd.campId).toBe(dest.id);
-    for (const agent of herdAgentList(repaired)) {
-      expect(pointCampId(repaired, agent.x, agent.y)).toBe(dest.id);
-      expect(insideInset(dest, agent.x, agent.y, 0.4)).toBe(true);
-    }
-
-    const held = createGame(17);
-    held.date.hour = 8;
-    const other = held.camps.find((camp) => camp.id !== held.herd.campId);
-    expect(other).toBeTruthy();
-    if (!other) return;
-    expect(moveHerd(held, other.id).ok).toBe(true);
-    const transit = held.herd.transit;
+  it("keeps each cow step to a walk across dusk and a repaired save", () => {
+    const deltaMs = 50;
+    const cap = stepAllowance(deltaMs, 18);
+    const state = createGame(3300);
+    state.date.hour = 8;
+    putHerdIn(state, 5);
+    expect(moveHerd(state, 2).ok).toBe(true);
+    const transit = state.herd.transit;
     expect(transit).toBeTruthy();
     if (!transit) return;
     transit.phase = "drive";
-    transit.progress = 0.97;
-    transit.distanceKm = 40;
     transit.approachProgress = 1;
-    held.date.hour = 18;
-    tickHerdingRealtime(held, 1000, "x1");
-    expect(held.herd.transit).toBeNull();
-    expect(held.herd.campId).toBe(other.id);
-    for (const agent of herdAgentList(held)) {
-      expect(pointCampId(held, agent.x, agent.y)).toBe(other.id);
-      expect(insideInset(other, agent.x, agent.y, 0.4)).toBe(true);
+    for (let i = 0; i < 30; i += 1) tickHerdingRealtime(state, deltaMs, "x1");
+    const progressBefore = state.herd.transit?.progress ?? 0;
+    state.date.hour = 18;
+    let worst = 0;
+    for (let i = 0; i < 80; i += 1) {
+      const prev = positions(state);
+      tickHerdingRealtime(state, deltaMs, "x1");
+      worst = Math.max(worst, moved(prev, positions(state)));
     }
-  });
+    expect(state.herd.transit?.phase).toBe("drive");
+    expect(state.herd.transit?.progress ?? 0).toBeGreaterThan(progressBefore);
+    expect(worst).toBeLessThanOrEqual(cap);
+    expect(worst).toBeGreaterThan(0.2);
 
-  it("holds a long night drive on the path instead of jumping camp", () => {
+    const saved = createGame(3300);
+    saved.date.hour = 8;
+    putHerdIn(saved, 5);
+    expect(moveHerd(saved, 2).ok).toBe(true);
+    const savedTransit = saved.herd.transit;
+    expect(savedTransit).toBeTruthy();
+    if (!savedTransit) return;
+    savedTransit.phase = "drive";
+    savedTransit.approachProgress = 1;
+    for (let i = 0; i < 20; i += 1) tickHerdingRealtime(saved, deltaMs, "x1");
+    const beforeRepair = positions(saved);
+    const campBefore = saved.herd.campId;
+    saved.date.hour = 18.012288667834838;
+    repairStuckTransit(saved);
+    expect(saved.date.hour).toBe(18);
+    expect(saved.herd.transit?.phase).toBe("drive");
+    expect(saved.herd.campId).toBe(campBefore);
+    expect(moved(beforeRepair, positions(saved))).toBeLessThan(0.05);
+    let repairWorst = 0;
+    for (let i = 0; i < 40; i += 1) {
+      const prev = positions(saved);
+      tickHerdingRealtime(saved, deltaMs, "x1");
+      repairWorst = Math.max(repairWorst, moved(prev, positions(saved)));
+    }
+    expect(repairWorst).toBeLessThanOrEqual(cap);
+    expect(repairWorst).toBeGreaterThan(0.2);
+  }, 30_000);
+
+  it("walks through dusk on the path instead of jumping camp", () => {
     const state = createGame(3300);
     state.date.hour = 8;
     const dest = state.camps.find((camp) => camp.id !== state.herd.campId);
@@ -226,9 +262,11 @@ describe("herd motion", () => {
     const before = positions(state);
     state.date.hour = 18;
     tickHerdingRealtime(state, 1000, "x1");
-    expect(state.herd.transit?.phase).toBe("night");
+    expect(state.herd.transit?.phase).toBe("drive");
     expect(state.herd.campId).not.toBe(dest.id);
-    expect(moved(before, positions(state))).toBeLessThan(0.05);
+    const step = moved(before, positions(state));
+    expect(step).toBeGreaterThan(0.05);
+    expect(step).toBeLessThanOrEqual(stepAllowance(1000, 18));
   });
 
   it("grazes as individuals over 10 game minutes", () => {

@@ -864,12 +864,12 @@ function laneAt(agent: HerdAgent, gates: PathGate[]): number {
   return open * (1 - squeeze) + tight * squeeze;
 }
 
-/** Cows further back stay a body length behind the pair in front, so the gate is a file. */
+/** Cows further back stay a body gap behind the pair in front, so the gate is a file. */
 function fileLimit(agents: HerdAgent[]): Map<string, number> {
   const ordered = agents.filter((agent) => agent.delayLeft <= 0).sort((a, b) => b.pathCursor - a.pathCursor);
   const limit = new Map<string, number>();
   const abreast = HERD_MOTION_TUNING.gatePassCount;
-  const gap = COW_LENGTH_METRES;
+  const gap = COW_LENGTH_METRES * HERD_MOTION_TUNING.minGapFractionOfBody;
   for (let i = abreast; i < ordered.length; i += 1) {
     const blocker = ordered[i - abreast];
     limit.set(ordered[i].id, blocker.pathCursor - gap);
@@ -943,7 +943,6 @@ function stepDrive(state: GameState, runtime: Runtime, dt: number, leadDist: num
     if (agent) agents.push(agent);
   }
   const grid = buildGrid(agents, cell);
-  const gap = COW_LENGTH_METRES * 0.72;
   const behind = fileLimit(agents);
   let front: HerdAgent | null = null;
 
@@ -999,14 +998,31 @@ function stepDrive(state: GameState, runtime: Runtime, dt: number, leadDist: num
     const gy = sample.y + sample.tx * lane;
     let dx = gx - agent.x;
     let dy = gy - agent.y;
-    const nearGate = runtime.gates.some((gate) => Math.abs(agent.pathCursor - gate.dist) < 22);
-    if (!nearGate) {
-      const push = separation(agent, grid, cell, gap);
+    const beforeX = agent.x;
+    const beforeY = agent.y;
+    const nearGate = runtime.gates.some(
+      (gate) => Math.abs(agent.pathCursor - gate.dist) < HERD_MOTION_TUNING.gateQueueM + 24,
+    );
+    const minGap = COW_LENGTH_METRES * HERD_MOTION_TUNING.minGapFractionOfBody;
+    const push = separation(agent, grid, cell, minGap);
+    let waitBehind = false;
+    if (nearGate) {
+      for (const other of agents) {
+        if (other.id === agent.id) continue;
+        if (other.pathCursor <= agent.pathCursor + 0.35) continue;
+        if (Math.hypot(agent.x - other.x, agent.y - other.y) >= minGap) continue;
+        waitBehind = true;
+        break;
+      }
+    }
+    if (waitBehind) {
+      // Inside the gap of a cow further up the path. Wait, and only step apart.
+      dx = push.x * maxStep;
+      dy = push.y * maxStep;
+    } else {
       dx += push.x * maxStep * 0.45;
       dy += push.y * maxStep * 0.45;
     }
-    const beforeX = agent.x;
-    const beforeY = agent.y;
     const dist = Math.hypot(dx, dy);
     const scale = dist > maxStep && dist > 0 ? maxStep / dist : 1;
     const nx = agent.x + dx * scale;
@@ -1082,49 +1098,6 @@ export function herdDriveReadyToFinish(state: GameState): boolean {
     if (agent.pathCursor > front) front = agent.pathCursor;
   }
   return front >= Math.max(0, runtime.geom.length - 14);
-}
-
-/**
- * One simulation pass that leaves every herd cow on the destination side of
- * the gate. Used when dusk or a stuck save finishes the drive without a
- * rendered frame per step.
- */
-export function settleHerdOnDestination(state: GameState): void {
-  const transit = state.herd.transit;
-  if (!transit || !usesMetreCoords(state)) return;
-  const runtime = ensureHerdAgents(state);
-  beginDrive(state, runtime);
-  const dest = campById(state, transit.toCampId);
-  if (!dest?.rect || !runtime.geom) return;
-  const entry = [...runtime.gates].reverse().find((gate) => gate.toCamp === dest.id);
-  const minDist = entry ? entry.dist + 10 : Math.max(0, runtime.geom.length * 0.55);
-  for (const animal of herdMembers(state)) {
-    const agent = runtime.agents.get(animal.id);
-    if (!agent) continue;
-    const idn = idHash(animal.id);
-    const along = clamp(minDist + (idn % 16) * 5.5, 0, Math.max(0, runtime.geom.length - 3));
-    const sample = samplePath(transit.path, runtime.geom, along);
-    const lane = ((idn % 5) - 2) * 2.1;
-    let x = sample.x - sample.ty * lane;
-    let y = sample.y + sample.tx * lane;
-    const campThere = pointCampId(state, x, y);
-    const clampCamp = campThere === dest.id ? dest : dest;
-    const clamped = clampToCamp(clampCamp, x, y, Math.min(HERD_MOTION_TUNING.fenceInsetM, 4));
-    x = clamped.x;
-    y = clamped.y;
-    agent.x = x;
-    agent.y = y;
-    agent.pathCursor = along;
-    agent.crossedDest = true;
-    agent.mode = "graze";
-    agent.grazeHeadDown = true;
-    agent.delayLeft = 0;
-    agent.heading = Math.atan2(sample.ty, sample.tx);
-    animal.campId = dest.id;
-    animal.tileX = x;
-    animal.tileY = y;
-    animal.activity = "graze";
-  }
 }
 
 /** Drop the drive and graze from wherever each cow is already standing. */

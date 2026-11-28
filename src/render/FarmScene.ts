@@ -17,7 +17,7 @@ import { hireFarmhand } from "../sim/workers";
 import type { DayLengthSeconds } from "../sim/clock";
 import { driveSlowsClock, herdInTransit, herdMoveActive, herdWorldTile, pathTangent } from "../sim/transit";
 import { beginHerdMove, snapHerderToDrive, syncHerderOnDrive, tickHerdingRealtime } from "../sim/herding";
-import { resetHerdMotion, setHerdMotionView } from "../sim/herdMotion";
+import { herdAgentList, resetHerdMotion, setHerdMotionView } from "../sim/herdMotion";
 import { freeWorkerHouseSlots } from "../sim/housing";
 import { ensurePeopleState, tickPeopleSchedule, workerAtHomeAtNight } from "../sim/people";
 import { farmerDisplayName, DEFAULT_PLAYER_DISPLAY_NAME } from "../sim/playerName";
@@ -1564,6 +1564,49 @@ export class FarmScene extends Phaser.Scene {
         this.clampScroll();
         this.redrawFences();
         return { ok: true as const, campA: a, campB: b, x, y, zoom: camera.zoom, viewWidth: liveCameraView(this).width };
+      },
+      cowsNearGate: (a: number, b: number) => {
+        const from = this.state.camps.find((camp) => camp.id === a);
+        const to = this.state.camps.find((camp) => camp.id === b);
+        if (!from || !to) return { count: 0, closest: null as number | null, x: 0, y: 0 };
+        const gate = campGateBetween(from, to);
+        if (!gate) return { count: 0, closest: null as number | null, x: 0, y: 0 };
+        const x = (gate.fromGate.x + gate.toGate.x) / 2;
+        const y = (gate.fromGate.y + gate.toGate.y) / 2;
+        let count = 0;
+        let closest = Number.POSITIVE_INFINITY;
+        for (const agent of herdAgentList(this.state)) {
+          const dist = Math.hypot(agent.x - x, agent.y - y);
+          if (dist < closest) closest = dist;
+          if (dist < 45) count += 1;
+        }
+        return { count, closest: Number.isFinite(closest) ? closest : null, x, y };
+      },
+      frameHerdGate: (a: number, b: number, zoom = 1.35) => {
+        const from = this.state.camps.find((camp) => camp.id === a);
+        const to = this.state.camps.find((camp) => camp.id === b);
+        if (!from || !to) return { ok: false as const };
+        const gate = campGateBetween(from, to);
+        if (!gate) return { ok: false as const };
+        const vertical = gate.fromGate.x !== gate.toGate.x;
+        const x = vertical ? Math.max(gate.fromGate.x, gate.toGate.x) : gate.fromGate.x;
+        const y = vertical ? gate.fromGate.y : Math.max(gate.fromGate.y, gate.toGate.y);
+        const center = tileCenter(x, y, this.layout, this.groundTileW, this.groundTileH);
+        const camera = this.cameras.main;
+        this.refreshZoomLimits();
+        camera.setZoom(clampZoom(zoom, this.minZoom, this.maxZoom));
+        camera.centerOn(center.x, center.y);
+        this.clampScroll();
+        this.redrawFences();
+        this.placeHerd(performance.now());
+        return { ok: true as const, x, y, zoom: camera.zoom, viewWidth: liveCameraView(this).width };
+      },
+      setCaptureHour: (hour: number) => {
+        this.captureLightingHour = null;
+        this.state.date = { ...this.state.date, hour };
+        if (this.state.clock) this.state.clock.bankMs = 0;
+        this.applyRanchLighting();
+        return this.state.date.hour;
       },
       nudgeCamera: (dx: number, dy: number) => {
         const camera = this.cameras.main;
