@@ -124,7 +124,7 @@ import {
   type TreeLodRect,
 } from "./treeLod";
 import { palette } from "./palette";
-import { campLabelTile, offsetsForHerd } from "./herdLayout";
+import { campLabelTile, campUnderHerdMarker, offsetsForHerd } from "./herdLayout";
 import { layoutAnimals } from "./animalLayout";
 import { filterAnimals, TOLLY_OVER_300 } from "../sim/animals";
 import { startEscape, tickEscapeWanderRealtime } from "../sim/escapes";
@@ -2356,6 +2356,8 @@ export class FarmScene extends Phaser.Scene {
     this.syncVegetation(zoom);
     const view = camera.worldView;
     const nameScale = 1 / Math.max(zoom, 0.002);
+    const blobTile = herdWorldTile(this.state);
+    const underId = this.herdIsAMarker() ? campUnderHerdMarker(this.state.camps, blobTile.x, blobTile.y) : null;
     for (const [id, label] of this.campLabels) {
       const camp = this.state.camps.find((item) => item.id === id);
       if (!camp) continue;
@@ -2366,13 +2368,12 @@ export class FarmScene extends Phaser.Scene {
       label.setScale(nameScale);
       const homeX = label.getData("homeX") as number;
       const homeY = label.getData("homeY") as number;
-      const underHerd = this.herdIsAMarker() && id === this.state.herd.campId;
-      if (underHerd) {
+      if (underId !== null && id === underId) {
         const centre = this.cowCentreWorld();
         const zoomSafe = Math.max(zoom, 0.0004);
-        // Below the blob. The head-count chip sits above it, and a side shift still lands on the oval at phone zoom.
+        // The blob extends about 13 px below its centre. Sit the name just under that.
         label.setOrigin(0.5, 0);
-        label.setPosition(centre.x, centre.y + 24 / zoomSafe);
+        label.setPosition(centre.x, centre.y + 32 / zoomSafe);
         label.setDepth(26100);
       } else {
         label.setOrigin(0.5, 0.5);

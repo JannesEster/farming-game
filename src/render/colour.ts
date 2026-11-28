@@ -223,6 +223,16 @@ export function paintMinimap(canvas: HTMLCanvasElement, state: GameState): void 
       ctx.fillStyle = toCss(campFillColour(grazeableFraction(camp), camp.soilMoistureMm));
       ctx.fillRect(camp.rect.x * cw, camp.rect.y * ch, Math.max(1, camp.rect.w * cw), Math.max(1, camp.rect.h * ch));
     });
+    // A storm can paint every camp the same wet colour. The lines keep the camps readable.
+    // assumption, tune by eye, not sourced. 3 canvas px still reads after the minimap is scaled down.
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = toCss(palette.fenceInk);
+    state.camps.forEach((camp) => {
+      if (!camp.rect) return;
+      const rw = Math.max(2, camp.rect.w * cw);
+      const rh = Math.max(2, camp.rect.h * ch);
+      ctx.strokeRect(camp.rect.x * cw + 1, camp.rect.y * ch + 1, rw - 1, rh - 1);
+    });
     const camp = state.camps.find((item) => item.id === state.herd.campId);
     if (!camp) return;
     ctx.beginPath();

@@ -671,6 +671,23 @@ function tileNearHomestead(state: GameState, x: number, y: number, clearance: nu
   return false;
 }
 
+/**
+ * The camp the herd marker is standing in.
+ * herd.campId can still name the camp the herd left, so the name follows the blob, not that id.
+ */
+export function campUnderHerdMarker(
+  camps: Array<{ id: number; rect?: { x: number; y: number; w: number; h: number } }>,
+  x: number,
+  y: number,
+): number | null {
+  for (const camp of camps) {
+    const rect = camp.rect;
+    if (!rect) continue;
+    if (x >= rect.x && y >= rect.y && x < rect.x + rect.w && y < rect.y + rect.h) return camp.id;
+  }
+  return null;
+}
+
 /** Camp number sits on grass. If the centroid falls on the yard, move it off the buildings. */
 export function campLabelTile(state: GameState, camp: CampState): TilePoint {
   if (camp.rect) {

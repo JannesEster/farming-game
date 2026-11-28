@@ -12,6 +12,7 @@ import { isoLayout, tileCenter, worldToTile } from "./iso";
 import { PIXELS_PER_METRE } from "./worldScale";
 import {
   campLabelTile,
+  campUnderHerdMarker,
   fileAlongPath,
   gateFileWidthPx,
   grazingCenterTile,
@@ -198,5 +199,21 @@ describe("organicTrekOffsets", () => {
     const b = organicTrekOffsets(HERD, 9, 0, 1, 0.5, 2500);
     const moved = a.some((offset, i) => Math.hypot(offset.x - b[i].x, offset.y - b[i].y) > 0.5);
     expect(moved).toBe(true);
+  });
+});
+
+describe("camp names", () => {
+  it("keeps each camp name in its own camp when the herd has left the spawn camp", () => {
+    const camps = [
+      { id: 0, rect: { x: 0, y: 0, w: 400, h: 300 } },
+      { id: 5, rect: { x: 0, y: 900, w: 400, h: 500 } },
+    ];
+    const spawnCampId = 0;
+    const blob = { x: 180, y: 1100 };
+    const holding = campUnderHerdMarker(camps, blob.x, blob.y);
+    expect(holding).toBe(5);
+    expect(holding).not.toBe(spawnCampId);
+    expect(campUnderHerdMarker(camps, 40, 40)).toBe(spawnCampId);
+    expect(campUnderHerdMarker(camps, 900, 900)).toBeNull();
   });
 });
