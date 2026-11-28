@@ -313,19 +313,24 @@ class CostHeap {
 }
 
 /**
- * Walk the tile grid. Camp interiors and tracks are fine. A fence costs a lot
- * unless the step is the shared gate between those two camps.
+ * Where the mob rests in a camp. Centre of the rect, pulled a third of the way
+ * toward the trough that serves the camp, still inset from the fence.
+ * The drive walks all the way here. It does not stop a short step inside the gate.
  */
-function stepInsideRect(camp: CampState, gate: TilePoint, metres: number): TilePoint {
+export function campGrazingGoal(state: GameState, camp: CampState): TilePoint {
+  if (!camp.rect) return { ...camp.anchor };
   const rect = camp.rect;
-  if (!rect) return { ...camp.anchor };
-  const dx = camp.anchor.x - gate.x;
-  const dy = camp.anchor.y - gate.y;
-  const len = Math.hypot(dx, dy) || 1;
-  return {
-    x: Math.round(Math.min(rect.x + rect.w - 2, Math.max(rect.x + 1, gate.x + (dx / len) * metres))),
-    y: Math.round(Math.min(rect.y + rect.h - 2, Math.max(rect.y + 1, gate.y + (dy / len) * metres))),
-  };
+  let x = rect.x + rect.w / 2;
+  let y = rect.y + rect.h / 2;
+  const trough = (state.farmWaterPoints ?? []).find((point) => point.servedCampIds.includes(camp.id));
+  if (trough) {
+    x += (trough.trough.x - x) * 0.33;
+    y += (trough.trough.y - y) * 0.33;
+  }
+  const inset = 48;
+  x = Math.min(rect.x + rect.w - inset, Math.max(rect.x + inset, x));
+  y = Math.min(rect.y + rect.h - inset, Math.max(rect.y + inset, y));
+  return { x: Math.round(x), y: Math.round(y) };
 }
 
 /** A few waypoints through the gates. No cell array, so a 10 km farm stays cheap. */
@@ -350,7 +355,7 @@ function planMetreWalk(state: GameState, from: TilePoint, to: TilePoint): TilePo
 
 function planMetreHerd(state: GameState, from: CampState, to: CampState): TilePoint[] {
   const route = bfsCampRoute(state, from.id, to.id) ?? [from.id, to.id];
-  const points: TilePoint[] = [{ ...from.anchor }];
+  const points: TilePoint[] = [campGrazingGoal(state, from)];
   for (let i = 0; i < route.length - 1; i += 1) {
     const left = state.camps.find((camp) => camp.id === route[i]);
     const right = state.camps.find((camp) => camp.id === route[i + 1]);
@@ -359,7 +364,7 @@ function planMetreHerd(state: GameState, from: CampState, to: CampState): TilePo
     if (!gate) continue;
     points.push(gate.from, gate.to);
   }
-  points.push(stepInsideRect(to, points[points.length - 1], 40));
+  points.push(campGrazingGoal(state, to));
   return dedupe(points);
 }
 

@@ -17,6 +17,7 @@ import {
   frameWorldRectInClearBand,
   preferredHomesteadZoom,
   scrollToLayoutTip,
+  scrollToWorldPointInClearBand,
   visibleWorldLeft,
   worldXAtScreenX,
   worldYAtScreenY,
@@ -322,6 +323,27 @@ describe("applyPanFriction", () => {
     expect(next).not.toBeNull();
     expect(next!.vx).toBeLessThan(400);
     expect(next!.vx).toBeGreaterThan(0);
+  });
+});
+
+describe("scrollToWorldPointInClearBand", () => {
+  it("puts the point in the middle of the clear band", () => {
+    const screenW = 390;
+    const screenH = 844;
+    const zoom = 0.8;
+    const insets = { top: 56, bottom: 140, left: 8, right: 8 };
+    const margin = CAMERA_CLEAR_MARGIN_PX;
+    const worldX = 2400;
+    const worldY = 1800;
+    const next = scrollToWorldPointInClearBand(worldX, worldY, 8000, 8000, screenW, screenH, zoom, insets);
+    const left = insets.left + margin;
+    const right = insets.right + margin;
+    const top = insets.top + margin;
+    const bottom = insets.bottom + margin;
+    const screenX = left + (screenW - left - right) / 2;
+    const screenY = top + (screenH - top - bottom) / 2;
+    expect(worldXAtScreenX(next.scrollX, screenW, zoom, screenX)).toBeCloseTo(worldX, 4);
+    expect(worldYAtScreenY(next.scrollY, screenH, zoom, screenY)).toBeCloseTo(worldY, 4);
   });
 });
 

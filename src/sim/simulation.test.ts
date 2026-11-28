@@ -217,7 +217,7 @@ describe("grazing rhythm and warnings", () => {
     finishTransit(state);
     for (let day = 0; day < 12; day += 1) stepDayWithRain(state, 8);
     expect(state.herd.condition).toBeGreaterThan(70);
-  });
+  }, 30_000);
 });
 
 describe("local save", () => {

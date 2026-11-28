@@ -655,3 +655,59 @@ export const CONFIG: GameConfig = {
     rainDropCap: 40,
   },
 };
+
+/**
+ * assumption, not sourced.
+ * assumption, tune by eye, not sourced.
+ * Bout lengths, rest lengths, preferred spacing, and how tightly the mob holds
+ * together. Jannes can change these. Walk speed, slow graze drift, and body
+ * length are not here: they already live on CONFIG.transit and COW_LENGTH_METRES.
+ * Cattle drink about every other day (sourced). The exact hour count below is
+ * still an assumption.
+ */
+export const HERD_MOTION_TUNING = {
+  grazeBoutMinS: 16,
+  grazeBoutMaxS: 52,
+  standMinS: 5,
+  standMaxS: 20,
+  walkMinS: 8,
+  walkMaxS: 26,
+  /** Walk between feeding spots. Slower than a drive. */
+  spotWalkKmH: 1.1,
+  drinkSeconds: 14,
+  drinkIntervalGameHours: 48,
+  troughReachM: 7,
+  candidateCount: 5,
+  candidateMinM: 7,
+  candidateMaxM: 32,
+  restRadiusM: 32,
+  /** Share of one body length kept between adults. */
+  minGapFractionOfBody: 0.86,
+  cohesionStartM: 42,
+  /** Share of this step's speed spent pulling back toward the mob. */
+  cohesionPull: 0.2,
+  grassWeight: 1.4,
+  waterWeight: 0.45,
+  centreWeight: 0.22,
+  crowdWeight: 0.35,
+  /** Off until a capture looks right. Shade seeking has no source figure. */
+  shadeWeight: 0,
+  shadeHourStart: 11,
+  shadeHourEnd: 15,
+  bareWaterM: 30,
+  grassCellM: 40,
+  /** How fast a grazed cell fades. Presentation only, not the camp budget. */
+  grassWearPerHour: 0.035,
+  fenceInsetM: 2.4,
+  gateLaneHalfM: 1.2,
+  openLaneHalfM: 8,
+  gatePassCount: 2,
+  gateQueueM: 16,
+  /** Metres of stream between the first cow and the last at the moment they start. */
+  maxLagM: 96,
+  simStepGameS: 0.5,
+  offscreenStride: 4,
+  viewMarginM: 160,
+  calfGapM: 3.4,
+  shadeTreeM: 22,
+} as const;

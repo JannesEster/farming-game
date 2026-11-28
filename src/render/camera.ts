@@ -92,6 +92,37 @@ export function scrollToLayoutTip(
   );
 }
 
+/** Scroll that puts a world point in the middle of the clear map band, under the chrome. */
+export function scrollToWorldPointInClearBand(
+  worldX: number,
+  worldY: number,
+  layoutW: number,
+  layoutH: number,
+  screenW: number,
+  screenH: number,
+  zoom: number,
+  insets: ViewInsets,
+  margin = CAMERA_CLEAR_MARGIN_PX,
+): { scrollX: number; scrollY: number } {
+  const top = insets.top + margin;
+  const bottom = insets.bottom + margin;
+  const left = insets.left + margin;
+  const right = insets.right + margin;
+  const screenX = left + Math.max(1, screenW - left - right) / 2;
+  const screenY = top + Math.max(1, screenH - top - bottom) / 2;
+  return clampCameraScrollWithInsets(
+    scrollXForWorldAtScreenX(worldX, screenW, zoom, screenX),
+    scrollYForWorldAtScreenY(worldY, screenH, zoom, screenY),
+    layoutW,
+    layoutH,
+    screenW,
+    screenH,
+    zoom,
+    insets,
+    margin,
+  );
+}
+
 /**
  * Clamps pan so map tips can reach the clear map band (below the top bar, above bottom chrome).
  */

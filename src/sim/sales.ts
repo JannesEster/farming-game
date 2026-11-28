@@ -37,6 +37,14 @@ export function beginSaleConvoy(
   if (state.story.saleConvoy && state.story.saleConvoy.phase !== "done") {
     return { ok: false, message: "A sale is already in progress." };
   }
+  const queued = state.story.herdMoveQueue;
+  if (queued) {
+    const name = queued.campName ?? "the next camp";
+    return {
+      ok: false,
+      message: `A move to ${name} is still queued. That move stays. Sell after the herd is on its way.`,
+    };
+  }
   if (herderIsBusy(state) || herdInTransit(state.herd)) {
     return { ok: false, message: "Finish the herd move before loading stock." };
   }
@@ -113,7 +121,10 @@ export function tickSaleConvoyRealtime(
   if (!convoy || convoy.phase === "done") return;
 
   if (convoy.phase === "drive_yard") {
-    if (!convoy.driveStarted && !herdInTransit(state.herd)) {
+    if (!convoy.driveStarted) {
+      // A queued camp move, or a drive already on the road, owns the herd.
+      // Wait. Do not send them to the yard, and do not treat that drive as this sale.
+      if (state.story?.herdMoveQueue || herdInTransit(state.herd)) return;
       const dest = kraalDestinationCampId(state);
       if (dest !== null && dest !== state.herd.campId) {
         beginHerdMove(state, dest, config);
