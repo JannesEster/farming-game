@@ -16,6 +16,7 @@ import {
   saleConvoyActive,
   tickSaleConvoyRealtime,
 } from "./sales";
+import { requestHerdMove, tickHerdingRealtime } from "./herding";
 import { campHasWaterAccess, campHasTroughInPolygon, herdDrinkingAtTrough, tickDrinkingRealtime } from "./water";
 import { maybeStartBakkieRun, tickBakkieRealtime, bakkieOnRoad } from "./bakkie";
 import { setWorkPriority } from "./workGrid";
@@ -88,6 +89,30 @@ describe("step 3b water, sales, bakkie", () => {
     expect(state.cashNad).toBeGreaterThan(cash0);
     expect(state.story?.saleConvoy?.paid).toBe(true);
     expect((state.story?.composition.tolly ?? 0)).toBeLessThan(120);
+  });
+
+  it("keeps a queued camp move when a sale is asked for", () => {
+    const state = loadDefault();
+    state.date.hour = 21;
+    const dest = state.camps.find((camp) => camp.id !== state.herd.campId);
+    if (!dest) throw new Error("no other camp");
+    const queued = requestHerdMove(state, dest.id);
+    expect(queued.ok).toBe(true);
+    expect(state.story?.herdMoveQueue?.toCampId).toBe(dest.id);
+    const campBefore = state.herd.campId;
+    const q = quoteSale(state, "tolly", 2, "auction");
+    if ("reason" in q) throw new Error(q.reason);
+    const begin = beginSaleConvoy(state, "tolly", 2, "auction", q);
+    expect(begin.ok).toBe(false);
+    expect(begin.message).toContain(dest.name);
+    expect(begin.message.toLowerCase()).toContain("queued");
+    expect(state.story?.saleConvoy ?? null).toBeNull();
+    expect(state.herd.transit).toBeNull();
+    tickSaleConvoyRealtime(state, 8000, 8);
+    tickHerdingRealtime(state, 0, "x1");
+    expect(state.herd.campId).toBe(campBefore);
+    expect(state.story?.herdMoveQueue?.toCampId).toBe(dest.id);
+    expect(state.story?.saleConvoy ?? null).toBeNull();
   });
 
   it("bakkie run consumes diesel litres", () => {

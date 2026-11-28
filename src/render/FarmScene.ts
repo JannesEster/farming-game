@@ -45,6 +45,7 @@ import {
   homesteadBoundsPad,
   openingFrameBounds,
   scrollToLayoutTip,
+  scrollToWorldPointInClearBand,
   scrollXForWorldAtScreenX,
   scrollYForWorldAtScreenY,
   worldXAtScreenX,
@@ -459,10 +460,7 @@ export class FarmScene extends Phaser.Scene {
         getGameFlow().setHudPanel("herdSheet", Boolean(expanded));
         if (expanded) getGameFlow().notifySim("grassChecked");
       },
-      onHerdLocator: () => {
-        const center = this.mobCenter();
-        this.jumpCameraTo(center.x, center.y, true);
-      },
+      onHerdLocator: () => this.focusOnHerd(),
       onToggleAnimal: (id) => this.toggleAnimal(id),
       onAnimalFilter: (filter) => this.applyAnimalFilter(filter),
       onCutToCamp: () => this.orderCutToPendingCamp(),
@@ -1123,11 +1121,7 @@ export class FarmScene extends Phaser.Scene {
         camera.scrollY = next.scrollY;
         return { scrollX: camera.scrollX, scrollY: camera.scrollY, zoom: camera.zoom };
       },
-      centerOnHerd: () => {
-        const center = this.mobCenter();
-        this.cameras.main.centerOn(center.x, center.y);
-        this.clampScroll();
-      },
+      centerOnHerd: () => this.focusOnHerd(),
       setZoom: (zoom: number) => {
         this.cameras.main.setZoom(clampZoom(zoom, this.minZoom, this.maxZoom));
         this.clampScroll();
@@ -1913,18 +1907,20 @@ export class FarmScene extends Phaser.Scene {
       camera.zoom,
       insets,
     );
+    const centre = this.cowCentreWorld();
     const tileW = CONFIG.view.tileWidth;
-    const herdSeen = boundsContainsPoint(view, this.herdVisual.x, this.herdVisual.y, tileW * 2.2);
+    const herdSeen = boundsContainsPoint(view, centre.x, centre.y, tileW * 2.2);
     if (herdSeen) {
       this.hud.setHerdLocator(false, "", "right");
       return;
     }
     let edge: "left" | "right" | "top" | "bottom" = "right";
-    if (this.herdVisual.x < view.minX) edge = "left";
-    else if (this.herdVisual.x > view.maxX) edge = "right";
-    else if (this.herdVisual.y < view.minY) edge = "top";
-    else if (this.herdVisual.y > view.maxY) edge = "bottom";
-    const arrow = edge === "left" ? "← Herd" : "→ Herd";
+    if (centre.x < view.minX) edge = "left";
+    else if (centre.x > view.maxX) edge = "right";
+    else if (centre.y < view.minY) edge = "top";
+    else if (centre.y > view.maxY) edge = "bottom";
+    const arrow =
+      edge === "left" ? "← Herd" : edge === "right" ? "→ Herd" : edge === "top" ? "↑ Herd" : "↓ Herd";
     this.hud.setHerdLocator(true, arrow, edge);
   }
 
@@ -2033,7 +2029,13 @@ export class FarmScene extends Phaser.Scene {
       })
       .setOrigin(0.5, 1)
       .setDepth(26000)
-      .setVisible(false);
+      .setVisible(false)
+      .setInteractive({ useHandCursor: true });
+    this.herdMarker.on("pointerup", (pointer: Phaser.Input.Pointer) => {
+      const rec = this.pointers.get(pointer.id);
+      if (rec?.moved) return;
+      this.focusOnHerd();
+    });
     for (const camp of this.state.camps) this.shownPct.set(camp.id, Math.round(grazeableFraction(camp) * 100));
     this.syncMetreFrame();
   }
@@ -2312,8 +2314,10 @@ export class FarmScene extends Phaser.Scene {
     if (this.herdMarker) {
       const farHerd = zoom < 0.12;
       this.herdMarker.setVisible(farHerd);
+      if (this.herdMarker.input) this.herdMarker.input.enabled = farHerd;
       if (farHerd) {
-        this.herdMarker.setPosition(this.herdVisual.x, this.herdVisual.y - 8);
+        const centre = this.cowCentreWorld();
+        this.herdMarker.setPosition(centre.x, centre.y - 8);
         this.herdMarker.setScale(nameScale);
         this.herdMarker.setText(`${this.state.herd.headCount} head`);
       }
@@ -2783,6 +2787,38 @@ export class FarmScene extends Phaser.Scene {
 
   private mobCenter(): { x: number; y: number } {
     return this.averageOffsets(this.herdOffsets);
+  }
+
+  /** Screen point at the middle of the drawn cows. */
+  private cowCentreWorld(): { x: number; y: number } {
+    if (this.herdOffsets.length > 0) return this.mobCenter();
+    const tile = herdWorldTile(this.state);
+    return tileCenter(tile.x, tile.y, this.layout, this.groundTileW, this.groundTileH);
+  }
+
+  /** Put the cows' centre in the middle of the clear map band. */
+  private focusOnHerd(): void {
+    this.placeHerd(performance.now());
+    const centre = this.cowCentreWorld();
+    this.panVel = null;
+    const camera = this.cameras.main;
+    this.refreshZoomLimits();
+    const readable = readableCampZoom(camera.width, CONFIG.view.tileWidth, this.zoomTargets());
+    const zoom = clampZoom(Math.max(camera.zoom, readable), this.minZoom, this.maxZoom);
+    if (zoom !== camera.zoom) camera.setZoom(zoom);
+    const next = scrollToWorldPointInClearBand(
+      centre.x,
+      centre.y,
+      this.layout.width,
+      this.layout.height,
+      camera.width,
+      camera.height,
+      camera.zoom,
+      viewportCameraInsets(),
+    );
+    camera.scrollX = next.scrollX;
+    camera.scrollY = next.scrollY;
+    this.syncHerdLocator();
   }
 
   /** Centre of the animals that are actually walking the route. */

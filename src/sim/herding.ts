@@ -70,6 +70,10 @@ export function tryDispatchHerdQueue(state: GameState, config: GameConfig = CONF
   if (!isDaylightHour(state.date.hour)) return;
   if (herdInTransit(state.herd) || state.herd.transit) return;
   const q = story.herdMoveQueue;
+  if (q.toCampId === state.herd.campId) {
+    story.herdMoveQueue = null;
+    return;
+  }
   beginHerdMove(state, q.toCampId, config);
   if (state.herd.transit) story.herdMoveQueue = null;
 }
@@ -314,7 +318,8 @@ export function tickHerdingRealtime(
   }
   tickTransitRealtime(state, deltaMs, mode, config);
   if (state.herd.transit) syncHerderOnDrive(state);
-  else if (state.story) state.story.herdMoveQueue = null;
+  // A finished drive must not drop a camp move that is still queued.
+  // The queue clears when that move itself starts.
 }
 
 export function syncHerderToApproach(state: GameState): void {
