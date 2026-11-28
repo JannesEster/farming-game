@@ -75,6 +75,36 @@ describe("rain log", () => {
     expect(daysSinceLastUsefulRain(drizzle)).toBeNull();
   });
 
+  it("carries season rain and the last storm across the new year until 1 July", () => {
+    const state = createGame(12);
+    state.date = { year: 2026, month: 11, day: 2, hour: 8 };
+    stepDayWithRain(state, 28);
+    expect(state.seasonRainMm).toBeCloseTo(28);
+    expect(state.lastUsefulRain).toEqual({ year: 2026, month: 11, day: 2 });
+
+    state.date = { year: 2026, month: 12, day: 3, hour: 8 };
+    stepDayWithRain(state, 12);
+    expect(state.date).toEqual({ year: 2027, month: 1, day: 1, hour: 8 });
+    expect(state.seasonRainMm).toBeCloseTo(40);
+    expect(state.lastUsefulRain).toEqual({ year: 2026, month: 12, day: 3 });
+
+    state.date = { year: 2027, month: 5, day: 1, hour: 9 };
+    stepDayWithRain(state, 0);
+    expect(state.date).toEqual({ year: 2027, month: 5, day: 2, hour: 9 });
+    expect(state.todayRainMm).toBe(0);
+    const may = formatYearLine(state);
+    expect(may).toContain("Season 40 mm");
+    expect(may).toContain("Last rain 12 mm on 3 Dec");
+    expect(may).not.toContain("Season 0 mm");
+    expect(may).not.toContain("No rain since 1 Jul");
+    noDash(may);
+
+    state.date = { year: 2027, month: 6, day: 3, hour: 8 };
+    stepDayWithRain(state, 0);
+    expect(state.date).toEqual({ year: 2027, month: 7, day: 1, hour: 8 });
+    expect(state.seasonRainMm).toBe(0);
+  });
+
   it("says the dry season has had no rain, instead of a bare zero", () => {
     const state = createGame(21);
     expect(formatRainChip(state)).toBe("No rain");

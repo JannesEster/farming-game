@@ -263,6 +263,7 @@ export class FarmScene extends Phaser.Scene {
   private groundTileH = CONFIG.view.tileHeight;
   private metre = false;
   private campMap?: Phaser.GameObjects.Graphics;
+  private wetShade?: Phaser.GameObjects.Graphics;
   private roadGraphics?: Phaser.GameObjects.Graphics;
   private midMarks?: Phaser.GameObjects.Graphics;
   private herdMarker?: Phaser.GameObjects.Text;
@@ -416,6 +417,7 @@ export class FarmScene extends Phaser.Scene {
     }
     this.paintProps();
     this.paintLabels();
+    this.wetShade = this.add.graphics().setScrollFactor(0).setDepth(3.5);
     this.fences = this.add.graphics().setDepth(4);
     this.redrawFences();
     this.ring = this.add.graphics().setDepth(9);
@@ -536,7 +538,7 @@ export class FarmScene extends Phaser.Scene {
         padding: { x: 6, y: 3 },
       })
       .setOrigin(0.5, 1)
-      .setDepth(26000);
+      .setDepth(32000);
     flow.attachFarmHud(this.hud);
     this.hud.setSpeed(this.mode);
     if (!flow.getTutorialStep()) {
@@ -1906,12 +1908,9 @@ export class FarmScene extends Phaser.Scene {
       camera.centerOn(this.captureFollow.x, this.captureFollow.y);
       this.clampScroll();
     }
-    if (this.capturePin) {
-      this.applyCapturePin();
-      this.drawRain(time);
-      return;
-    }
-    this.applyPanInertia(delta);
+    if (this.capturePin) this.applyCapturePin();
+    else this.applyPanInertia(delta);
+    this.drawWetShade();
     this.drawRain(time);
     this.drawRing();
   }
@@ -2342,6 +2341,7 @@ export class FarmScene extends Phaser.Scene {
     if (this.campMap) {
       paintCampShapes(this.campMap, this.state, this.layout, this.groundTileW, this.groundTileH, zoom, farmMapView(this));
     }
+    this.drawWetShade();
     if (this.roadGraphics) {
       if (zoom >= 0.18) paintTwoTrack(this.roadGraphics, this.state, this.layout, this.groundTileW, this.groundTileH);
       else this.roadGraphics.clear();
@@ -2352,6 +2352,7 @@ export class FarmScene extends Phaser.Scene {
       else this.midMarks.clear();
     }
     syncMetreChunks(this, this.layout, this.groundTileW, this.groundTileH, this.metreChunks, zoom);
+    this.drawWetShade();
     this.syncVegetation(zoom);
     const view = camera.worldView;
     const nameScale = 1 / Math.max(zoom, 0.002);
@@ -2363,6 +2364,21 @@ export class FarmScene extends Phaser.Scene {
       if (!far) continue;
       label.setText(camp.name);
       label.setScale(nameScale);
+      const homeX = label.getData("homeX") as number;
+      const homeY = label.getData("homeY") as number;
+      const underHerd = this.herdIsAMarker() && id === this.state.herd.campId;
+      if (underHerd) {
+        const centre = this.cowCentreWorld();
+        const zoomSafe = Math.max(zoom, 0.0004);
+        // Below the blob. The head-count chip sits above it, and a side shift still lands on the oval at phone zoom.
+        label.setOrigin(0.5, 0);
+        label.setPosition(centre.x, centre.y + 24 / zoomSafe);
+        label.setDepth(26100);
+      } else {
+        label.setOrigin(0.5, 0.5);
+        label.setDepth(20000 + (Number.isFinite(homeY) ? homeY : 0) * 0.01);
+        if (Number.isFinite(homeX) && Number.isFinite(homeY)) label.setPosition(homeX, homeY);
+      }
     }
     this.syncHerdMarker();
     for (const sprite of this.propSprites) {
@@ -2692,6 +2708,8 @@ export class FarmScene extends Phaser.Scene {
         .setOrigin(0.5, 0.5)
         .setDepth(20000 + point.y * 0.01)
         .setResolution(2);
+      label.setData("homeX", point.x);
+      label.setData("homeY", point.y - 6);
       this.campLabels.set(camp.id, label);
     }
     this.refreshCampLabels();
@@ -3035,11 +3053,12 @@ export class FarmScene extends Phaser.Scene {
     this.farmerSprite.setVisible(true);
     if (this.farmerNameTag) {
       this.farmerNameTag.setText(farmerDisplayName(this.state));
+      this.farmerNameTag.setFixedSize(0, 0);
       this.farmerNameTag.setPosition(
         placed.x,
-        placed.y - this.farmerSprite.displayHeight - 6 + placed.bob,
+        placed.y - this.farmerSprite.displayHeight - 14 + placed.bob,
       );
-      this.farmerNameTag.setDepth(this.farmerSprite.depth + 2);
+      this.farmerNameTag.setDepth(32000);
       this.farmerNameTag.setVisible(true);
     }
   }
@@ -5130,7 +5149,11 @@ export class FarmScene extends Phaser.Scene {
       this.state.seasonRainMm = 28;
       this.state.rainLog = [{ year: this.state.date.year, month: 11, day: 2, mm: 28 }];
       this.state.lastUsefulRain = { year: this.state.date.year, month: 11, day: 2 };
-      paintCover(herdCamp, 0.7, 22);
+      for (const camp of this.state.camps) {
+        paintCover(camp, 0.7, 22);
+        camp.restOwedAfterRain = false;
+        camp.restDaysAfterRain = 0;
+      }
       this.prepareHomesteadCapture();
       this.capturePin = null;
     } else if (mode === "rainbook") {
@@ -5147,15 +5170,19 @@ export class FarmScene extends Phaser.Scene {
       this.capturePin = null;
       this.syncHud();
       this.hud.openRainBook();
-    } else if (mode === "wet" && herdCamp) {
+    } else if (mode === "wet") {
       this.state.date = { ...this.state.date, month: 11, day: 4, hour: 9 };
       this.state.todayRainMm = 0;
       this.state.seasonRainMm = 28;
       this.state.rainLog = [{ year: this.state.date.year, month: 11, day: 3, mm: 28 }];
-      paintCover(herdCamp, 0.55, 22);
-      herdCamp.restOwedAfterRain = true;
-      herdCamp.restDaysAfterRain = 1;
-      this.frameCampForCapture(herdCamp.id);
+      this.state.lastUsefulRain = { year: this.state.date.year, month: 11, day: 3 };
+      for (const camp of this.state.camps) {
+        paintCover(camp, 0.55, 22);
+        camp.restOwedAfterRain = true;
+        camp.restDaysAfterRain = 1;
+      }
+      this.prepareHomesteadCapture();
+      this.capturePin = null;
     } else if (mode === "flush" && herdCamp) {
       this.state.date = { ...this.state.date, month: 12, day: 2, hour: 10 };
       this.state.todayRainMm = 0;
@@ -5190,8 +5217,17 @@ export class FarmScene extends Phaser.Scene {
       this.prepareFarmMapCapture();
       this.capturePin = null;
     } else if (mode === "may") {
-      this.state.date = { ...this.state.date, month: 5, day: 2, hour: 9 };
+      const seasonYear = this.state.date.year;
+      this.state.date = { ...this.state.date, year: seasonYear + 1, month: 5, day: 2, hour: 9 };
       this.state.todayRainMm = 0;
+      this.state.seasonRainMm = 86;
+      this.state.rainLog = [
+        { year: seasonYear, month: 11, day: 12, mm: 28 },
+        { year: seasonYear, month: 12, day: 8, mm: 24 },
+        { year: seasonYear + 1, month: 2, day: 2, mm: 18 },
+        { year: seasonYear + 1, month: 3, day: 1, mm: 16 },
+      ];
+      this.state.lastUsefulRain = { year: seasonYear + 1, month: 3, day: 1 };
       const budget = mayForageBudget(this.state.camps, this.state.herd);
       this.prepareFarmMapCapture();
       this.capturePin = null;
@@ -5241,6 +5277,72 @@ export class FarmScene extends Phaser.Scene {
     return { ok: true, line };
   }
 
+  /**
+   * Screen-space graphics still sit inside the camera zoom.
+   * Undo that so a coordinate in screen pixels lands on that pixel.
+   */
+  private fitScreenGraphics(graphics: Phaser.GameObjects.Graphics): void {
+    const camera = this.cameras.main;
+    const zoom = camera.zoom || 1;
+    graphics.setScale(1 / zoom);
+    graphics.setPosition((camera.width / 2) * (1 - 1 / zoom), (camera.height / 2) * (1 - 1 / zoom));
+  }
+
+  /** World point to a screen pixel. Matches the Phaser 4 scroll (centre is scroll + half the screen). */
+  private worldOnScreen(worldX: number, worldY: number): { x: number; y: number } {
+    const camera = this.cameras.main;
+    const zoom = camera.zoom || 1;
+    return {
+      x: (worldX - camera.scrollX) * zoom + (camera.width * (1 - zoom)) / 2,
+      y: (worldY - camera.scrollY) * zoom + (camera.height * (1 - zoom)) / 2,
+    };
+  }
+
+  /**
+   * Soft wet sand on the homestead yard. Stays while any camp soil is still wet.
+   * Drawn in screen space so the shade sits on the sand the close camera is showing.
+   */
+  private drawWetShade(): void {
+    const shade = this.wetShade;
+    if (!shade) return;
+    shade.clear();
+    const raining = (this.state.todayRainMm ?? 0) > 0;
+    const wet = this.state.camps.some((camp) => camp.soilMoistureMm >= CONFIG.rain.wetGroundMoistureMm);
+    if (!this.metre || (!raining && !wet)) return;
+    const house = this.state.features.find((feature) => feature.kind === "house");
+    if (!house) return;
+    const at = tileCenter(house.x, house.y, this.layout, this.groundTileW, this.groundTileH);
+    const screen = this.worldOnScreen(at.x, at.y + 8 * PIXELS_PER_METRE);
+    const zoom = this.cameras.main.zoom || 1;
+    this.fitScreenGraphics(shade);
+    // assumption, tune by eye, not sourced. A few soft discs, so the yard reads as wet sand and the rim fades out.
+    const rx = 170 * PIXELS_PER_METRE * zoom;
+    const ry = rx * 0.92;
+    const boost = raining ? 1.12 : 1;
+    const layers = [
+      { scale: 1, alpha: 0.26 },
+      { scale: 0.72, alpha: 0.18 },
+      { scale: 0.46, alpha: 0.14 },
+      { scale: 0.24, alpha: 0.08 },
+    ];
+    for (const layer of layers) {
+      shade.fillStyle(0x2a1a0e, layer.alpha * boost);
+      shade.fillEllipse(screen.x, screen.y, rx * 2 * layer.scale, ry * 2 * layer.scale);
+    }
+  }
+
+  /** Soft cloud with no hard rim. Outer rings are nearly clear. */
+  private softCloud(x: number, y: number, rx: number, ry: number, peak: number): void {
+    const rings = 12;
+    for (let i = rings; i >= 1; i -= 1) {
+      const t = i / rings;
+      const alpha = peak * (1 - t) * (1 - t) * 0.16;
+      if (alpha < 0.012) continue;
+      this.rain.fillStyle(0x1c2836, alpha);
+      this.rain.fillEllipse(x, y, rx * 2 * (0.42 + 0.58 * t), ry * 2 * (0.42 + 0.58 * t));
+    }
+  }
+
   private drawRain(time: number): void {
     this.rain.clear();
     const mm = this.state.todayRainMm;
@@ -5248,27 +5350,39 @@ export class FarmScene extends Phaser.Scene {
     const camera = this.cameras.main;
     const width = camera.width;
     const height = camera.height;
-    const zoom = camera.zoom || 1;
-    // Screen-space graphics still sit inside the camera zoom. Undo it so the storm fills the view.
-    this.rain.setScale(1 / zoom);
-    this.rain.setPosition((width / 2) * (1 - 1 / zoom), (height / 2) * (1 - 1 / zoom));
-    this.rain.fillStyle(0x9ec0d4, 0.22);
+    this.fitScreenGraphics(this.rain);
+    this.rain.fillStyle(0x121820, 0.18);
     this.rain.fillRect(0, 0, width, height);
-    this.rain.fillStyle(0x1b2c3d, 0.62);
-    this.rain.fillEllipse(width * 0.48, height * 0.16, width * 0.92, height * 0.46);
-    this.rain.fillStyle(0x101c28, 0.55);
-    this.rain.fillEllipse(width * 0.34, height * 0.1, width * 0.55, height * 0.28);
-    const count = Math.min(CONFIG.view.stormStreakCap, Math.round(70 + mm * 3));
-    this.rain.lineStyle(3.2, 0xf4fbff, 1);
-    const drift = this.reduceMotion ? 36 : (time * 0.14) % (height + 36);
-    this.rain.beginPath();
-    for (let i = 0; i < count; i += 1) {
-      const x = (i * 53 + 17) % Math.max(1, width);
-      const y = (i * 29 + drift) % (height + 28) - 14;
-      this.rain.moveTo(x, y);
-      this.rain.lineTo(x - 7, y + 20);
+    const drift = this.reduceMotion ? 0 : time;
+    const blobs = [
+      { x: 0.46, y: 0.2, rx: 0.5, ry: 0.26, a: 0.9, phase: 0.4 },
+      { x: 0.68, y: 0.14, rx: 0.36, ry: 0.2, a: 0.7, phase: 1.7 },
+      { x: 0.28, y: 0.24, rx: 0.32, ry: 0.18, a: 0.62, phase: 2.8 },
+      { x: 0.54, y: 0.08, rx: 0.28, ry: 0.14, a: 0.5, phase: 4.1 },
+    ];
+    for (const blob of blobs) {
+      const ox = Math.sin(drift * 0.00012 + blob.phase) * width * 0.035;
+      const oy = Math.cos(drift * 0.00009 + blob.phase) * height * 0.018;
+      this.softCloud(width * blob.x + ox, height * blob.y + oy, width * blob.rx, height * blob.ry, blob.a);
     }
-    this.rain.strokePath();
+    const count = Math.min(CONFIG.view.stormStreakCap, Math.round(56 + mm * 1.6));
+    const span = height + 36;
+    const fall = this.reduceMotion ? 18 : (time * 0.07) % span;
+    const buckets = [0.22, 0.38, 0.55];
+    for (let band = 0; band < buckets.length; band += 1) {
+      this.rain.lineStyle(1.05, 0xd5e4ee, buckets[band]);
+      this.rain.beginPath();
+      for (let i = band; i < count; i += buckets.length) {
+        const vary = ((i * 17) % 100) / 100;
+        const len = 5 + vary * 9;
+        const slant = 0.18 + vary * 0.22;
+        const x = (i * 41 + 13) % Math.max(1, width);
+        const y = (i * 19 + fall) % span - 12;
+        this.rain.moveTo(x, y);
+        this.rain.lineTo(x - Math.sin(slant) * len, y + Math.cos(slant) * len);
+      }
+      this.rain.strokePath();
+    }
   }
 
   private syncHud(): void {
